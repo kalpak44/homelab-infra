@@ -1,0 +1,40 @@
+name: Ansible
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Inventory to target"
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
+      playbook:
+        description: "Playbook to run"
+        required: true
+        default: bootstrap
+        type: choice
+        options: [bootstrap, docker, k3s]
+
+jobs:
+  run:
+    name: "${{ inputs.playbook }} / ${{ inputs.env }}"
+    runs-on: github-runner
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Run playbook
+        run: |
+          ansible-playbook \
+            -i ansible/inventories/${{ inputs.env }}.yml \
+            ansible/playbooks/${{ inputs.playbook }}.yml

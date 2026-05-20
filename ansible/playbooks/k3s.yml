@@ -1,0 +1,36 @@
+---
+- name: Install k3s
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    k3s_version: "v1.31.4+k3s1"
+
+  tasks:
+    - name: Download k3s install script
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: "0755"
+
+    - name: Install k3s server
+      ansible.builtin.shell:
+        cmd: /tmp/k3s-install.sh
+        creates: /usr/local/bin/k3s
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: "server --disable traefik"
+
+    - name: Wait for k3s to be ready
+      ansible.builtin.command: k3s kubectl get nodes
+      register: result
+      until: result.rc == 0
+      retries: 20
+      delay: 5
+
+    - name: Fetch kubeconfig
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "{{ playbook_dir }}/../../.kube/{{ inventory_hostname }}.yaml"
+        flat: true

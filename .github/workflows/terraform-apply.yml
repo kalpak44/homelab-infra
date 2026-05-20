@@ -1,0 +1,46 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment to apply"
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
+
+jobs:
+  apply:
+    name: Apply / ${{ matrix.env }}
+    runs-on: github-runner
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.env)) || fromJson('["dev"]') }}
+    environment: ${{ matrix.env }}
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ matrix.env }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}" \
+            -backend-config="access_key=${{ secrets.R2_ACCESS_KEY_ID }}" \
+            -backend-config="secret_key=${{ secrets.R2_SECRET_ACCESS_KEY }}" \
+            -backend-config="endpoint=${{ secrets.R2_ENDPOINT }}"
+
+      - name: Apply
+        run: |
+          terraform apply -auto-approve \
+            -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
+            -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
+            -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}"

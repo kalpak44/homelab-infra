@@ -1,0 +1,39 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+*.retry
+ansible/roles/external/
+
+# SSH keys & secrets
+*.pem
+*.key
+*.p12
+id_rsa*
+id_ed25519*
+vault_pass.txt
+.vault_pass
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Scripts
+*.log

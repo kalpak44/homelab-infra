@@ -1,0 +1,34 @@
+---
+- name: Bootstrap base system
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Update apt cache and upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: Install common packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - git
+          - vim
+          - htop
+          - unattended-upgrades
+          - ca-certificates
+          - gnupg
+        state: present
+
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Enable unattended upgrades
+      ansible.builtin.service:
+        name: unattended-upgrades
+        enabled: true
+        state: started
