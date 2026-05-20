@@ -190,11 +190,10 @@ Add a required reviewer to `prod` to require manual approval before applying.
 ## Local init (one-time, per env)
 
 ```bash
-cd terraform/envs/dev   # or prod
+export AWS_ACCESS_KEY_ID=<R2_ACCESS_KEY_ID>
+export AWS_SECRET_ACCESS_KEY=<R2_SECRET_ACCESS_KEY>
+export AWS_ENDPOINT_URL_S3=<R2_ENDPOINT>
 
-terraform init \
-  -backend-config="bucket=<R2_BUCKET_NAME>" \
-  -backend-config="access_key=<R2_ACCESS_KEY_ID>" \
-  -backend-config="secret_key=<R2_SECRET_ACCESS_KEY>" \
-  -backend-config="endpoint=<R2_ENDPOINT>"
+cd terraform/envs/dev   # or prod
+terraform init -backend-config="bucket=<R2_BUCKET_NAME>"
 ```

@@ -27,16 +27,18 @@ jobs:
       run:
         working-directory: terraform/envs/${{ matrix.env }}
 
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Init
         run: |
           terraform init \
-            -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}" \
-            -backend-config="access_key=${{ secrets.R2_ACCESS_KEY_ID }}" \
-            -backend-config="secret_key=${{ secrets.R2_SECRET_ACCESS_KEY }}" \
-            -backend-config="endpoint=${{ secrets.R2_ENDPOINT }}"
+            -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Apply
         run: |
