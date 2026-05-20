@@ -17,7 +17,7 @@ on:
 jobs:
   apply:
     name: Apply / ${{ matrix.env }}
-    runs-on: github-runner
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
