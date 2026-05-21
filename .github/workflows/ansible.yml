@@ -14,7 +14,7 @@ on:
         required: true
         default: adguard
         type: choice
-        options: [adguard, vault, bootstrap, docker, postgresql, pgadmin]
+        options: [adguard, vault, docker, postgresql, pgadmin]
 
 jobs:
   run:
