@@ -36,6 +36,9 @@
   when: vault_installed_ver.stdout != vault_version + "-1"
   notify: Restart Vault
 
+- name: Flush handlers to restart Vault immediately if upgraded
+  ansible.builtin.meta: flush_handlers
+
 - name: Create data directory
   ansible.builtin.file:
     path: "{{ vault_data_dir }}"
