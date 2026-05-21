@@ -16,6 +16,7 @@ on:
           - prod/k3s
           - prod/haproxy
           - prod/nfs
+          - prod/flux
 
 jobs:
   deploy:
@@ -40,10 +41,12 @@ jobs:
           echo "playbook=${SERVICE##*/}" >> $GITHUB_OUTPUT
 
       - name: Terraform Init
+        if: steps.ctx.outputs.playbook != 'flux'
         working-directory: terraform/envs/${{ steps.ctx.outputs.env }}
         run: terraform init -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Terraform Apply
+        if: steps.ctx.outputs.playbook != 'flux'
         working-directory: terraform/envs/${{ steps.ctx.outputs.env }}
         run: |
           terraform apply -auto-approve \
@@ -80,4 +83,6 @@ jobs:
             -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
             -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
             -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \
-            -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}"
+            -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}" \
+            -e github_token="${{ secrets.GITHUB_TOKEN }}" \
+            -e cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"

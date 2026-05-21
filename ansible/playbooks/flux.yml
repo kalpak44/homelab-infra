@@ -1,0 +1,47 @@
+---
+- name: Bootstrap Flux CD
+  hosts: prod-k8s-1
+  become: true
+
+  vars:
+    github_owner: kalpak44
+    github_repo: homelab-infra
+    github_branch: main
+    flux_path: gitops/clusters/prod
+
+  tasks:
+    - name: Install Flux CLI
+      ansible.builtin.shell:
+        cmd: curl -s https://fluxcd.io/install.sh | bash
+        creates: /usr/local/bin/flux
+
+    - name: Create cert-manager namespace
+      ansible.builtin.shell:
+        cmd: kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Create Cloudflare API token secret
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl create secret generic cloudflare-api-token
+          --namespace cert-manager
+          --from-literal=api-token={{ cloudflare_api_token }}
+          --dry-run=client -o yaml | kubectl apply -f -
+      no_log: true
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Bootstrap Flux
+      ansible.builtin.shell:
+        cmd: >-
+          flux bootstrap github
+          --owner={{ github_owner }}
+          --repository={{ github_repo }}
+          --branch={{ github_branch }}
+          --path={{ flux_path }}
+          --token-auth
+      environment:
+        GITHUB_TOKEN: "{{ github_token }}"
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
