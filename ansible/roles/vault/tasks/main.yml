@@ -108,41 +108,47 @@
   changed_when: true
 
 - name: Enable userpass auth method
-  ansible.builtin.shell:
-    cmd: >
-      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
-      VAULT_TOKEN={{ vault_root_token }}
-      vault auth enable userpass
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/auth/userpass"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_root_token }}"
+    body_format: json
+    body:
+      type: userpass
+    status_code: [200, 204, 400]
   register: auth_enable
   failed_when:
-    - auth_enable.rc != 0
-    - "'already enabled' not in auth_enable.stderr"
-  changed_when: auth_enable.rc == 0
+    - auth_enable.status not in [200, 204, 400]
   when: vault_username != "" and vault_password != ""
   no_log: true
 
 - name: Write admin policy
-  ansible.builtin.shell:
-    cmd: >
-      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
-      VAULT_TOKEN={{ vault_root_token }}
-      vault policy write admin -
-    stdin: |
-      path "*" {
-        capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-      }
-  changed_when: true
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/policies/acl/admin"
+    method: PUT
+    headers:
+      X-Vault-Token: "{{ vault_root_token }}"
+    body_format: json
+    body:
+      policy: |
+        path "*" {
+          capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+        }
+    status_code: [200, 204]
   when: vault_username != "" and vault_password != ""
   no_log: true
 
 - name: Create admin user
-  ansible.builtin.shell:
-    cmd: >
-      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
-      VAULT_TOKEN={{ vault_root_token }}
-      vault write auth/userpass/users/{{ vault_username }}
-      password={{ vault_password }}
-      policies=admin
-  changed_when: true
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/auth/userpass/users/{{ vault_username }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_root_token }}"
+    body_format: json
+    body:
+      password: "{{ vault_password }}"
+      policies: admin
+    status_code: [200, 204]
   when: vault_username != "" and vault_password != ""
   no_log: true
