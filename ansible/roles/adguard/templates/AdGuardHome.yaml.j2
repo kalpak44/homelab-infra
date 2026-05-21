@@ -10,8 +10,7 @@ users:
 auth_attempts: 5
 block_auth_min: 15
 dns:
-  bind_hosts:
-    - 0.0.0.0
+  bind_host: 0.0.0.0
   port: {{ adguard_dns_port }}
   upstream_dns:
     - https://dns10.quad9.net/dns-query
