@@ -1,3 +1,0 @@
----
-microk8s_version: "1.35"
-microk8s_metallb_range: "192.168.1.120-192.168.1.130"

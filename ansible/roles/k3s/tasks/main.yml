@@ -1,0 +1,27 @@
+---
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - qemu-guest-agent
+      - open-iscsi
+      - nfs-common
+      - curl
+      - git
+    state: present
+    update_cache: true
+
+- name: Ensure qemu-guest-agent is running
+  ansible.builtin.systemd:
+    name: qemu-guest-agent
+    state: started
+    enabled: true
+
+- name: Disable swap
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+
+- name: Remove swap from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '.*\bswap\b.*'
+    state: absent
