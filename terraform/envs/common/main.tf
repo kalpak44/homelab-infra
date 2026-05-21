@@ -1,10 +1,18 @@
+resource "proxmox_virtual_environment_download_file" "ubuntu_lxc" {
+  content_type       = "vztmpl"
+  datastore_id       = "local"
+  node_name          = "proxmox"
+  url                = "http://download.proxmox.com/images/system/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+  overwrite_unmanaged = true
+}
+
 module "adguard" {
   source = "../../modules/proxmox-lxc"
 
   node_name        = "proxmox"
   container_id     = 200
   hostname         = "adguard"
-  template_file_id = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+  template_file_id = proxmox_virtual_environment_download_file.ubuntu_lxc.id
 
   ip_address = "192.168.1.2/24"
   gateway    = "192.168.1.1"
