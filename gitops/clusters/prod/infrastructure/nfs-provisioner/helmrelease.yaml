@@ -17,6 +17,8 @@ spec:
     nfs:
       server: "192.168.1.108"
       path: /srv/nfs/k8s
+      mountOptions:
+        - vers=4
     storageClass:
       name: nfs
       defaultClass: true
