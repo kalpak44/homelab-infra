@@ -42,6 +42,14 @@
           --branch={{ github_branch }}
           --path={{ flux_path }}
           --token-auth
+          --timeout=15m
       environment:
         GITHUB_TOKEN: "{{ flux_github_token }}"
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      ignore_errors: true
+
+    - name: Verify Flux components are healthy
+      ansible.builtin.command: flux check
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      changed_when: false
