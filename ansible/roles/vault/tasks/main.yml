@@ -60,6 +60,7 @@
   delay: 5
 
 - name: Check Vault initialization status
+
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/init"
   register: vault_init_check
@@ -91,12 +92,18 @@
     vault_root_token: "{{ (vault_init_file.content | b64decode | from_json).root_token }}"
   no_log: true
 
+- name: Check if Vault is sealed
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/health"
+    status_code: [200, 429, 472, 473, 501, 503]
+  register: vault_health_current
+
 - name: Unseal Vault if sealed
   ansible.builtin.shell:
     cmd: >
       VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
       vault operator unseal {{ vault_unseal_key }}
-  when: vault_health.status == 503
+  when: vault_health_current.status == 503
   no_log: true
   changed_when: true
 
