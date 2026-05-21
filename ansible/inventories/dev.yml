@@ -5,6 +5,4 @@ all:
 
   children:
     dev:
-      hosts:
-        dev-hello-world:
-          ansible_host: 192.168.1.200
+      hosts: {}

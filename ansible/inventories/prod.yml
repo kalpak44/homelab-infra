@@ -7,8 +7,6 @@ all:
       vars:
         ansible_user: ubuntu
       hosts:
-        prod-hello-world:
-          ansible_host: 192.168.1.100
         prod-k8s-1:
           ansible_host: 192.168.1.110
         prod-k8s-2:
