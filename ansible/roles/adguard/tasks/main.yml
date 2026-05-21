@@ -48,6 +48,15 @@
     mode: "0755"
   when: not adguard_binary.stat.exists
 
+- name: Deploy AdGuard Home configuration
+  ansible.builtin.template:
+    src: AdGuardHome.yaml.j2
+    dest: "{{ adguard_install_dir }}/AdGuardHome.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  when: adguard_password != ""
+
 - name: Check if AdGuard Home service unit exists
   ansible.builtin.stat:
     path: /etc/systemd/system/AdGuardHome.service

@@ -30,9 +30,14 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
+      - name: Install Python deps for Ansible filters
+        run: pip install passlib
+
       - name: Run playbook
         working-directory: ansible
         run: |
           ansible-playbook \
             -i inventories/${{ inputs.inventory }}.yml \
-            playbooks/${{ inputs.playbook }}.yml
+            playbooks/${{ inputs.playbook }}.yml \
+            -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
+            -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}"
