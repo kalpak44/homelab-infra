@@ -1,0 +1,7 @@
+---
+- name: Configure HAProxy
+  hosts: prod-lb
+  become: true
+
+  roles:
+    - haproxy

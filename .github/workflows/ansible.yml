@@ -14,7 +14,7 @@ on:
         required: true
         default: adguard
         type: choice
-        options: [adguard, vault, docker, postgresql, pgadmin, redis, microk8s]
+        options: [adguard, vault, docker, postgresql, pgadmin, redis, microk8s, haproxy]
 
 jobs:
   run:
@@ -50,4 +50,6 @@ jobs:
             -e pgadmin_password="${{ secrets.PGADMIN_PASSWORD }}" \
             -e redis_password="${{ secrets.REDIS_PASSWORD }}" \
             -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
-            -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}"
+            -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
+            -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \
+            -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}"

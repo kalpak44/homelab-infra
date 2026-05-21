@@ -207,6 +207,8 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `REDIS_PASSWORD`          | Redis auth password                                                           |
 | `REDIS_COMMANDER_USER`    | Redis Commander web UI username                                               |
 | `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
+| `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
+| `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
 
 ### 3b. Proxmox — TLS certificate via Let's Encrypt
 
@@ -349,6 +351,26 @@ Redis + Redis Commander web UI running in a single LXC container (`common` env, 
 2. Run **Ansible** → inventory `common`, playbook `redis`.
 
 Redis listens on `192.168.1.6:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081`.
+
+### HAProxy (prod load balancer)
+
+External load balancer for the Kubernetes cluster, running in an LXC container (`prod` env, `192.168.1.109`).
+
+**Secrets required** (GitHub → Settings → Secrets → Actions):
+
+| Secret                  | Value                                     |
+|-------------------------|-------------------------------------------|
+| `HAPROXY_STATS_USER`    | Stats page username of your choice        |
+| `HAPROXY_STATS_PASSWORD`| Stats page password of your choice        |
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `prod` to create the LXC container.
+2. Run **Ansible** → inventory `prod`, playbook `haproxy`.
+
+HAProxy stats are available at `http://192.168.1.109:8404/stats`. Traffic flow:
+- `:80` — HTTP forwarded to Traefik at `192.168.1.120:80`
+- `:443` — TCP passthrough to Traefik at `192.168.1.120:443` (TLS terminated by Traefik)
 
 ### Kubernetes cluster (prod)
 
