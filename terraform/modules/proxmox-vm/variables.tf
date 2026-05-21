@@ -13,9 +13,9 @@ variable "vm_id" {
   type        = number
 }
 
-variable "template_vm_id" {
-  description = "VM ID of the cloud-init template to clone"
-  type        = number
+variable "cloud_image_file_id" {
+  description = "Proxmox file ID of the cloud image to use as the root disk"
+  type        = string
 }
 
 variable "cpu_cores" {
@@ -56,12 +56,6 @@ variable "ip_address" {
 variable "gateway" {
   description = "Default gateway"
   type        = string
-}
-
-variable "cloud_init_file_id" {
-  description = "Proxmox file ID for the cloud-init user-data snippet"
-  type        = string
-  default     = null
 }
 
 variable "ssh_public_keys" {

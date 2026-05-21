@@ -54,31 +54,7 @@ The username for Terraform is `terraform@pve!terraform`.
 pvesm set local --content images,rootdir,vztmpl,backup,snippets,iso
 ```
 
-#### 2c. Create a cloud-init VM template
-
-```bash
-VM_ID=9000
-STORAGE=local-lvm   # adjust to your datastore
-IMAGE=/tmp/ubuntu-2404.img
-
-wget -q -O $IMAGE https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
-
-qm create $VM_ID \
-  --name ubuntu-2404-template \
-  --memory 2048 --cores 2 \
-  --net0 virtio,bridge=vmbr0 \
-  --ostype l26
-
-qm importdisk $VM_ID $IMAGE $STORAGE
-qm set $VM_ID --scsihw virtio-scsi-pci --scsi0 $STORAGE:vm-$VM_ID-disk-0
-qm set $VM_ID --ide2 $STORAGE:cloudinit
-qm set $VM_ID --boot order=scsi0 --serial0 socket --vga serial0
-qm template $VM_ID
-```
-
-Template VM ID `9000` matches `template_vm_id` in `terraform/envs/*/main.tf`. Adjust `STORAGE` to your datastore.
-
-#### 2d. Create a runner VM and install the GitHub Actions agent
+#### 2c. Create a runner VM and install the GitHub Actions agent
 
 This VM is created **manually, once** — it lives on the LAN and has direct access to the Proxmox API, so port 8006 never needs to be exposed to the internet. All future Terraform runs happen through it.
 
@@ -100,16 +76,28 @@ ssh-copy-id root@<proxmox-ip>
 # Then on Proxmox the key will be in ~/.ssh/authorized_keys
 ```
 
-Clone the template created in step 2c and configure it via cloud-init:
+Create the runner VM directly from the Ubuntu cloud image:
 
 ```bash
 RUNNER_ID=101
 STORAGE=local-lvm
+IMAGE=/tmp/ubuntu-2404.img
 
-qm clone 9000 $RUNNER_ID --name github-runner --full
-qm set $RUNNER_ID \
+wget -q -O $IMAGE https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+
+qm create $RUNNER_ID \
+  --name github-runner \
   --memory 2048 --cores 2 \
+  --net0 virtio,bridge=vmbr0 \
+  --ostype l26
+
+qm importdisk $RUNNER_ID $IMAGE $STORAGE
+qm set $RUNNER_ID \
+  --scsihw virtio-scsi-pci \
+  --scsi0 $STORAGE:vm-$RUNNER_ID-disk-0 \
+  --ide2 $STORAGE:cloudinit \
   --boot order=scsi0 \
+  --serial0 socket --vga serial0 \
   --ipconfig0 ip=192.168.1.101/24,gw=192.168.1.1 \
   --sshkeys ~/.ssh/id_ed25519.pub \
   --ciuser ubuntu

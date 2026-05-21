@@ -3,6 +3,17 @@ variable "ssh_public_key" {
   default = ""
 }
 
+# ── Ubuntu cloud image ───────────────────────────────────────────────────────
+
+resource "proxmox_download_file" "ubuntu_cloud_image" {
+  content_type        = "iso"
+  datastore_id        = "local"
+  node_name           = "proxmox"
+  url                 = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+  file_name           = "noble-server-cloudimg-amd64.img"
+  overwrite_unmanaged = true
+}
+
 # ── LXC template ────────────────────────────────────────────────────────────
 
 resource "proxmox_download_file" "ubuntu_lxc" {
@@ -18,10 +29,10 @@ resource "proxmox_download_file" "ubuntu_lxc" {
 module "prod_k8s_1" {
   source = "../../modules/proxmox-vm"
 
-  node_name      = "proxmox"
-  vm_name        = "prod-k8s-1"
-  vm_id          = 110
-  template_vm_id = 9000
+  node_name           = "proxmox"
+  vm_name             = "prod-k8s-1"
+  vm_id               = 110
+  cloud_image_file_id = proxmox_download_file.ubuntu_cloud_image.id
 
   cpu_cores    = 4
   memory_mb    = 8192
@@ -35,10 +46,10 @@ module "prod_k8s_1" {
 module "prod_k8s_2" {
   source = "../../modules/proxmox-vm"
 
-  node_name      = "proxmox"
-  vm_name        = "prod-k8s-2"
-  vm_id          = 111
-  template_vm_id = 9000
+  node_name           = "proxmox"
+  vm_name             = "prod-k8s-2"
+  vm_id               = 111
+  cloud_image_file_id = proxmox_download_file.ubuntu_cloud_image.id
 
   cpu_cores    = 4
   memory_mb    = 8192
