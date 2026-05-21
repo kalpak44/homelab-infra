@@ -14,15 +14,25 @@
     group: root
     mode: "0644"
 
-- name: Check if AdGuard Home is already installed
+- name: Check if AdGuard Home binary exists
   ansible.builtin.stat:
     path: "{{ adguard_install_dir }}/AdGuardHome"
   register: adguard_binary
+
+- name: Check if AdGuard Home service unit exists
+  ansible.builtin.stat:
+    path: /etc/systemd/system/AdGuardHome.service
+  register: adguard_service
 
 - name: Download and install AdGuard Home
   ansible.builtin.shell:
     cmd: curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
   when: not adguard_binary.stat.exists
+
+- name: Register AdGuard Home as a systemd service
+  ansible.builtin.command:
+    cmd: "{{ adguard_install_dir }}/AdGuardHome --service install"
+  when: not adguard_service.stat.exists
 
 - name: Ensure AdGuard Home service is running
   ansible.builtin.systemd:
