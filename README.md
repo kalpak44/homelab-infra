@@ -155,6 +155,31 @@ Enable the VM to start automatically when the Proxmox host reboots (run on the P
 qm set 101 --onboot 1
 ```
 
+#### Updating the runner
+
+The runner agent **auto-updates itself** when GitHub requires a newer version — no action needed for agent updates.
+
+For OS-level updates (security patches):
+
+```bash
+ssh ubuntu@192.168.1.101
+sudo apt update && sudo apt upgrade -y
+```
+
+For a full VM rebuild (e.g. major OS version):
+
+```bash
+ssh ubuntu@192.168.1.101
+cd actions-runner
+
+# Stop and unregister the old runner
+sudo ./svc.sh stop
+sudo ./svc.sh uninstall
+./config.sh remove --token <TOKEN>   # token from Settings → Actions → Runners → remove
+```
+
+Then destroy the VM, create a new one from the runner setup steps above, and re-register with GitHub.
+
 ### 3. GitHub — add repository secrets
 
 Go to **Settings → Secrets and variables → Actions → New repository secret** and add:

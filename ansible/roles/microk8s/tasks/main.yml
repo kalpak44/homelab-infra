@@ -1,9 +1,31 @@
 ---
-- name: Install snapd
+- name: Install prerequisites
   ansible.builtin.apt:
-    name: snapd
+    name:
+      - qemu-guest-agent
+      - snapd
+      - open-iscsi
+      - nfs-common
+      - curl
+      - git
     state: present
     update_cache: true
+
+- name: Ensure qemu-guest-agent is running
+  ansible.builtin.systemd:
+    name: qemu-guest-agent
+    state: started
+    enabled: true
+
+- name: Disable swap
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+
+- name: Remove swap from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '.*\bswap\b.*'
+    state: absent
 
 - name: Check installed microk8s version
   ansible.builtin.command: snap list microk8s

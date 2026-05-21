@@ -3,6 +3,11 @@ resource "proxmox_virtual_environment_vm" "this" {
   name      = var.vm_name
   vm_id     = var.vm_id
 
+  clone {
+    vm_id = var.template_vm_id
+    full  = true
+  }
+
   cpu {
     cores = var.cpu_cores
     type  = "x86-64-v2-AES"
@@ -14,7 +19,6 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   disk {
     datastore_id = var.datastore_id
-    file_id      = var.cloud_image_file_id
     interface    = "scsi0"
     file_format  = "raw"
     size         = var.disk_size_gb

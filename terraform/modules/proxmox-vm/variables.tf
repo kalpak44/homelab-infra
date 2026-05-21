@@ -13,9 +13,9 @@ variable "vm_id" {
   type        = number
 }
 
-variable "cloud_image_file_id" {
-  description = "Proxmox file ID of the cloud image to use as the root disk"
-  type        = string
+variable "template_vm_id" {
+  description = "VM ID of the template to clone from"
+  type        = number
 }
 
 variable "cpu_cores" {

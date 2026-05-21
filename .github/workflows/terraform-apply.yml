@@ -27,6 +27,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+      PROXMOX_VE_SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,13 +36,6 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
-
-      - name: Load SSH key for Proxmox disk import
-        run: |
-          eval "$(ssh-agent -s)"
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" | ssh-add -
-          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
-          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Apply
         run: |

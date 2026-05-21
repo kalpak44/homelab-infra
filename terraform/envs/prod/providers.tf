@@ -5,7 +5,6 @@ provider "proxmox" {
 
   ssh {
     username = "root"
-    agent    = true
   }
 }
 

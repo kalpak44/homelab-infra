@@ -14,6 +14,37 @@ resource "proxmox_download_file" "ubuntu_cloud_image" {
   overwrite_unmanaged = true
 }
 
+# ── Golden template (SSH needed once here) ───────────────────────────────────
+
+resource "proxmox_virtual_environment_vm" "ubuntu_template" {
+  name      = "ubuntu-2404-template"
+  node_name = "proxmox"
+  vm_id     = 9000
+  template  = true
+  started   = false
+
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 2048
+  }
+
+  disk {
+    datastore_id = "local-lvm"
+    file_id      = proxmox_download_file.ubuntu_cloud_image.id
+    interface    = "scsi0"
+    file_format  = "raw"
+    size         = 20
+  }
+
+  network_device {
+    bridge = "vmbr0"
+  }
+}
+
 # ── LXC template ────────────────────────────────────────────────────────────
 
 resource "proxmox_download_file" "ubuntu_lxc" {
@@ -24,15 +55,15 @@ resource "proxmox_download_file" "ubuntu_lxc" {
   overwrite_unmanaged = true
 }
 
-# ── Kubernetes nodes ─────────────────────────────────────────────────────────
+# ── Kubernetes nodes (clone — pure API) ──────────────────────────────────────
 
 module "prod_k8s_1" {
   source = "../../modules/proxmox-vm"
 
-  node_name           = "proxmox"
-  vm_name             = "prod-k8s-1"
-  vm_id               = 110
-  cloud_image_file_id = proxmox_download_file.ubuntu_cloud_image.id
+  node_name      = "proxmox"
+  vm_name        = "prod-k8s-1"
+  vm_id          = 110
+  template_vm_id = proxmox_virtual_environment_vm.ubuntu_template.vm_id
 
   cpu_cores    = 4
   memory_mb    = 8192
@@ -46,10 +77,10 @@ module "prod_k8s_1" {
 module "prod_k8s_2" {
   source = "../../modules/proxmox-vm"
 
-  node_name           = "proxmox"
-  vm_name             = "prod-k8s-2"
-  vm_id               = 111
-  cloud_image_file_id = proxmox_download_file.ubuntu_cloud_image.id
+  node_name      = "proxmox"
+  vm_name        = "prod-k8s-2"
+  vm_id          = 111
+  template_vm_id = proxmox_virtual_environment_vm.ubuntu_template.vm_id
 
   cpu_cores    = 4
   memory_mb    = 8192
