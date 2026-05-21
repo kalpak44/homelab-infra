@@ -1,0 +1,8 @@
+---
+- name: Configure AdGuard Home
+  hosts: adguard
+  become: true
+  gather_facts: true
+
+  roles:
+    - adguard
