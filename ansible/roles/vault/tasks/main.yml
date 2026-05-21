@@ -118,10 +118,28 @@
       type: userpass
     status_code: [200, 204, 400]
   register: auth_enable
-  failed_when:
-    - auth_enable.status not in [200, 204, 400]
   when: vault_username != "" and vault_password != ""
   no_log: true
+
+- name: Debug enable userpass result
+  ansible.builtin.debug:
+    msg: "Enable userpass HTTP={{ auth_enable.status | default('none') }} json={{ auth_enable.json | default({}) }}"
+  when: vault_username != "" and vault_password != ""
+
+- name: Check enabled auth methods
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/auth"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ vault_root_token }}"
+  register: vault_auth_methods
+  when: vault_username != "" and vault_password != ""
+  no_log: true
+
+- name: Debug auth methods
+  ansible.builtin.debug:
+    msg: "Enabled auth paths: {{ vault_auth_methods.json.keys() | list | default([]) }}"
+  when: vault_username != "" and vault_password != ""
 
 - name: Write admin policy
   ansible.builtin.uri:
