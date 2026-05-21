@@ -170,6 +170,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `PROXMOX_USERNAME`        | `terraform@pve!terraform`                                                    |
 | `PROXMOX_PASSWORD`        | Proxmox API token secret from step 2a                                        |
    | `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
+| `SSH_PRIVATE_KEY`         | Contents of `~/.ssh/id_ed25519` on the Proxmox node (for Ansible)            |
 
 ### 3b. Proxmox — TLS certificate via Let's Encrypt
 
