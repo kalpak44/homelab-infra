@@ -150,5 +150,19 @@
       password: "{{ vault_password }}"
       policies: admin
     status_code: [200, 204]
+  register: vault_create_user
   when: vault_username != "" and vault_password != ""
   no_log: true
+  ignore_errors: true
+
+- name: Debug user creation result
+  ansible.builtin.debug:
+    msg: "HTTP status={{ vault_create_user.status | default('none') }} msg={{ vault_create_user.msg | default('') }} json={{ vault_create_user.json | default({}) }}"
+  when: vault_username != "" and vault_password != ""
+
+- name: Fail if user creation failed
+  ansible.builtin.fail:
+    msg: "Failed to create Vault admin user (HTTP {{ vault_create_user.status | default('unknown') }})"
+  when:
+    - vault_username != "" and vault_password != ""
+    - vault_create_user.status is not defined or vault_create_user.status not in [200, 204]
