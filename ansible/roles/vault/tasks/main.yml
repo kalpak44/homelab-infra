@@ -151,20 +151,21 @@
   when: vault_username != "" and vault_password != ""
   no_log: true
 
-- name: Write password to temp file
+- name: Write user payload to temp file
   ansible.builtin.copy:
-    content: "{{ vault_password | trim }}"
-    dest: /tmp/.vault_pass
+    content: "{{ {'password': vault_password | trim, 'policies': 'admin'} | to_json }}"
+    dest: /tmp/.vault_user.json
     mode: "0600"
   when: vault_username != "" and vault_password != ""
   no_log: true
 
 - name: Create admin user
-  ansible.builtin.shell:
-    cmd: >
-      vault write auth/userpass/users/{{ vault_username | trim }}
-      password="$(cat /tmp/.vault_pass)"
-      policies=admin
+  ansible.builtin.command:
+    argv:
+      - vault
+      - write
+      - "auth/userpass/users/{{ vault_username | trim }}"
+      - "@/tmp/.vault_user.json"
   environment:
     VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
@@ -172,8 +173,8 @@
   when: vault_username != "" and vault_password != ""
   no_log: true
 
-- name: Remove password temp file
+- name: Remove user payload temp file
   ansible.builtin.file:
-    path: /tmp/.vault_pass
+    path: /tmp/.vault_user.json
     state: absent
   when: vault_username != "" and vault_password != ""
