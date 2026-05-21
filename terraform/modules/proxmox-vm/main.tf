@@ -42,6 +42,10 @@ resource "proxmox_virtual_environment_vm" "this" {
     }
   }
 
+  agent {
+    enabled = true
+  }
+
   lifecycle {
     ignore_changes = [initialization]
   }
