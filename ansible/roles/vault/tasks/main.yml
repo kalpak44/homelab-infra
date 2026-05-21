@@ -49,3 +49,93 @@
     state: started
     enabled: true
     daemon_reload: true
+
+- name: Wait for Vault API to be ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/health"
+    status_code: [200, 429, 472, 473, 501, 503]
+  register: vault_health
+  until: vault_health.status is defined
+  retries: 12
+  delay: 5
+
+- name: Check Vault initialization status
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/sys/init"
+  register: vault_init_check
+
+- name: Initialize Vault
+  ansible.builtin.shell:
+    cmd: >
+      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
+      vault operator init -key-shares=1 -key-threshold=1 -format=json
+      > /root/vault-init.json
+    creates: /root/vault-init.json
+  when: not vault_init_check.json.initialized
+  no_log: true
+
+- name: Secure init file
+  ansible.builtin.file:
+    path: /root/vault-init.json
+    mode: "0600"
+
+- name: Read init file
+  ansible.builtin.slurp:
+    src: /root/vault-init.json
+  register: vault_init_file
+  no_log: true
+
+- name: Set unseal key and root token facts
+  ansible.builtin.set_fact:
+    vault_unseal_key: "{{ (vault_init_file.content | b64decode | from_json).unseal_keys_b64[0] }}"
+    vault_root_token: "{{ (vault_init_file.content | b64decode | from_json).root_token }}"
+  no_log: true
+
+- name: Unseal Vault if sealed
+  ansible.builtin.shell:
+    cmd: >
+      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
+      vault operator unseal {{ vault_unseal_key }}
+  when: vault_health.status == 503
+  no_log: true
+  changed_when: true
+
+- name: Enable userpass auth method
+  ansible.builtin.shell:
+    cmd: >
+      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
+      VAULT_TOKEN={{ vault_root_token }}
+      vault auth enable userpass
+  register: auth_enable
+  failed_when:
+    - auth_enable.rc != 0
+    - "'already enabled' not in auth_enable.stderr"
+  changed_when: auth_enable.rc == 0
+  when: vault_username != "" and vault_password != ""
+  no_log: true
+
+- name: Write admin policy
+  ansible.builtin.shell:
+    cmd: >
+      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
+      VAULT_TOKEN={{ vault_root_token }}
+      vault policy write admin -
+    stdin: |
+      path "*" {
+        capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+      }
+  changed_when: true
+  when: vault_username != "" and vault_password != ""
+  no_log: true
+
+- name: Create admin user
+  ansible.builtin.shell:
+    cmd: >
+      VAULT_ADDR=http://127.0.0.1:{{ vault_api_port }}
+      VAULT_TOKEN={{ vault_root_token }}
+      vault write auth/userpass/users/{{ vault_username }}
+      password={{ vault_password }}
+      policies=admin
+  changed_when: true
+  when: vault_username != "" and vault_password != ""
+  no_log: true

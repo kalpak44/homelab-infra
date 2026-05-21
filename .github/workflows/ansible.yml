@@ -40,4 +40,6 @@ jobs:
             -i inventories/${{ inputs.inventory }}.yml \
             playbooks/${{ inputs.playbook }}.yml \
             -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
-            -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}"
+            -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
+            -e vault_username="${{ secrets.VAULT_USERNAME }}" \
+            -e vault_password="${{ secrets.VAULT_PASSWORD }}"

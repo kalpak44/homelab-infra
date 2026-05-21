@@ -5,3 +5,5 @@ vault_data_dir: /opt/vault/data
 vault_config_dir: /etc/vault.d
 vault_api_port: 8200
 vault_cluster_port: 8201
+vault_username: ""
+vault_password: ""

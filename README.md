@@ -238,6 +238,28 @@ AdGuard Home is available at `http://192.168.1.2` — no setup wizard, credentia
 
 **To update AdGuard version** — bump `adguard_version` in `ansible/roles/adguard/defaults/main.yml` and re-run the Ansible workflow.
 
+### HashiCorp Vault
+
+Secret manager running in an LXC container (`common` env, `192.168.1.3`).
+
+**Secrets required** (GitHub → Settings → Secrets → Actions):
+
+| Secret             | Value                        |
+|--------------------|------------------------------|
+| `VAULT_USERNAME`   | Admin username of your choice |
+| `VAULT_PASSWORD`   | Admin password of your choice |
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `common` to create the LXC container.
+2. Run **Ansible** → inventory `common`, playbook `vault`.
+
+The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200`.
+
+> The unseal key and root token are saved to `/root/vault-init.json` on the container — back this file up somewhere safe.
+
+**To update Vault version** — bump `vault_version` in `ansible/roles/vault/defaults/main.yml` and re-run the Ansible workflow.
+
 ---
 
 ## CI behaviour
