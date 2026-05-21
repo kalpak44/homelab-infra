@@ -15,6 +15,14 @@
         cmd: curl -s https://fluxcd.io/install.sh | bash
         creates: /usr/local/bin/flux
 
+    - name: Uninstall existing Flux
+      ansible.builtin.shell:
+        cmd: flux uninstall --silent
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      ignore_errors: true
+      changed_when: true
+
     - name: Create cert-manager namespace
       ansible.builtin.shell:
         cmd: kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
