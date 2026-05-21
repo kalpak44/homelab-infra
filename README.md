@@ -35,7 +35,12 @@ pveum role add Terraform \
   --privs "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Migrate,VM.PowerMgmt,SDN.Use"
 
 pveum user add terraform@pve --comment "Terraform automation"
+
+# Grant role at root path (VMs, nodes)
 pveum aclmod / --user terraform@pve --role Terraform
+
+# Grant role on local storage (required for LXC template management)
+pveum aclmod /storage/local --user terraform@pve --role Terraform
 
 # Prints the token secret — copy it, shown only once
 pveum user token add terraform@pve terraform --privsep 0
