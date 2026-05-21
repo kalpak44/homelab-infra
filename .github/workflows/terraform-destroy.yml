@@ -1,0 +1,40 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment to destroy"
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
+
+jobs:
+  destroy:
+    name: Destroy / ${{ inputs.env }}
+    runs-on: self-hosted
+    environment: ${{ inputs.env }}
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ inputs.env }}
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
+
+      - name: Destroy
+        run: |
+          terraform destroy -auto-approve \
+            -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
+            -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
+            -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}"
