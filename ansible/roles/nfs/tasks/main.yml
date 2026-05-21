@@ -24,8 +24,8 @@
     mode: "0644"
   notify: Restart ganesha
 
-- name: Enable and start ganesha
+- name: Enable and restart ganesha
   ansible.builtin.systemd:
     name: nfs-ganesha
     enabled: true
-    state: started
+    state: restarted
