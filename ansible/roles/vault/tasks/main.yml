@@ -25,6 +25,7 @@
     name: "vault={{ vault_version }}-1"
     state: present
     update_cache: true
+    allow_downgrade: true
 
 - name: Create data directory
   ansible.builtin.file:
