@@ -26,6 +26,11 @@
     state: present
     update_cache: true
 
+- name: Initialize cluster if not present
+  ansible.builtin.command:
+    cmd: "pg_createcluster {{ postgresql_version }} main"
+    creates: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+
 - name: Ensure PostgreSQL is running
   ansible.builtin.systemd:
     name: postgresql
