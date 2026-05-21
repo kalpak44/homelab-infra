@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: nginx:stable-alpine
+          image: ghcr.io/kalpak44/kalpak44:955c338
           ports:
             - containerPort: 80

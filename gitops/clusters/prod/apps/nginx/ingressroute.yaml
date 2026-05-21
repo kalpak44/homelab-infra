@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`nginx.pavel-usanli.online`)
+    - match: Host(`pavel-usanli.online`)
       kind: Rule
       services:
         - name: nginx
