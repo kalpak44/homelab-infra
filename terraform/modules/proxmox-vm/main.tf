@@ -36,6 +36,10 @@ resource "proxmox_virtual_environment_vm" "this" {
       }
     }
 
+    user_account {
+      keys = var.ssh_public_keys
+    }
+
     user_data_file_id = var.cloud_init_file_id
   }
 

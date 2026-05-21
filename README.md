@@ -337,6 +337,38 @@ Redis + Redis Commander web UI running in a single LXC container (`common` env, 
 
 Redis listens on `192.168.1.6:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081`.
 
+### Kubernetes cluster (prod)
+
+MicroK8s two-node cluster with an external HAProxy load balancer and NFS storage, all in the `prod` env.
+
+| Host | Type | IP | Spec | Role |
+|---|---|---|---|---|
+| `prod-k8s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | MicroK8s node 1 |
+| `prod-k8s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | MicroK8s node 2 |
+| `prod-lb` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
+| `prod-nfs` | LXC | 192.168.1.108 | 1 CPU / 1 GB / 50 GB | NFS server — persistent volume storage |
+| MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
+
+**Traffic flow:**
+```
+Internet → HAProxy (192.168.1.109) → MetalLB IP → Traefik → CrowdSec middleware → apps
+```
+
+**In-cluster components** (deployed via Flux CD):
+- **MetalLB** — assigns IPs from the `192.168.1.120–130` pool to LoadBalancer services
+- **Traefik** — ingress controller (gets a MetalLB IP)
+- **CrowdSec** — DaemonSet + Traefik bouncer middleware for all ingress traffic
+- **Flux CD** — GitOps operator watching `gitops/clusters/prod/`
+- **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into K8s secrets
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `prod` to create all four resources.
+2. Run **Ansible** → inventory `prod`, playbook `microk8s` (builds and joins the cluster).
+3. Run **Ansible** → inventory `prod`, playbook `haproxy` (configures the load balancer).
+4. Run **Ansible** → inventory `prod`, playbook `nfs` (sets up exports + NFS CSI config).
+5. Bootstrap Flux CD pointing at `gitops/clusters/prod/` in this repo.
+
 ---
 
 ## CI behaviour
