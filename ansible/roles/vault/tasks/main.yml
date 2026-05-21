@@ -171,7 +171,6 @@
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
   when: vault_username != "" and vault_password != ""
-  no_log: true
 
 - name: Remove user payload temp file
   ansible.builtin.file:
