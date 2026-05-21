@@ -7,7 +7,7 @@ spec:
   dependsOn:
     - name: traefik
     - name: cert-manager-config
-  interval: 10m
+  interval: 30s
   path: ./gitops/clusters/prod/apps/nginx
   prune: true
   sourceRef:
