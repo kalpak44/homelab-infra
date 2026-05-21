@@ -1,7 +1,7 @@
 module "dev_vm" {
   source = "../../modules/proxmox-vm"
 
-  node_name      = "pve"
+  node_name      = "proxmox"
   vm_name        = "dev-hello-world"
   vm_id          = 200
   template_vm_id = 9000

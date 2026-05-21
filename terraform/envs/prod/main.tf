@@ -1,7 +1,7 @@
 module "prod_vm" {
   source = "../../modules/proxmox-vm"
 
-  node_name      = "pve"
+  node_name      = "proxmox"
   vm_name        = "prod-hello-world"
   vm_id          = 100
   template_vm_id = 9000
