@@ -5,7 +5,7 @@ provider "proxmox" {
 
   ssh {
     username    = "root"
-    private_key = var.proxmox_ssh_private_key
+    private_key = var.ssh_private_key
   }
 }
 
@@ -23,7 +23,7 @@ variable "proxmox_password" {
   sensitive = true
 }
 
-variable "proxmox_ssh_private_key" {
+variable "ssh_private_key" {
   type      = string
   sensitive = true
   default   = ""
