@@ -3,7 +3,7 @@ module "dev_vm" {
 
   node_name      = "proxmox"
   vm_name        = "dev-hello-world"
-  vm_id          = 200
+  vm_id          = 201
   template_vm_id = 9000
 
   cpu_cores    = 2

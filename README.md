@@ -169,11 +169,42 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `PROXMOX_ENDPOINT`        | `https://<proxmox-ip>:8006`                                                  |
 | `PROXMOX_USERNAME`        | `terraform@pve!terraform`                                                    |
 | `PROXMOX_PASSWORD`        | Proxmox API token secret from step 2a                                        |
+   | `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
+
+### 3b. Proxmox — TLS certificate via Let's Encrypt
+
+The default Proxmox cert is signed by its own internal CA, which browsers don't trust. Replace it with a Let's Encrypt cert using the Cloudflare DNS-01 challenge — no need to expose port 80.
+
+**Get a Cloudflare API token** — My Profile → API Tokens → Create Token → Edit zone DNS → scope to `your-domain.com`. Copy the token.
+
+**Run on the Proxmox node:**
+
+```bash
+# Register a Let's Encrypt account (once)
+pvenode acme account register default your@email.com \
+  --directory https://acme-v02.api.letsencrypt.org/directory
+
+# Add Cloudflare DNS plugin (--data expects a file, not inline value)
+echo "CF_Token=<cloudflare-api-token>" > /tmp/cf.env
+pvenode acme plugin add dns cloudflare --api cf --data /tmp/cf.env
+rm /tmp/cf.env
+
+# Set the domain on this node
+pvenode config set \
+  --acme account=default \
+  --acmedomain0 domain=<proxmox-hostname>.<your-domain>,plugin=cloudflare
+
+# Issue the certificate (~30 seconds)
+pvenode acme cert order
+```
+
+Proxmox renews the certificate automatically via a built-in systemd timer — nothing else is needed.
 
 ### 4. GitHub — create environments (optional, for a prod gate)
 
-Go to **Settings → Environments** and create `dev` and `prod`.
-Add a required reviewer to `prod` to require manual approval before applying.
+Go to **Settings → Environments** and create three environments: `common`, `dev`, and `prod`.
+
+Add a required reviewer to `prod` to require manual approval before applying — `common` and `dev` apply automatically on push to `main`.
 
 ---
 
@@ -181,8 +212,9 @@ Add a required reviewer to `prod` to require manual approval before applying.
 
 | Event                       | Workflow              | What it does                              |
 |-----------------------------|-----------------------|-------------------------------------------|
-| Push to `main` (terraform/) | `terraform-apply.yml` | Applies dev automatically                 |
+| Push to `main` (terraform/) | `terraform-apply.yml` | Applies common + dev automatically        |
 | Manual dispatch             | `terraform-apply.yml` | Applies chosen env (use for prod)         |
+| Manual dispatch             | `terraform-destroy.yml` | Destroys chosen env                     |
 | Manual dispatch             | `ansible.yml`         | Runs chosen playbook against chosen env   |
 
 ---
