@@ -33,7 +33,7 @@
     state: present
     update_cache: true
     allow_downgrade: true
-  when: vault_installed_ver.stdout != "{{ vault_version }}-1"
+  when: vault_installed_ver.stdout != vault_version + "-1"
   notify: Restart Vault
 
 - name: Create data directory
