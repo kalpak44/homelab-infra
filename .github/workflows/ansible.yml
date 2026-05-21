@@ -25,7 +25,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run playbook
+        working-directory: ansible
         run: |
           ansible-playbook \
-            -i ansible/inventories/${{ inputs.inventory }}.yml \
-            ansible/playbooks/${{ inputs.playbook }}.yml
+            -i inventories/${{ inputs.inventory }}.yml \
+            playbooks/${{ inputs.playbook }}.yml
