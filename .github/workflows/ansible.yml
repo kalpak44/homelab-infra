@@ -14,7 +14,7 @@ on:
         required: true
         default: adguard
         type: choice
-        options: [adguard, vault, docker, postgresql, pgadmin]
+        options: [adguard, vault, docker, postgresql, pgadmin, redis]
 
 jobs:
   run:
@@ -47,4 +47,7 @@ jobs:
             -e postgresql_user="${{ secrets.POSTGRESQL_USER }}" \
             -e postgresql_password="${{ secrets.POSTGRESQL_PASSWORD }}" \
             -e pgadmin_email="${{ secrets.PGADMIN_EMAIL }}" \
-            -e pgadmin_password="${{ secrets.PGADMIN_PASSWORD }}"
+            -e pgadmin_password="${{ secrets.PGADMIN_PASSWORD }}" \
+            -e redis_password="${{ secrets.REDIS_PASSWORD }}" \
+            -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
+            -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}"

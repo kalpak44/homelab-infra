@@ -1,0 +1,50 @@
+---
+- name: Install Redis and Node.js
+  ansible.builtin.apt:
+    name: [redis-server, nodejs, npm]
+    state: present
+    update_cache: true
+
+- name: Set Redis password
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^#?requirepass"
+    line: "requirepass {{ redis_password }}"
+  notify: Restart Redis
+  no_log: true
+
+- name: Bind Redis to all interfaces
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^bind "
+    line: "bind 0.0.0.0"
+  notify: Restart Redis
+
+- name: Flush handlers to apply Redis config
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Redis is running
+  ansible.builtin.systemd:
+    name: redis-server
+    state: started
+    enabled: true
+
+- name: Install redis-commander
+  ansible.builtin.command:
+    cmd: npm install -g redis-commander
+    creates: /usr/local/bin/redis-commander
+
+- name: Deploy redis-commander systemd service
+  ansible.builtin.template:
+    src: redis-commander.service.j2
+    dest: /etc/systemd/system/redis-commander.service
+    mode: "0644"
+  notify: Restart redis-commander
+  no_log: true
+
+- name: Ensure redis-commander is running
+  ansible.builtin.systemd:
+    name: redis-commander
+    state: started
+    enabled: true
+    daemon_reload: true

@@ -191,6 +191,9 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `POSTGRESQL_PASSWORD`     | PostgreSQL application user password                                          |
 | `PGADMIN_EMAIL`           | pgAdmin admin login email of your choice                                      |
 | `PGADMIN_PASSWORD`        | pgAdmin admin password of your choice                                         |
+| `REDIS_PASSWORD`          | Redis auth password                                                           |
+| `REDIS_COMMANDER_USER`    | Redis Commander web UI username                                               |
+| `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
 
 ### 3b. Proxmox — TLS certificate via Let's Encrypt
 
@@ -314,6 +317,25 @@ pgAdmin is available at `http://192.168.1.5`. To connect to PostgreSQL, add a ne
 - **Host:** `192.168.1.4`
 - **Port:** `5432`
 - **Username / Password:** the `POSTGRESQL_USER` / `POSTGRESQL_PASSWORD` secrets above
+
+### Redis
+
+Redis + Redis Commander web UI running in a single LXC container (`common` env, `192.168.1.6`).
+
+**Secrets required** (GitHub → Settings → Secrets → Actions):
+
+| Secret                     | Value                                    |
+|----------------------------|------------------------------------------|
+| `REDIS_PASSWORD`           | Redis auth password                      |
+| `REDIS_COMMANDER_USER`     | Redis Commander web UI username          |
+| `REDIS_COMMANDER_PASSWORD` | Redis Commander web UI password          |
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `common` to create the LXC container.
+2. Run **Ansible** → inventory `common`, playbook `redis`.
+
+Redis listens on `192.168.1.6:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081`.
 
 ---
 

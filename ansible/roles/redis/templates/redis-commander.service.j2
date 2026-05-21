@@ -1,0 +1,18 @@
+[Unit]
+Description=Redis Commander
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/redis-commander \
+  --port {{ redis_commander_port }} \
+  --redis-port {{ redis_port }} \
+  --redis-password {{ redis_password }} \
+  --http-auth-username {{ redis_commander_user }} \
+  --http-auth-password {{ redis_commander_password }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
