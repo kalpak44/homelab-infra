@@ -126,7 +126,7 @@ module "prod_nfs" {
 
   memory_mb    = 1024
   cpu_cores    = 1
-  disk_size_gb = 50
+  disk_size_gb = 256
 
   ssh_public_keys = [var.ssh_public_key]
 }
