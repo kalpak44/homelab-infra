@@ -86,5 +86,5 @@ jobs:
             -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
             -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \
             -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}" \
-            -e github_token="${{ secrets.GITHUB_TOKEN }}" \
+            -e flux_github_token="${{ secrets.FLUX_GITHUB_TOKEN }}" \
             -e cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"

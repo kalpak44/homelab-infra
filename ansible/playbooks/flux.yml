@@ -43,5 +43,5 @@
           --path={{ flux_path }}
           --token-auth
       environment:
-        GITHUB_TOKEN: "{{ github_token }}"
+        GITHUB_TOKEN: "{{ flux_github_token }}"
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
