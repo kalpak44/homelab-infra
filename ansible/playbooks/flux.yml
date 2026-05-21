@@ -30,9 +30,7 @@
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: true
-      when:
-        - flux_reinstall | default(false) | bool
-        - flux_installed.rc == 0
+      when: flux_installed.rc == 0
 
     - name: Wait for flux-system namespace to be fully removed
       ansible.builtin.shell:
@@ -45,9 +43,7 @@
       delay: 5
       ignore_errors: true
       changed_when: false
-      when:
-        - flux_reinstall | default(false) | bool
-        - flux_installed.rc == 0
+      when: flux_installed.rc == 0
 
     - name: Create cert-manager namespace
       ansible.builtin.shell:
