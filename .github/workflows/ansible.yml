@@ -31,7 +31,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
 
       - name: Install Python deps for Ansible filters
-        run: pip install passlib
+        run: sudo apt-get install -y python3-passlib
 
       - name: Run playbook
         working-directory: ansible
