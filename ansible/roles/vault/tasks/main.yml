@@ -131,7 +131,7 @@
   register: auth_enable
   failed_when:
     - auth_enable.rc != 0
-    - "'already enabled' not in auth_enable.stderr"
+    - "'already in use' not in auth_enable.stderr"
   changed_when: auth_enable.rc == 0
   when: vault_username != "" and vault_password != ""
   no_log: true
