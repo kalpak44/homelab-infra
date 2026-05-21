@@ -1,0 +1,19 @@
+NFS_CORE_PARAM {
+    mount_path_pseudo = true;
+    Protocols = 4;
+}
+
+EXPORT {
+    Export_Id = 1;
+    Path = {{ nfs_export_path }};
+    Pseudo = {{ nfs_export_path }};
+    Protocols = 4;
+    Transports = TCP;
+    Access_Type = RW;
+    Squash = No_Root_Squash;
+    SecType = sys;
+
+    FSAL {
+        Name = VFS;
+    }
+}

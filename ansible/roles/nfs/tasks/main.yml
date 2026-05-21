@@ -1,7 +1,9 @@
 ---
-- name: Install nfs-kernel-server
+- name: Install nfs-ganesha
   ansible.builtin.apt:
-    name: nfs-kernel-server
+    name:
+      - nfs-ganesha
+      - nfs-ganesha-vfs
     state: present
     update_cache: true
 
@@ -13,17 +15,17 @@
     group: nogroup
     mode: "0777"
 
-- name: Configure exports
+- name: Configure ganesha
   ansible.builtin.template:
-    src: exports.j2
-    dest: /etc/exports
+    src: ganesha.conf.j2
+    dest: /etc/ganesha/ganesha.conf
     owner: root
     group: root
     mode: "0644"
-  notify: Reload NFS exports
+  notify: Restart ganesha
 
-- name: Enable and start NFS server
+- name: Enable and start ganesha
   ansible.builtin.systemd:
-    name: nfs-kernel-server
+    name: nfs-ganesha
     enabled: true
     state: started

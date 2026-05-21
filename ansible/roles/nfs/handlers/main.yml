@@ -1,4 +1,5 @@
 ---
-- name: Reload NFS exports
-  ansible.builtin.command: exportfs -ra
-  changed_when: false
+- name: Restart ganesha
+  ansible.builtin.systemd:
+    name: nfs-ganesha
+    state: restarted
