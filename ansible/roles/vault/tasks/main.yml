@@ -20,12 +20,21 @@
     filename: hashicorp
     state: present
 
+- name: Check installed Vault version
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${Version}' vault
+  register: vault_installed_ver
+  changed_when: false
+  failed_when: false
+
 - name: Install Vault
   ansible.builtin.apt:
     name: "vault={{ vault_version }}-1"
     state: present
     update_cache: true
     allow_downgrade: true
+  when: vault_installed_ver.stdout != "{{ vault_version }}-1"
+  notify: Restart Vault
 
 - name: Create data directory
   ansible.builtin.file:
