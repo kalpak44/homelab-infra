@@ -7,13 +7,21 @@ on:
         description: "Service to destroy"
         required: true
         type: choice
-        options: [adguard, vault, postgresql, pgadmin, redis, microk8s, haproxy, nfs]
+        options:
+          - common/adguard
+          - common/vault
+          - common/postgresql
+          - common/pgadmin
+          - common/redis
+          - prod/microk8s
+          - prod/haproxy
+          - prod/nfs
 
 jobs:
   destroy:
     name: Destroy / ${{ inputs.service }}
     runs-on: self-hosted
-    environment: ${{ contains(fromJson('["microk8s","haproxy","nfs"]'), inputs.service) && 'prod' || 'common' }}
+    environment: ${{ startsWith(inputs.service, 'prod/') && 'prod' || 'common' }}
 
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -27,23 +35,17 @@ jobs:
       - name: Resolve env and targets
         id: ctx
         run: |
-          case "${{ inputs.service }}" in
-            adguard)    echo "env=common" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.adguard" >> $GITHUB_OUTPUT ;;
-            vault)      echo "env=common" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.vault" >> $GITHUB_OUTPUT ;;
-            postgresql) echo "env=common" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.postgresql" >> $GITHUB_OUTPUT ;;
-            pgadmin)    echo "env=common" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.pgadmin" >> $GITHUB_OUTPUT ;;
-            redis)      echo "env=common" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.redis" >> $GITHUB_OUTPUT ;;
-            microk8s)   echo "env=prod" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.prod_k8s_1 -target=module.prod_k8s_2" >> $GITHUB_OUTPUT ;;
-            haproxy)    echo "env=prod" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.prod_lb" >> $GITHUB_OUTPUT ;;
-            nfs)        echo "env=prod" >> $GITHUB_OUTPUT
-                        echo "targets=-target=module.prod_nfs" >> $GITHUB_OUTPUT ;;
+          SERVICE="${{ inputs.service }}"
+          echo "env=${SERVICE%%/*}" >> $GITHUB_OUTPUT
+          case "$SERVICE" in
+            common/adguard)    echo "targets=-target=module.adguard"    >> $GITHUB_OUTPUT ;;
+            common/vault)      echo "targets=-target=module.vault"      >> $GITHUB_OUTPUT ;;
+            common/postgresql) echo "targets=-target=module.postgresql" >> $GITHUB_OUTPUT ;;
+            common/pgadmin)    echo "targets=-target=module.pgadmin"    >> $GITHUB_OUTPUT ;;
+            common/redis)      echo "targets=-target=module.redis"      >> $GITHUB_OUTPUT ;;
+            prod/microk8s)     echo "targets=-target=module.prod_k8s_1 -target=module.prod_k8s_2" >> $GITHUB_OUTPUT ;;
+            prod/haproxy)      echo "targets=-target=module.prod_lb"    >> $GITHUB_OUTPUT ;;
+            prod/nfs)          echo "targets=-target=module.prod_nfs"   >> $GITHUB_OUTPUT ;;
           esac
 
       - name: Terraform Init
