@@ -121,8 +121,9 @@ module "prod_nfs" {
   hostname         = "prod-nfs"
   template_file_id = proxmox_download_file.ubuntu_lxc.id
 
-  ip_address = "192.168.1.108/24"
-  gateway    = "192.168.1.1"
+  ip_address   = "192.168.1.108/24"
+  gateway      = "192.168.1.1"
+  unprivileged = false
 
   memory_mb    = 1024
   cpu_cores    = 1

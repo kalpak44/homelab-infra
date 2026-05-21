@@ -63,3 +63,9 @@ variable "network_bridge" {
   type        = string
   default     = "vmbr0"
 }
+
+variable "unprivileged" {
+  description = "Run as unprivileged container"
+  type        = bool
+  default     = true
+}
