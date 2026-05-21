@@ -56,6 +56,7 @@
     group: root
     mode: "0600"
   when: adguard_password != ""
+  notify: Restart AdGuard Home
 
 - name: Check if AdGuard Home service unit exists
   ansible.builtin.stat:
