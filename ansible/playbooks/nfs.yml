@@ -1,0 +1,7 @@
+---
+- name: Configure NFS server
+  hosts: prod-nfs
+  become: true
+
+  roles:
+    - nfs
