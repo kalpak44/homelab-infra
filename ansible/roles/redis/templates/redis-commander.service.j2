@@ -7,6 +7,7 @@ Type=simple
 EnvironmentFile=/etc/redis-commander.env
 ExecStart=/usr/local/bin/redis-commander \
   --port {{ redis_commander_port }} \
+  --redis-host 127.0.0.1 \
   --redis-port {{ redis_port }} \
   --redis-password ${REDIS_PASSWORD} \
   --http-auth-username ${REDIS_COMMANDER_USER} \
