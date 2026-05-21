@@ -1,0 +1,13 @@
+ui = true
+
+storage "file" {
+  path = "{{ vault_data_dir }}"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:{{ vault_api_port }}"
+  tls_disable = true
+}
+
+api_addr     = "http://{{ ansible_host }}:{{ vault_api_port }}"
+cluster_addr = "http://{{ ansible_host }}:{{ vault_cluster_port }}"

@@ -14,7 +14,7 @@ on:
         required: true
         default: adguard
         type: choice
-        options: [adguard, bootstrap, docker, k3s]
+        options: [adguard, vault, bootstrap, docker, k3s]
 
 jobs:
   run:

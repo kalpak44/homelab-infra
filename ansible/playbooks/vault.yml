@@ -1,0 +1,8 @@
+---
+- name: Configure HashiCorp Vault
+  hosts: vault
+  become: false
+  gather_facts: true
+
+  roles:
+    - vault
