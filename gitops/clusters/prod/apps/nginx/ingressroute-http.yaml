@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: nginx-http
+  namespace: nginx
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`nginx.pavel-usanli.online`)
+      kind: Rule
+      middlewares:
+        - name: redirect-https
+      services:
+        - name: nginx
+          port: 80
