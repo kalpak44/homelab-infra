@@ -254,7 +254,7 @@ Secret manager running in an LXC container (`common` env, `192.168.1.3`).
 1. Run **Terraform Apply** → `common` to create the LXC container.
 2. Run **Ansible** → inventory `common`, playbook `vault`.
 
-The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200`.
+The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3`.
 
 > The unseal key and root token are saved to `/root/vault-init.json` on the container — back this file up somewhere safe.
 
