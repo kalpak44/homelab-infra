@@ -19,15 +19,39 @@
     path: "{{ adguard_install_dir }}/AdGuardHome"
   register: adguard_binary
 
+- name: Create install directory
+  ansible.builtin.file:
+    path: "{{ adguard_install_dir }}"
+    state: directory
+    mode: "0755"
+  when: not adguard_binary.stat.exists
+
+- name: Download AdGuard Home tarball
+  ansible.builtin.get_url:
+    url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/v{{ adguard_version }}/AdGuardHome_linux_amd64.tar.gz"
+    dest: /tmp/AdGuardHome.tar.gz
+    mode: "0644"
+  when: not adguard_binary.stat.exists
+
+- name: Extract AdGuard Home
+  ansible.builtin.unarchive:
+    src: /tmp/AdGuardHome.tar.gz
+    dest: /tmp
+    remote_src: true
+  when: not adguard_binary.stat.exists
+
+- name: Move binary to install directory
+  ansible.builtin.copy:
+    src: /tmp/AdGuardHome/AdGuardHome
+    dest: "{{ adguard_install_dir }}/AdGuardHome"
+    remote_src: true
+    mode: "0755"
+  when: not adguard_binary.stat.exists
+
 - name: Check if AdGuard Home service unit exists
   ansible.builtin.stat:
     path: /etc/systemd/system/AdGuardHome.service
   register: adguard_service
-
-- name: Download and install AdGuard Home
-  ansible.builtin.shell:
-    cmd: curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
-  when: not adguard_binary.stat.exists
 
 - name: Register AdGuard Home as a systemd service
   ansible.builtin.command:
