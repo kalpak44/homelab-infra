@@ -29,6 +29,10 @@ resource "proxmox_virtual_environment_vm" "this" {
   }
 
   initialization {
+    dns {
+      servers = ["1.1.1.1", "8.8.8.8"]
+    }
+
     ip_config {
       ipv4 {
         address = var.ip_address
