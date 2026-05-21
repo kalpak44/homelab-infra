@@ -23,6 +23,8 @@ jobs:
     name: Deploy / ${{ inputs.service }}
     runs-on: self-hosted
     environment: ${{ startsWith(inputs.service, 'prod/') && 'prod' || 'common' }}
+    permissions:
+      contents: write
 
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
