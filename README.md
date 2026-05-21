@@ -180,8 +180,17 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `PROXMOX_ENDPOINT`        | `https://<proxmox-ip>:8006`                                                  |
 | `PROXMOX_USERNAME`        | `terraform@pve!terraform`                                                    |
 | `PROXMOX_PASSWORD`        | Proxmox API token secret from step 2a                                        |
-   | `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
+| `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
 | `SSH_PRIVATE_KEY`         | Contents of `~/.ssh/id_ed25519` on the Proxmox node (for Ansible)            |
+| `ADGUARD_USERNAME`        | AdGuard admin username of your choice                                         |
+| `ADGUARD_PASSWORD`        | AdGuard admin password of your choice                                         |
+| `VAULT_USERNAME`          | Vault admin username of your choice                                           |
+| `VAULT_PASSWORD`          | Vault admin password of your choice                                           |
+| `POSTGRESQL_DB`           | PostgreSQL database name to create                                            |
+| `POSTGRESQL_USER`         | PostgreSQL application user to create                                         |
+| `POSTGRESQL_PASSWORD`     | PostgreSQL application user password                                          |
+| `PGADMIN_EMAIL`           | pgAdmin admin login email of your choice                                      |
+| `PGADMIN_PASSWORD`        | pgAdmin admin password of your choice                                         |
 
 ### 3b. Proxmox — TLS certificate via Let's Encrypt
 
@@ -228,8 +237,8 @@ DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
 
 **Secrets required** (GitHub → Settings → Secrets → Actions):
 
-| Secret               | Value                        |
-|----------------------|------------------------------|
+| Secret               | Value                         |
+|----------------------|-------------------------------|
 | `ADGUARD_USERNAME`   | Admin username of your choice |
 | `ADGUARD_PASSWORD`   | Admin password of your choice |
 
@@ -265,6 +274,46 @@ The playbook initialises Vault (if not already done), unseals it, enables userpa
 > The unseal key and root token are saved to `/root/vault-init.json` on the container — back this file up somewhere safe.
 
 **To update Vault version** — bump `vault_version` in `ansible/roles/vault/defaults/main.yml` and re-run the Ansible workflow.
+
+### PostgreSQL
+
+Database server running in an LXC container (`common` env, `192.168.1.4`).
+
+**Secrets required** (GitHub → Settings → Secrets → Actions):
+
+| Secret                  | Value                                     |
+|-------------------------|-------------------------------------------|
+| `POSTGRESQL_DB`         | Database name to create                   |
+| `POSTGRESQL_USER`       | Application user to create                |
+| `POSTGRESQL_PASSWORD`   | Password for the application user         |
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `common` to create the LXC container.
+2. Run **Ansible** → inventory `common`, playbook `postgresql`.
+
+PostgreSQL 16 listens on `192.168.1.4:5432`. The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
+
+### pgAdmin
+
+Web-based PostgreSQL management UI running in an LXC container (`common` env, `192.168.1.5`).
+
+**Secrets required** (GitHub → Settings → Secrets → Actions):
+
+| Secret              | Value                              |
+|---------------------|------------------------------------|
+| `PGADMIN_EMAIL`     | Admin login email of your choice   |
+| `PGADMIN_PASSWORD`  | Admin password of your choice      |
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `common` to create the LXC container.
+2. Run **Ansible** → inventory `common`, playbook `pgadmin`.
+
+pgAdmin is available at `http://192.168.1.5`. To connect to PostgreSQL, add a new server in the UI:
+- **Host:** `192.168.1.4`
+- **Port:** `5432`
+- **Username / Password:** the `POSTGRESQL_USER` / `POSTGRESQL_PASSWORD` secrets above
 
 ---
 

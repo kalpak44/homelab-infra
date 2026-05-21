@@ -1,0 +1,6 @@
+---
+pgadmin_port: 80
+pgadmin_email: ""
+pgadmin_password: ""
+pgadmin_postgres_host: "192.168.1.4"
+pgadmin_postgres_port: 5432

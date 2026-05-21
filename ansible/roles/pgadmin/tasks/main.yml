@@ -1,0 +1,43 @@
+---
+- name: Install dependencies
+  ansible.builtin.apt:
+    name: [curl, gnupg]
+    state: present
+    update_cache: true
+
+- name: Add pgAdmin4 GPG key
+  ansible.builtin.shell:
+    cmd: >
+      curl -fsS https://www.pgadmin.org/static/packages_pgadmin_org.pub |
+      gpg --dearmor -o /usr/share/keyrings/packages-pgadmin-org.gpg
+    creates: /usr/share/keyrings/packages-pgadmin-org.gpg
+
+- name: Add pgAdmin4 apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/packages-pgadmin-org.gpg]
+      https://ftp.postgresql.org/pub/pgadmin/pgadmin4/apt/{{ ansible_distribution_release }} pgadmin4 main
+    filename: pgadmin4
+    state: present
+
+- name: Install pgadmin4-web
+  ansible.builtin.apt:
+    name: pgadmin4-web
+    state: present
+    update_cache: true
+
+- name: Run pgAdmin web setup
+  ansible.builtin.shell:
+    cmd: /usr/pgadmin4/bin/setup-web.sh --yes
+    creates: /var/lib/pgadmin/pgadmin4.db
+  environment:
+    PGADMIN_SETUP_EMAIL: "{{ pgadmin_email }}"
+    PGADMIN_SETUP_PASSWORD: "{{ pgadmin_password }}"
+  no_log: true
+  notify: Restart Apache2
+
+- name: Ensure Apache2 is running
+  ansible.builtin.systemd:
+    name: apache2
+    state: started
+    enabled: true

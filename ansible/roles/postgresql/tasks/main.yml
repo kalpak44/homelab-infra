@@ -1,0 +1,68 @@
+---
+- name: Install PostgreSQL
+  ansible.builtin.apt:
+    name: "postgresql-{{ postgresql_version }}"
+    state: present
+    update_cache: true
+
+- name: Ensure PostgreSQL is running
+  ansible.builtin.systemd:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Configure listen addresses
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+    regexp: "^#?listen_addresses"
+    line: "listen_addresses = '*'"
+  notify: Restart PostgreSQL
+
+- name: Deploy pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart PostgreSQL
+
+- name: Flush handlers to apply config before creating objects
+  ansible.builtin.meta: flush_handlers
+
+- name: Create application user
+  ansible.builtin.command:
+    cmd: >
+      psql -c "DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgresql_user }}') THEN
+          CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}';
+        ELSE
+          ALTER USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}';
+        END IF;
+      END $$;"
+  become: true
+  become_user: postgres
+  changed_when: true
+  when: postgresql_user != "" and postgresql_password != ""
+  no_log: true
+
+- name: Create application database
+  ansible.builtin.command:
+    cmd: >
+      psql -c "SELECT 1 FROM pg_database WHERE datname = '{{ postgresql_db }}'"
+  become: true
+  become_user: postgres
+  register: db_check
+  changed_when: false
+  when: postgresql_db != ""
+
+- name: Create database if not exists
+  ansible.builtin.command:
+    cmd: "createdb -O {{ postgresql_user }} {{ postgresql_db }}"
+  become: true
+  become_user: postgres
+  when:
+    - postgresql_db != ""
+    - postgresql_user != ""
+    - db_check.stdout is not search("1 row")

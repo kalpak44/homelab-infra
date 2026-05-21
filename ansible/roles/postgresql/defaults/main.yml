@@ -1,0 +1,6 @@
+---
+postgresql_version: "16"
+postgresql_port: 5432
+postgresql_db: ""
+postgresql_user: ""
+postgresql_password: ""

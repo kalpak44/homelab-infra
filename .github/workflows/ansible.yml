@@ -14,7 +14,7 @@ on:
         required: true
         default: adguard
         type: choice
-        options: [adguard, vault, bootstrap, docker, k3s]
+        options: [adguard, vault, bootstrap, docker, postgresql, pgadmin]
 
 jobs:
   run:
@@ -42,4 +42,9 @@ jobs:
             -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
             -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
             -e vault_username="${{ secrets.VAULT_USERNAME }}" \
-            -e vault_password="${{ secrets.VAULT_PASSWORD }}"
+            -e vault_password="${{ secrets.VAULT_PASSWORD }}" \
+            -e postgresql_db="${{ secrets.POSTGRESQL_DB }}" \
+            -e postgresql_user="${{ secrets.POSTGRESQL_USER }}" \
+            -e postgresql_password="${{ secrets.POSTGRESQL_PASSWORD }}" \
+            -e pgadmin_email="${{ secrets.PGADMIN_EMAIL }}" \
+            -e pgadmin_password="${{ secrets.PGADMIN_PASSWORD }}"
