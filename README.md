@@ -161,6 +161,12 @@ sudo ./svc.sh start
 sudo ./svc.sh status
 ```
 
+Enable the VM to start automatically when the Proxmox host reboots (run on the Proxmox node):
+
+```bash
+qm set 101 --onboot 1
+```
+
 ### 3. GitHub — add repository secrets
 
 Go to **Settings → Secrets and variables → Actions → New repository secret** and add:
