@@ -214,6 +214,32 @@ Add a required reviewer to `prod` to require manual approval before applying —
 
 ---
 
+## Services
+
+### AdGuard Home
+
+DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
+
+**Secrets required** (GitHub → Settings → Secrets → Actions):
+
+| Secret               | Value                        |
+|----------------------|------------------------------|
+| `ADGUARD_USERNAME`   | Admin username of your choice |
+| `ADGUARD_PASSWORD`   | Admin password of your choice |
+
+**Deploy:**
+
+1. Run **Terraform Apply** → `common` to create the LXC container.
+2. Run **Ansible** → inventory `common`, playbook `adguard`.
+
+AdGuard Home is available at `http://192.168.1.2` — no setup wizard, credentials are set from the secrets above.
+
+**Point your router's DNS to `192.168.1.2`** (or set it per-device) to start filtering.
+
+**To update AdGuard version** — bump `adguard_version` in `ansible/roles/adguard/defaults/main.yml` and re-run the Ansible workflow.
+
+---
+
 ## CI behaviour
 
 | Event                       | Workflow              | What it does                              |
