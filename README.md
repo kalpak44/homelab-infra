@@ -246,7 +246,7 @@ Secret manager running in an LXC container (`common` env, `192.168.1.3`).
 
 | Secret             | Value                        |
 |--------------------|------------------------------|
-| `VAULT_USERNAME`   | Admin username of your choice |
+| `VAULT_USERNAME`   | Admin username — alphanumeric only, no `@` or special chars |
 | `VAULT_PASSWORD`   | Admin password of your choice |
 
 **Deploy:**
