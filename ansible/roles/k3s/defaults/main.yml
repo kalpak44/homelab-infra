@@ -1,3 +1,1 @@
 ---
-k3s_version: ""  # empty = latest stable; pin with e.g. "v1.32.4+k3s1"
-k3s_server_ip: "192.168.1.110"
