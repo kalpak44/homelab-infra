@@ -36,6 +36,20 @@
   no_log: true
   notify: Restart Apache2
 
+- name: Add root redirect to pgAdmin
+  ansible.builtin.copy:
+    dest: /etc/apache2/conf-available/pgadmin4-redirect.conf
+    content: |
+      RedirectMatch ^/$ /pgadmin4
+    mode: "0644"
+  notify: Restart Apache2
+
+- name: Enable redirect config
+  ansible.builtin.command:
+    cmd: a2enconf pgadmin4-redirect
+    creates: /etc/apache2/conf-enabled/pgadmin4-redirect.conf
+  notify: Restart Apache2
+
 - name: Ensure Apache2 is running
   ansible.builtin.systemd:
     name: apache2
