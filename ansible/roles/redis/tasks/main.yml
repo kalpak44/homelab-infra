@@ -34,13 +34,23 @@
     cmd: npm install -g redis-commander
     creates: /usr/local/bin/redis-commander
 
+- name: Deploy redis-commander credentials file
+  ansible.builtin.copy:
+    dest: /etc/redis-commander.env
+    mode: "0600"
+    content: |
+      REDIS_PASSWORD={{ redis_password }}
+      REDIS_COMMANDER_USER={{ redis_commander_user }}
+      REDIS_COMMANDER_PASSWORD={{ redis_commander_password }}
+  notify: Restart redis-commander
+  no_log: true
+
 - name: Deploy redis-commander systemd service
   ansible.builtin.template:
     src: redis-commander.service.j2
     dest: /etc/systemd/system/redis-commander.service
     mode: "0644"
   notify: Restart redis-commander
-  no_log: true
 
 - name: Ensure redis-commander is running
   ansible.builtin.systemd:
