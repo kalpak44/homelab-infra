@@ -1,3 +1,8 @@
+variable "ssh_public_key" {
+  type    = string
+  default = ""
+}
+
 module "dev_vm" {
   source = "../../modules/proxmox-vm"
 

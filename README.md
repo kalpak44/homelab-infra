@@ -212,8 +212,7 @@ Add a required reviewer to `prod` to require manual approval before applying —
 
 | Event                       | Workflow              | What it does                              |
 |-----------------------------|-----------------------|-------------------------------------------|
-| Push to `main` (terraform/) | `terraform-apply.yml` | Applies common + dev automatically        |
-| Manual dispatch             | `terraform-apply.yml` | Applies chosen env (use for prod)         |
+| Manual dispatch             | `terraform-apply.yml`   | Applies chosen env                      |
 | Manual dispatch             | `terraform-destroy.yml` | Destroys chosen env                     |
 | Manual dispatch             | `ansible.yml`         | Runs chosen playbook against chosen env   |
 
