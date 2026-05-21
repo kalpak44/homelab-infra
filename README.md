@@ -375,45 +375,58 @@ HAProxy stats are available at `http://192.168.1.109:8404/stats`. Traffic flow:
 
 ### Kubernetes cluster (prod)
 
-MicroK8s two-node cluster with an external HAProxy load balancer and NFS storage, all in the `prod` env.
+k3s two-node cluster with an external HAProxy load balancer and NFS storage, all in the `prod` env.
 
 | Host | Type | IP | Spec | Role |
 |---|---|---|---|---|
-| `prod-k8s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | MicroK8s node 1 |
-| `prod-k8s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | MicroK8s node 2 |
+| `prod-k8s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
+| `prod-k8s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
 | `prod-lb` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
-| `prod-nfs` | LXC | 192.168.1.108 | 1 CPU / 1 GB / 50 GB | NFS server — persistent volume storage |
+| `prod-nfs` | LXC | 192.168.1.108 | 1 CPU / 1 GB / 256 GB | NFS server — persistent volume storage |
 | MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
 
 **Traffic flow:**
 ```
-Internet → HAProxy (192.168.1.109) → MetalLB IP → Traefik → CrowdSec middleware → apps
+Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik → apps
 ```
 
-**In-cluster components** (deployed via Flux CD):
+**In-cluster components** (deployed via Flux CD, watching `gitops/clusters/prod/`):
 - **MetalLB** — assigns IPs from the `192.168.1.120–130` pool to LoadBalancer services
-- **Traefik** — ingress controller (gets a MetalLB IP)
-- **CrowdSec** — DaemonSet + Traefik bouncer middleware for all ingress traffic
-- **Flux CD** — GitOps operator watching `gitops/clusters/prod/`
-- **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into K8s secrets
+- **Traefik** — ingress controller at `192.168.1.120`, TLS via cert-manager + Let's Encrypt
+- **cert-manager** — issues certificates using Cloudflare DNS-01 for `*.pavel-usanli.online`
+- **NFS provisioner** — StorageClass `nfs` backed by `192.168.1.108:/srv/nfs/k8s`
+- **Flux CD** — GitOps operator
+- **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into k8s secrets
 
 **Deploy:**
 
-1. Run **Terraform Apply** → `prod` to create all four resources.
-2. Run **Ansible** → inventory `prod`, playbook `microk8s` (builds and joins the cluster).
-3. Run **Ansible** → inventory `prod`, playbook `haproxy` (configures the load balancer).
-4. Run **Ansible** → inventory `prod`, playbook `nfs` (sets up exports + NFS CSI config).
-5. Bootstrap Flux CD pointing at `gitops/clusters/prod/` in this repo.
+1. Run **Deploy** → `prod/k3s` (creates VMs + installs k3s)
+2. Run **Deploy** → `prod/haproxy` (creates LXC + configures HAProxy)
+3. Run **Deploy** → `prod/nfs` (creates LXC + configures NFS)
+4. Run **Deploy** → `prod/flux` (bootstraps Flux CD + deploys all in-cluster components)
+
+**kubectl access from your local machine** (on the `192.168.1.0/24` network):
+
+```bash
+# Copy kubeconfig from the control plane node
+scp ubuntu@192.168.1.110:/etc/rancher/k3s/k3s.yaml ~/.kube/homelab.yaml
+
+# Point it at the node's LAN IP (k3s defaults to 127.0.0.1)
+sed -i '' 's/127.0.0.1/192.168.1.110/' ~/.kube/homelab.yaml
+
+# Use it
+export KUBECONFIG=~/.kube/homelab.yaml
+kubectl get nodes
+```
 
 ---
 
 ## CI behaviour
 
-| Event                       | Workflow              | What it does                              |
-|-----------------------------|-----------------------|-------------------------------------------|
-| Manual dispatch             | `terraform-apply.yml`   | Applies chosen env                      |
-| Manual dispatch             | `terraform-destroy.yml` | Destroys chosen env                     |
-| Manual dispatch             | `ansible.yml`         | Runs chosen playbook against chosen env   |
+| Event            | Workflow          | What it does                                        |
+|------------------|-------------------|-----------------------------------------------------|
+| Manual dispatch  | `deploy.yml`      | Terraform apply + Ansible for the selected service  |
+| Manual dispatch  | `destroy.yml`     | Terraform destroy for the selected service          |
 
 ---
 
