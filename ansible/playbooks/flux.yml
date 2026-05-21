@@ -24,6 +24,19 @@
       changed_when: true
       when: flux_reinstall | default(false) | bool
 
+    - name: Wait for flux-system namespace to be fully removed
+      ansible.builtin.shell:
+        cmd: kubectl get namespace flux-system
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: ns_check
+      until: ns_check.rc != 0
+      retries: 24
+      delay: 5
+      ignore_errors: true
+      changed_when: false
+      when: flux_reinstall | default(false) | bool
+
     - name: Create cert-manager namespace
       ansible.builtin.shell:
         cmd: kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
