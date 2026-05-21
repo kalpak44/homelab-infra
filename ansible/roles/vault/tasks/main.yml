@@ -157,15 +157,20 @@
   when: vault_username != "" and vault_password != ""
   no_log: true
 
+- name: Debug create user URL
+  ansible.builtin.debug:
+    msg: "Creating user at: /v1/auth/userpass/users/{{ vault_username | trim | urlencode }}"
+  when: vault_username != "" and vault_password != ""
+
 - name: Create admin user
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ vault_api_port }}/v1/auth/userpass/users/{{ vault_username }}"
+    url: "http://127.0.0.1:{{ vault_api_port }}/v1/auth/userpass/users/{{ vault_username | trim | urlencode }}"
     method: POST
     headers:
       X-Vault-Token: "{{ vault_root_token }}"
     body_format: json
     body:
-      password: "{{ vault_password }}"
+      password: "{{ vault_password | trim }}"
       policies: admin
     status_code: [200, 204]
   register: vault_create_user
