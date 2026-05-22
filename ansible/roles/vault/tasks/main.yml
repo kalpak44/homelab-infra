@@ -191,3 +191,85 @@
     path: /tmp/.vault_user.json
     state: absent
   when: vault_username != "" and vault_password != ""
+
+- name: Enable KV v2 secrets engine
+  ansible.builtin.command:
+    cmd: vault secrets enable -path=secret kv-v2
+  environment:
+    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  register: kv_enable
+  failed_when:
+    - kv_enable.rc != 0
+    - "'already in use' not in kv_enable.stderr"
+  changed_when: kv_enable.rc == 0
+
+- name: Fetch k3s CA certificate from control plane
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/tls/server-ca.crt
+  delegate_to: k3s-1
+  become: true
+  register: k3s_ca_cert
+
+- name: Enable Kubernetes auth method in Vault
+  ansible.builtin.command:
+    cmd: vault auth enable kubernetes
+  environment:
+    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  register: k8s_auth_enable
+  failed_when:
+    - k8s_auth_enable.rc != 0
+    - "'already in use' not in k8s_auth_enable.stderr"
+  changed_when: k8s_auth_enable.rc == 0
+
+- name: Write k3s CA cert to temp file
+  ansible.builtin.copy:
+    content: "{{ k3s_ca_cert.content | b64decode }}"
+    dest: /tmp/.k3s-ca.crt
+    mode: "0600"
+
+- name: Configure Kubernetes auth method
+  ansible.builtin.command:
+    cmd: >
+      vault write auth/kubernetes/config
+      kubernetes_host="https://{{ k3s_api_host }}:{{ k3s_api_port }}"
+      kubernetes_ca_cert=@/tmp/.k3s-ca.crt
+  environment:
+    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  changed_when: true
+
+- name: Remove k3s CA cert temp file
+  ansible.builtin.file:
+    path: /tmp/.k3s-ca.crt
+    state: absent
+
+- name: Write external-secrets read policy
+  ansible.builtin.shell:
+    cmd: |
+      vault policy write external-secrets - <<'POLICY'
+      path "secret/data/*" {
+        capabilities = ["read"]
+      }
+      path "secret/metadata/*" {
+        capabilities = ["read", "list"]
+      }
+      POLICY
+  environment:
+    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  changed_when: true
+
+- name: Create Kubernetes auth role for external-secrets
+  ansible.builtin.command:
+    cmd: >
+      vault write auth/kubernetes/role/external-secrets
+      bound_service_account_names=external-secrets
+      bound_service_account_namespaces=external-secrets
+      policies=external-secrets
+      ttl=1h
+  environment:
+    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  changed_when: true
