@@ -16,6 +16,10 @@ resource "proxmox_download_file" "ubuntu_lxc" {
   node_name           = "proxmox"
   url                 = "http://download.proxmox.com/images/system/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
   overwrite_unmanaged = true
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 resource "proxmox_download_file" "ubuntu_cloud_image" {
@@ -25,6 +29,10 @@ resource "proxmox_download_file" "ubuntu_cloud_image" {
   url                 = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
   file_name           = "noble-server-cloudimg-amd64.img"
   overwrite_unmanaged = true
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 resource "proxmox_virtual_environment_vm" "ubuntu_template" {
