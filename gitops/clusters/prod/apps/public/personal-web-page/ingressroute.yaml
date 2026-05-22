@@ -1,8 +1,8 @@
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: nginx
-  namespace: nginx
+  name: personal-web-page
+  namespace: public
 spec:
   entryPoints:
     - websecure
@@ -10,7 +10,7 @@ spec:
     - match: Host(`pavel-usanli.online`)
       kind: Rule
       services:
-        - name: nginx
+        - name: personal-web-page
           port: 80
   tls:
-    secretName: nginx-tls
+    secretName: personal-web-page-tls

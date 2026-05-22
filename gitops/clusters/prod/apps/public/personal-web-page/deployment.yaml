@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: personal-web-page
+  namespace: public
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: personal-web-page
+  template:
+    metadata:
+      labels:
+        app: personal-web-page
+    spec:
+      containers:
+        - name: personal-web-page
+          image: ghcr.io/kalpak44/kalpak44:955c338
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3

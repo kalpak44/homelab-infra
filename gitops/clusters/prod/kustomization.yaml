@@ -8,4 +8,4 @@ resources:
   - cert-manager.yaml
   - cert-manager-config.yaml
   - nfs-provisioner.yaml
-  - nginx.yaml
+  - apps.yaml
