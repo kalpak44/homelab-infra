@@ -156,6 +156,15 @@
       path "*" {
         capabilities = ["create", "read", "update", "delete", "list", "sudo"]
       }
+      path "sys/*" {
+        capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+      }
+      path "sys/internal/ui/*" {
+        capabilities = ["read", "list"]
+      }
+      path "auth/*" {
+        capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+      }
       POLICY
   environment:
     VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
