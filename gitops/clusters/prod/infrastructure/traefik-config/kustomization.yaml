@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmchartconfig.yaml
+configMapGenerator:
+  - name: traefik-values
+    namespace: kube-system
+    files:
+      - values.yaml
+    options:
+      disableNameSuffixHash: true
+replacements:
+  - source:
+      kind: ConfigMap
+      name: traefik-values
+      fieldPath: data."values.yaml"
+    targets:
+      - select:
+          kind: HelmChartConfig
+          name: traefik
+        fieldPaths:
+          - spec.valuesContent

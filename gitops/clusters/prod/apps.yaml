@@ -5,8 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: traefik
-    - name: cert-manager-config
+    - name: traefik-config
     - name: nfs-provisioner
   interval: 30s
   path: ./gitops/clusters/prod/apps

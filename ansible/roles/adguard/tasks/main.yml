@@ -58,10 +58,10 @@
       --dns-cloudflare-propagation-seconds 30
       --non-interactive
       --agree-tos
-      --email {{ adguard_cert_email }}
+      --email {{ letsencrypt_email }}
       -d {{ adguard_tls_domain }}
     creates: "{{ adguard_cert_path }}"
-  when: adguard_tls_enabled and adguard_cert_email != ""
+  when: adguard_tls_enabled and letsencrypt_email != ""
 
 - name: Deploy certbot renewal hook to restart AdGuard
   ansible.builtin.copy:

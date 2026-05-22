@@ -72,7 +72,7 @@ jobs:
               playbooks/$pb.yml \
               -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
               -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
-              -e adguard_cert_email="${{ secrets.LETSENCRYPT_EMAIL }}" \
+              -e letsencrypt_email="${{ secrets.LETSENCRYPT_EMAIL }}" \
               -e vault_username="${{ secrets.VAULT_USERNAME }}" \
               -e vault_password="${{ secrets.VAULT_PASSWORD }}" \
               -e postgresql_db="${{ secrets.POSTGRESQL_DB }}" \

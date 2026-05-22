@@ -4,7 +4,6 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
-  - certificate.yaml
   - middleware.yaml
   - ingressroute.yaml
   - ingressroute-http.yaml

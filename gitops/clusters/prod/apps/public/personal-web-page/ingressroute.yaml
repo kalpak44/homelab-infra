@@ -13,4 +13,4 @@ spec:
         - name: personal-web-page
           port: 80
   tls:
-    secretName: personal-web-page-tls
+    certResolver: cloudflare

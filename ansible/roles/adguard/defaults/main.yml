@@ -7,6 +7,6 @@ adguard_username: admin
 adguard_password: ""
 adguard_tls_enabled: true
 adguard_tls_domain: "adguard.internal.pavel-usanli.online"
-adguard_cert_email: ""
+letsencrypt_email: ""
 adguard_cert_path: "/etc/letsencrypt/live/adguard.internal.pavel-usanli.online/fullchain.pem"
 adguard_key_path: "/etc/letsencrypt/live/adguard.internal.pavel-usanli.online/privkey.pem"

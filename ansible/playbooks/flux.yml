@@ -45,9 +45,9 @@
       changed_when: false
       when: flux_installed.rc == 0
 
-    - name: Create cert-manager namespace
+    - name: Create flux-system namespace
       ansible.builtin.shell:
-        cmd: kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+        cmd: kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
       changed_when: false
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -56,8 +56,19 @@
       ansible.builtin.shell:
         cmd: >-
           kubectl create secret generic cloudflare-api-token
-          --namespace cert-manager
+          --namespace kube-system
           --from-literal=api-token={{ cloudflare_api_token }}
+          --dry-run=client -o yaml | kubectl apply -f -
+      no_log: true
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Create Traefik config vars secret
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl create secret generic traefik-config-vars
+          --namespace flux-system
+          --from-literal=LETSENCRYPT_EMAIL={{ letsencrypt_email }}
           --dry-run=client -o yaml | kubectl apply -f -
       no_log: true
       environment:

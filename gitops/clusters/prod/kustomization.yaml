@@ -4,8 +4,6 @@ resources:
   - flux-system
   - metallb.yaml
   - metallb-config.yaml
-  - traefik.yaml
-  - cert-manager.yaml
-  - cert-manager-config.yaml
+  - traefik-config.yaml
   - nfs-provisioner.yaml
   - apps.yaml
