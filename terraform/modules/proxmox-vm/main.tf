@@ -5,7 +5,7 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   clone {
     vm_id = var.template_vm_id
-    full  = true
+    full  = false
   }
 
   cpu {
