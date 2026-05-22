@@ -381,6 +381,37 @@ kubectl get nodes
 | Manual dispatch | `deploy.yml`   | Terraform apply + Ansible for the selected service |
 | Manual dispatch | `destroy.yml`  | Terraform destroy for the selected service         |
 
+### Deploy options
+
+| Option | Terraform | Ansible |
+|---|---|---|
+| `common/all` | apply whole common env | adguard → vault → postgresql → pgadmin → redis |
+| `common/shared` | apply whole common env | skipped |
+| `common/adguard` | apply whole common env | adguard |
+| `common/vault` | apply whole common env | vault |
+| `common/postgresql` | apply whole common env | postgresql → pgadmin |
+| `common/redis` | apply whole common env | redis |
+| `prod/all` | apply whole prod env | haproxy → nfs → k3s |
+| `prod/haproxy` | apply whole prod env | haproxy |
+| `prod/nfs` | apply whole prod env | nfs |
+| `prod/k3s` | apply whole prod env | k3s |
+| `prod/k3s/flux` | skipped | flux |
+
+### Destroy options
+
+| Option | Terraform targets |
+|---|---|
+| `common/all` | entire common env |
+| `common/shared` | `proxmox_download_file.ubuntu_lxc`, `cloudflare_record.proxmox` |
+| `common/adguard` | `module.adguard`, `cloudflare_record.adguard` |
+| `common/vault` | `module.vault`, `cloudflare_record.vault` |
+| `common/postgresql` | `module.postgresql`, `cloudflare_record.postgresql`, `cloudflare_record.pgadmin` |
+| `common/redis` | `module.redis`, `cloudflare_record.redis` |
+| `prod/all` | entire prod env |
+| `prod/haproxy` | `module.prod_lb` |
+| `prod/nfs` | `module.prod_nfs` |
+| `prod/k3s` | `module.prod_k3s_1`, `module.prod_k3s_2` |
+
 ---
 
 ## Local init (one-time, per env)
