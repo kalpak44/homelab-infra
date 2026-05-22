@@ -23,7 +23,6 @@ frontend http
 backend traefik_http
     mode http
     balance roundrobin
-    option httpchk GET /ping
     server traefik {{ haproxy_traefik_ip }}:{{ haproxy_http_port }} check
 
 # ── HTTPS (TCP passthrough — TLS terminated by Traefik) ──────────────────────
