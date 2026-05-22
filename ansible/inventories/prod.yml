@@ -18,5 +18,10 @@ all:
       hosts:
         prod-lb:
           ansible_host: 192.168.1.109
+
+    prod_vm:
+      vars:
+        ansible_user: ubuntu
+      hosts:
         prod-nfs:
           ansible_host: 192.168.1.108
