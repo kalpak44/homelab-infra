@@ -10,7 +10,7 @@ all:
           ansible_host: 192.168.1.2
         vault:
           ansible_host: 192.168.1.3
-        postgresql:
+        postgres:
           ansible_host: 192.168.1.4
         redis:
           ansible_host: 192.168.1.6

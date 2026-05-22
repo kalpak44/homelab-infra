@@ -12,7 +12,7 @@ on:
           - proxmox-dns
           - adguard
           - vault
-          - postgresql
+          - postgres
           - redis
           - haproxy
           - nfs
@@ -40,7 +40,7 @@ jobs:
             proxmox-dns) echo "targets=-target=cloudflare_record.proxmox" >> $GITHUB_OUTPUT ;;
             adguard)     echo "targets=-target=module.adguard    -target=cloudflare_record.adguard"    >> $GITHUB_OUTPUT ;;
             vault)       echo "targets=-target=module.vault      -target=cloudflare_record.vault"      >> $GITHUB_OUTPUT ;;
-            postgresql)  echo "targets=-target=module.postgresql -target=cloudflare_record.postgresql -target=cloudflare_record.pgadmin" >> $GITHUB_OUTPUT ;;
+            postgres)    echo "targets=-target=module.postgres -target=cloudflare_record.postgres -target=cloudflare_record.pgadmin" >> $GITHUB_OUTPUT ;;
             redis)       echo "targets=-target=module.redis      -target=cloudflare_record.redis"      >> $GITHUB_OUTPUT ;;
             haproxy)     echo "targets=-target=module.prod_lb    -target=cloudflare_record.haproxy"    >> $GITHUB_OUTPUT ;;
             nfs)         echo "targets=-target=module.prod_nfs   -target=cloudflare_record.nfs"        >> $GITHUB_OUTPUT ;;

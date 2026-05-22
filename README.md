@@ -288,9 +288,9 @@ Database server running in an LXC container (`common` env, `192.168.1.4`).
 
 **Secrets required:** `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/postgresql`
+**Deploy:** Run **Deploy** → `common/postgres`
 
-PostgreSQL 16 listens on `192.168.1.4:5432` (also reachable as `postgresql.internal.pavel-usanli.online:5432`). The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
+PostgreSQL 16 listens on `192.168.1.4:5432` (also reachable as `postgres.internal.pavel-usanli.online:5432`). The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
 
 ### pgAdmin
 
@@ -298,7 +298,7 @@ Web-based PostgreSQL management UI running on the same LXC container as PostgreS
 
 **Secrets required:** `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/postgresql` (provisions the container), then re-run with playbook `common/pgadmin` to configure pgAdmin independently if needed.
+**Deploy:** Run **Deploy** → `common/postgres` (provisions the container), then re-run with playbook `common/pgadmin` to configure pgAdmin independently if needed.
 
 pgAdmin is available at `http://192.168.1.4` or `http://pgadmin.internal.pavel-usanli.online`. To connect to PostgreSQL, add a new server in the UI:
 - **Host:** `192.168.1.4`
@@ -386,11 +386,11 @@ kubectl get nodes
 
 | Option | Terraform | Ansible inventory | Ansible playbooks |
 |---|---|---|---|
-| `all` | apply everything | common + prod | adguard → vault → postgresql → pgadmin → redis → haproxy → nfs → k3s |
+| `all` | apply everything | common + prod | adguard → vault → postgres → pgadmin → redis → haproxy → nfs → k3s |
 | `proxmox-dns` | apply everything | — | skipped |
 | `adguard` | apply everything | common | adguard |
 | `vault` | apply everything | common | vault |
-| `postgresql` | apply everything | common | postgresql → pgadmin |
+| `postgres` | apply everything | common | postgres → pgadmin |
 | `redis` | apply everything | common | redis |
 | `haproxy` | apply everything | prod | haproxy |
 | `nfs` | apply everything | prod | nfs |
@@ -407,7 +407,7 @@ kubectl get nodes
 | `proxmox-dns` | `cloudflare_record.proxmox` |
 | `adguard` | `module.adguard`, `cloudflare_record.adguard` |
 | `vault` | `module.vault`, `cloudflare_record.vault` |
-| `postgresql` | `module.postgresql`, `cloudflare_record.postgresql`, `cloudflare_record.pgadmin` |
+| `postgres` | `module.postgres`, `cloudflare_record.postgres`, `cloudflare_record.pgadmin` |
 | `redis` | `module.redis`, `cloudflare_record.redis` |
 | `haproxy` | `module.prod_lb`, `cloudflare_record.haproxy` |
 | `nfs` | `module.prod_nfs`, `cloudflare_record.nfs` |

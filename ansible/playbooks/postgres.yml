@@ -1,6 +1,6 @@
 ---
 - name: Configure PostgreSQL
-  hosts: postgresql
+  hosts: postgres
   become: true
   gather_facts: true
 

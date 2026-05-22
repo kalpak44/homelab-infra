@@ -12,7 +12,7 @@ on:
           - proxmox-dns
           - adguard
           - vault
-          - postgresql
+          - postgres
           - redis
           - haproxy
           - nfs
@@ -91,7 +91,7 @@ jobs:
 
           case "${{ inputs.service }}" in
             all)
-              for pb in adguard vault postgresql pgadmin redis; do run_playbook $pb common; done
+              for pb in adguard vault postgres pgadmin redis; do run_playbook $pb common; done
               for pb in haproxy nfs k3s; do run_playbook $pb prod; done
               ;;
             haproxy|nfs|k3s)  run_playbook ${{ inputs.service }} prod ;;

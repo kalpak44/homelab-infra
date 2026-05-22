@@ -1,6 +1,6 @@
 ---
 - name: Configure pgAdmin
-  hosts: postgresql
+  hosts: postgres
   become: true
   gather_facts: true
 

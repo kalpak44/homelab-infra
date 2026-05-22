@@ -1,9 +1,9 @@
-module "postgresql" {
+module "postgres" {
   source = "./modules/proxmox-lxc"
 
   node_name        = "proxmox"
   container_id     = 202
-  hostname         = "postgresql"
+  hostname         = "postgres"
   template_file_id = proxmox_download_file.ubuntu_lxc.id
 
   ip_address = "192.168.1.4/24"
@@ -16,9 +16,9 @@ module "postgresql" {
   ssh_public_keys = [var.ssh_public_key]
 }
 
-resource "cloudflare_record" "postgresql" {
+resource "cloudflare_record" "postgres" {
   zone_id = data.cloudflare_zone.this.id
-  name    = "postgresql.internal"
+  name    = "postgres.internal"
   content = "192.168.1.4"
   type    = "A"
   proxied = false
