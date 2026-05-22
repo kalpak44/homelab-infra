@@ -1,6 +1,6 @@
 ---
 - name: Configure HAProxy
-  hosts: prod-lb
+  hosts: haproxy
   become: true
 
   roles:

@@ -66,9 +66,9 @@ jobs:
         working-directory: ansible
         run: |
           run_playbook() {
-            local pb=$1 inv=$2
+            local pb=$1
             ansible-playbook \
-              -i inventories/$inv.yml \
+              -i inventories/homelab.yml \
               playbooks/$pb.yml \
               -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
               -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
@@ -90,11 +90,7 @@ jobs:
           }
 
           case "${{ inputs.service }}" in
-            all)
-              for pb in adguard vault postgres pgadmin redis; do run_playbook $pb common; done
-              for pb in haproxy nfs k3s; do run_playbook $pb prod; done
-              ;;
-            haproxy|nfs|k3s)  run_playbook ${{ inputs.service }} prod ;;
-            k3s/flux)          run_playbook flux prod ;;
-            *)                 run_playbook ${{ inputs.service }} common ;;
+            all)      for pb in adguard vault postgres redis haproxy nfs k3s; do run_playbook $pb; done ;;
+            k3s/flux) run_playbook flux ;;
+            *)        run_playbook ${{ inputs.service }} ;;
           esac

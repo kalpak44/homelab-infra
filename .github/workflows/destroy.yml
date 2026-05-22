@@ -38,13 +38,13 @@ jobs:
         run: |
           case "${{ inputs.service }}" in
             proxmox-dns) echo "targets=-target=cloudflare_record.proxmox" >> $GITHUB_OUTPUT ;;
-            adguard)     echo "targets=-target=module.adguard    -target=cloudflare_record.adguard"    >> $GITHUB_OUTPUT ;;
-            vault)       echo "targets=-target=module.vault      -target=cloudflare_record.vault"      >> $GITHUB_OUTPUT ;;
-            postgres)    echo "targets=-target=module.postgres -target=cloudflare_record.postgres -target=cloudflare_record.pgadmin" >> $GITHUB_OUTPUT ;;
-            redis)       echo "targets=-target=module.redis      -target=cloudflare_record.redis"      >> $GITHUB_OUTPUT ;;
-            haproxy)     echo "targets=-target=module.prod_lb    -target=cloudflare_record.haproxy"    >> $GITHUB_OUTPUT ;;
-            nfs)         echo "targets=-target=module.prod_nfs   -target=cloudflare_record.nfs"        >> $GITHUB_OUTPUT ;;
-            k3s)         echo "targets=-target=module.prod_k3s_1 -target=module.prod_k3s_2"           >> $GITHUB_OUTPUT ;;
+            adguard)     echo "targets=-target=module.adguard"  >> $GITHUB_OUTPUT ;;
+            vault)       echo "targets=-target=module.vault"    >> $GITHUB_OUTPUT ;;
+            postgres)    echo "targets=-target=module.postgres" >> $GITHUB_OUTPUT ;;
+            redis)       echo "targets=-target=module.redis"    >> $GITHUB_OUTPUT ;;
+            haproxy)     echo "targets=-target=module.haproxy"  >> $GITHUB_OUTPUT ;;
+            nfs)         echo "targets=-target=module.nfs"      >> $GITHUB_OUTPUT ;;
+            k3s)         echo "targets=-target=module.k3s"      >> $GITHUB_OUTPUT ;;
             all)         echo "targets=" >> $GITHUB_OUTPUT ;;
           esac
 

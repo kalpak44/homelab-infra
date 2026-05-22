@@ -260,7 +260,7 @@ DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
 
 **Secrets required:** `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/adguard`
+**Deploy:** Run **Deploy** → `adguard`
 
 AdGuard Home is available at `https://adguard.internal.pavel-usanli.online` (or `http://192.168.1.2` before TLS is provisioned). SSH is enabled on port 22 with key-only auth. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
 
@@ -274,7 +274,7 @@ Secret manager running in an LXC container (`common` env, `192.168.1.3`).
 
 **Secrets required:** `VAULT_USERNAME`, `VAULT_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/vault`
+**Deploy:** Run **Deploy** → `vault`
 
 The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200` or `http://vault.internal.pavel-usanli.online:8200`.
 
@@ -288,7 +288,7 @@ Database server running in an LXC container (`common` env, `192.168.1.4`).
 
 **Secrets required:** `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/postgres`
+**Deploy:** Run **Deploy** → `postgres`
 
 PostgreSQL 16 listens on `192.168.1.4:5432` (also reachable as `postgres.internal.pavel-usanli.online:5432`). The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
 
@@ -298,7 +298,7 @@ Web-based PostgreSQL management UI running on the same LXC container as PostgreS
 
 **Secrets required:** `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/postgres` (provisions the container), then re-run with playbook `common/pgadmin` to configure pgAdmin independently if needed.
+**Deploy:** Run **Deploy** → `postgres`
 
 pgAdmin is available at `http://192.168.1.4` or `http://pgadmin.internal.pavel-usanli.online`. To connect to PostgreSQL, add a new server in the UI:
 - **Host:** `192.168.1.4`
@@ -311,7 +311,7 @@ Redis + Redis Commander web UI running in a single LXC container (`common` env, 
 
 **Secrets required:** `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/redis`
+**Deploy:** Run **Deploy** → `redis`
 
 Redis listens on `192.168.1.6:6379` or `redis.internal.pavel-usanli.online:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081` or `http://redis.internal.pavel-usanli.online:8081`.
 
@@ -321,7 +321,7 @@ External load balancer for the k3s cluster, running in an LXC container (`prod` 
 
 **Secrets required:** `HAPROXY_STATS_USER`, `HAPROXY_STATS_PASSWORD`
 
-**Deploy:** Run **Deploy** → `prod/haproxy`
+**Deploy:** Run **Deploy** → `haproxy`
 
 HAProxy stats are available at `http://192.168.1.109:8404/stats`. Traffic flow:
 - `:80` — HTTP forwarded to Traefik at `192.168.1.120:80`
@@ -335,8 +335,8 @@ k3s two-node cluster with an external HAProxy load balancer and NFS storage, all
 |---|---|---|---|---|
 | `prod-k3s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
 | `prod-k3s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
-| `prod-lb` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
-| `prod-nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 20 GB OS + 512 GB data | NFS server — persistent volume storage |
+| `haproxy` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
+| `nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 20 GB OS + 512 GB data | NFS server — persistent volume storage |
 | MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
 
 **Traffic flow:**
@@ -354,10 +354,10 @@ Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik 
 
 **Deploy:**
 
-1. Run **Deploy** → `prod/haproxy` (creates LXC + configures HAProxy)
-2. Run **Deploy** → `prod/nfs` (creates VM + configures NFS)
-3. Run **Deploy** → `prod/k3s` (creates VMs + installs k3s)
-4. Run **Deploy** → `prod/k3s/flux` (bootstraps Flux CD + deploys all in-cluster components)
+1. Run **Deploy** → `haproxy` (creates LXC + configures HAProxy)
+2. Run **Deploy** → `nfs` (creates VM + configures NFS)
+3. Run **Deploy** → `k3s` (creates VMs + installs k3s)
+4. Run **Deploy** → `k3s/flux` (bootstraps Flux CD + deploys all in-cluster components)
 
 **kubectl access from your local machine** (on the `192.168.1.0/24` network):
 
@@ -384,19 +384,20 @@ kubectl get nodes
 
 ### Deploy options
 
-| Option | Terraform | Ansible inventory | Ansible playbooks |
-|---|---|---|---|
-| `all` | apply everything | common + prod | adguard → vault → postgres → pgadmin → redis → haproxy → nfs → k3s |
-| `proxmox-dns` | apply everything | — | skipped |
-| `adguard` | apply everything | common | adguard |
-| `vault` | apply everything | common | vault |
-| `postgres` | apply everything | common | postgres → pgadmin |
-| `redis` | apply everything | common | redis |
-| `haproxy` | apply everything | prod | haproxy |
-| `nfs` | apply everything | prod | nfs |
-| `k3s` | apply everything | prod | k3s |
-| `k3s/flux` | skipped | prod | flux |
+| Option | Terraform | Ansible playbooks |
+|---|---|---|
+| `all` | apply everything | adguard → vault → postgres → redis → haproxy → nfs → k3s |
+| `proxmox-dns` | apply everything | skipped |
+| `adguard` | apply everything | adguard |
+| `vault` | apply everything | vault |
+| `postgres` | apply everything | postgres |
+| `redis` | apply everything | redis |
+| `haproxy` | apply everything | haproxy |
+| `nfs` | apply everything | nfs |
+| `k3s` | apply everything | k3s |
+| `k3s/flux` | skipped | flux |
 
+> Ansible always uses the single `inventories/homelab.yml` inventory.
 > k3s DNS records for apps are managed inside the cluster by Flux/external-dns, not Terraform.
 
 ### Destroy options
@@ -405,13 +406,13 @@ kubectl get nodes
 |---|---|
 | `all` | entire state |
 | `proxmox-dns` | `cloudflare_record.proxmox` |
-| `adguard` | `module.adguard`, `cloudflare_record.adguard` |
-| `vault` | `module.vault`, `cloudflare_record.vault` |
-| `postgres` | `module.postgres`, `cloudflare_record.postgres`, `cloudflare_record.pgadmin` |
-| `redis` | `module.redis`, `cloudflare_record.redis` |
-| `haproxy` | `module.prod_lb`, `cloudflare_record.haproxy` |
-| `nfs` | `module.prod_nfs`, `cloudflare_record.nfs` |
-| `k3s` | `module.prod_k3s_1`, `module.prod_k3s_2` |
+| `adguard` | `module.adguard` |
+| `vault` | `module.vault` |
+| `postgres` | `module.postgres` |
+| `redis` | `module.redis` |
+| `haproxy` | `module.haproxy` |
+| `nfs` | `module.nfs` |
+| `k3s` | `module.k3s` |
 
 ---
 

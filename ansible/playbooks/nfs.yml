@@ -1,6 +1,6 @@
 ---
 - name: Configure NFS server
-  hosts: prod-nfs
+  hosts: nfs
   become: true
   gather_facts: false
 
