@@ -123,7 +123,7 @@ module "prod_nfs" {
 
   ip_address   = "192.168.1.108/24"
   gateway      = "192.168.1.1"
-  unprivileged = false
+  unprivileged = true
 
   memory_mb    = 1024
   cpu_cores    = 1

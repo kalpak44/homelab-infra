@@ -1,11 +1,18 @@
 ---
-- name: Install nfs-ganesha
+- name: Install nfs-ganesha and rpcbind
   ansible.builtin.apt:
     name:
       - nfs-ganesha
       - nfs-ganesha-vfs
+      - rpcbind
     state: present
     update_cache: true
+
+- name: Enable and start rpcbind
+  ansible.builtin.systemd:
+    name: rpcbind
+    enabled: true
+    state: started
 
 - name: Create export directory
   ansible.builtin.file:

@@ -1,14 +1,18 @@
 NFS_CORE_PARAM {
     mount_path_pseudo = true;
-    Protocols = 4;
+    Protocols = 3,4;
+}
+
+NFS_IP_NAME {
+    NFS_Port = 2049;
 }
 
 EXPORT {
     Export_Id = 1;
     Path = {{ nfs_export_path }};
     Pseudo = {{ nfs_export_path }};
-    Protocols = 4;
-    Transports = TCP;
+    Protocols = 3,4;
+    Transports = TCP,UDP;
     Access_Type = RW;
     Squash = No_Root_Squash;
     SecType = sys;
