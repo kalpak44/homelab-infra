@@ -46,4 +46,8 @@ resource "proxmox_virtual_environment_container" "this" {
   features {
     nesting = true
   }
+
+  lifecycle {
+    ignore_changes = [unprivileged]
+  }
 }
