@@ -22,6 +22,17 @@
     mode: "0644"
   notify: Reload exports
 
+- name: Load nfsd kernel module
+  community.general.modprobe:
+    name: nfsd
+    state: present
+
+- name: Persist nfsd module across reboots
+  ansible.builtin.lineinfile:
+    path: /etc/modules-load.d/nfs.conf
+    line: nfsd
+    create: true
+
 - name: Enable and start nfs-kernel-server
   ansible.builtin.systemd:
     name: nfs-kernel-server
