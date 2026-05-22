@@ -180,6 +180,18 @@ sudo ./svc.sh uninstall
 
 Then destroy the VM, create a new one from the runner setup steps above, and re-register with GitHub.
 
+#### 2d. Load the NFS kernel module
+
+The NFS server runs in an LXC container but relies on the host kernel's `nfsd` module — containers cannot load kernel modules themselves.
+
+```bash
+# Load now
+modprobe nfsd
+
+# Persist across reboots
+echo nfsd >> /etc/modules
+```
+
 ### 3. GitHub — add repository secrets
 
 Go to **Settings → Secrets and variables → Actions → New repository secret** and add:
