@@ -212,6 +212,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
 | `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |
 | `FLUX_GITHUB_TOKEN`       | GitHub PAT with `repo` scope — used by Flux CD to read/write this repository during bootstrap |
+| `HAPROXY_PUBLIC_IP`       | Public WAN IP of your router/HAProxy — used by Terraform to register public-facing `A` records in Cloudflare (apex, www, mite-assistant) |
 
 ### 4. Proxmox — TLS certificate via Let's Encrypt
 
@@ -395,9 +396,12 @@ kubectl get nodes
 | `nfs` | apply everything | nfs |
 | `k3s` | apply everything | k3s |
 | `k3s/flux` | skipped | flux |
+| `k3s/flux/personal-web-page` | `cloudflare_record.personal_web_page_apex` + `www` (requires `HAPROXY_PUBLIC_IP`) | skipped |
+| `k3s/flux/private-home-page` | `cloudflare_record.private_home_page` | skipped |
+| `k3s/flux/mite-assistant-mcp` | `cloudflare_record.mite_assistant` (requires `HAPROXY_PUBLIC_IP`) | skipped |
 
 > Ansible always uses the single `inventories/homelab.yml` inventory.
-> k3s DNS records for apps are managed inside the cluster by Flux/external-dns, not Terraform.
+> `k3s/flux/*` options run a targeted Terraform apply for the app's Cloudflare DNS record only — no Ansible step.
 
 ### Destroy options
 

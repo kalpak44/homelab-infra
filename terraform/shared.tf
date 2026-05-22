@@ -18,6 +18,14 @@ resource "cloudflare_record" "private_home_page" {
   proxied = false
 }
 
+resource "cloudflare_record" "mite_assistant" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "mite-assistant"
+  content = var.haproxy_public_ip
+  type    = "A"
+  proxied = true
+}
+
 resource "cloudflare_record" "personal_web_page_apex" {
   zone_id = data.cloudflare_zone.this.id
   name    = "@"

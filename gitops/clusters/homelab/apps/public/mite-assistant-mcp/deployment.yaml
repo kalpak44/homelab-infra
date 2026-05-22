@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mite-assistant-mcp
+  namespace: public
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mite-assistant-mcp
+  template:
+    metadata:
+      labels:
+        app: mite-assistant-mcp
+    spec:
+      containers:
+        - name: mite-assistant-mcp
+          image: ghcr.io/kalpak44/mite-assistant-mcp:3194d5d
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          env:
+            - name: MCP_PATH
+              value: /mcp
+            - name: MITE_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mite-assistant-mcp-secrets
+                  key: MITE_BASE_URL
