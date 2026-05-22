@@ -13,6 +13,7 @@ replacements:
   - source:
       kind: ConfigMap
       name: traefik-values
+      namespace: kube-system
       fieldPath: data."values.yaml"
     targets:
       - select:
