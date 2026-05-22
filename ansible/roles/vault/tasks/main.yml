@@ -220,6 +220,80 @@
   become: true
   register: k3s_ca_cert
 
+- name: Create vault-auth service account in k3s
+  ansible.builtin.command:
+    cmd: kubectl apply -f -
+    stdin: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: vault-auth
+        namespace: kube-system
+  delegate_to: k3s-1
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: true
+
+- name: Bind vault-auth to system:auth-delegator
+  ansible.builtin.command:
+    cmd: kubectl apply -f -
+    stdin: |
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: vault-auth
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:auth-delegator
+      subjects:
+        - kind: ServiceAccount
+          name: vault-auth
+          namespace: kube-system
+  delegate_to: k3s-1
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: true
+
+- name: Create vault-auth long-lived token secret
+  ansible.builtin.command:
+    cmd: kubectl apply -f -
+    stdin: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: vault-auth-token
+        namespace: kube-system
+        annotations:
+          kubernetes.io/service-account.name: vault-auth
+      type: kubernetes.io/service-account-token
+  delegate_to: k3s-1
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: true
+
+- name: Wait for vault-auth token to be populated
+  ansible.builtin.command:
+    cmd: kubectl get secret vault-auth-token -n kube-system -o jsonpath='{.data.token}'
+  delegate_to: k3s-1
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: vault_auth_token_b64
+  until: vault_auth_token_b64.stdout != ""
+  retries: 12
+  delay: 5
+  changed_when: false
+  no_log: true
+
+- name: Set vault reviewer JWT fact
+  ansible.builtin.set_fact:
+    vault_reviewer_jwt: "{{ vault_auth_token_b64.stdout | b64decode }}"
+  no_log: true
+
 - name: Enable Kubernetes auth method in Vault
   ansible.builtin.command:
     cmd: vault auth enable kubernetes
@@ -244,10 +318,12 @@
       vault write auth/kubernetes/config
       kubernetes_host="https://{{ k3s_api_host }}:{{ k3s_api_port }}"
       kubernetes_ca_cert=@/tmp/.k3s-ca.crt
+      token_reviewer_jwt="{{ vault_reviewer_jwt }}"
   environment:
     VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
+  no_log: true
 
 - name: Remove k3s CA cert temp file
   ansible.builtin.file:
