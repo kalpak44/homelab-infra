@@ -1,14 +1,13 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: apps
+  name: metallb-config
   namespace: flux-system
 spec:
   dependsOn:
-    - name: traefik-config
-    - name: nfs-provisioner
-  interval: 30s
-  path: ./gitops/clusters/prod/apps
+    - name: metallb
+  interval: 10m
+  path: ./gitops/clusters/homelab/infrastructure/metallb-config
   prune: true
   sourceRef:
     kind: GitRepository

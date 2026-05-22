@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./gitops/clusters/prod/infrastructure/metallb
+  path: ./gitops/clusters/homelab/infrastructure/metallb
   prune: true
   sourceRef:
     kind: GitRepository

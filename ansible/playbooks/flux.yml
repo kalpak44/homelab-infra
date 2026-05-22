@@ -1,13 +1,13 @@
 ---
 - name: Bootstrap Flux CD
-  hosts: prod-k3s-1
+  hosts: k3s-1
   become: true
 
   vars:
     github_owner: kalpak44
     github_repo: homelab-infra
     github_branch: main
-    flux_path: gitops/clusters/prod
+    flux_path: gitops/clusters/homelab
 
   tasks:
     - name: Install Flux CLI

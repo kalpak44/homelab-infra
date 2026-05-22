@@ -7,7 +7,7 @@ spec:
   dependsOn:
     - name: metallb-config
   interval: 10m
-  path: ./gitops/clusters/prod/infrastructure/traefik-config
+  path: ./gitops/clusters/homelab/infrastructure/traefik-config
   prune: true
   sourceRef:
     kind: GitRepository

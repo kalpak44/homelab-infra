@@ -2,7 +2,7 @@ module "node_1" {
   source = "../proxmox-vm"
 
   node_name      = "proxmox"
-  vm_name        = "prod-k3s-1"
+  vm_name        = "k3s-1"
   vm_id          = var.node1_id
   template_vm_id = var.template_vm_id
 
@@ -19,7 +19,7 @@ module "node_2" {
   source = "../proxmox-vm"
 
   node_name      = "proxmox"
-  vm_name        = "prod-k3s-2"
+  vm_name        = "k3s-2"
   vm_id          = var.node2_id
   template_vm_id = var.template_vm_id
 

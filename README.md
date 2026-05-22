@@ -333,8 +333,8 @@ k3s two-node cluster with an external HAProxy load balancer and NFS storage, all
 
 | Host | Type | IP | Spec | Role |
 |---|---|---|---|---|
-| `prod-k3s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
-| `prod-k3s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
+| `k3s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
+| `k3s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
 | `haproxy` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
 | `nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 20 GB OS + 512 GB data | NFS server — persistent volume storage |
 | MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
@@ -344,10 +344,9 @@ k3s two-node cluster with an external HAProxy load balancer and NFS storage, all
 Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik → apps
 ```
 
-**In-cluster components** (deployed via Flux CD, watching `gitops/clusters/prod/`):
+**In-cluster components** (deployed via Flux CD, watching `gitops/clusters/homelab/`):
 - **MetalLB** — assigns IPs from the `192.168.1.120–130` pool to LoadBalancer services
-- **Traefik** — ingress controller at `192.168.1.120`, TLS via cert-manager + Let's Encrypt
-- **cert-manager** — issues certificates using Cloudflare DNS-01 for `*.pavel-usanli.online`
+- **Traefik** — ingress controller at `192.168.1.120`, TLS via Cloudflare DNS-01 Let's Encrypt
 - **NFS provisioner** — StorageClass `nfs` backed by `192.168.1.108:/srv/nfs/k8s`
 - **Flux CD** — GitOps operator
 - **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into k8s secrets

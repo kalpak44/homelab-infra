@@ -94,10 +94,10 @@ module "k3s" {
   ssh_public_keys = [var.ssh_public_key]
 
   node1_id = 110
-  node1_ip = "192.168.1.110" # prod-k3s-1 — control plane
+  node1_ip = "192.168.1.110" # k3s-1 — control plane
 
   node2_id = 111
-  node2_ip = "192.168.1.111" # prod-k3s-2 — worker
+  node2_ip = "192.168.1.111" # k3s-2 — worker
 
   cpu_cores    = 4
   memory_mb    = 8192
