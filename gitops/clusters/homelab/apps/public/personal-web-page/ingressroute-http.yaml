@@ -5,12 +5,10 @@ metadata:
   namespace: public
 spec:
   entryPoints:
-    - web
+    - public-web
   routes:
     - match: Host(`pavel-usanli.online`)
       kind: Rule
-      middlewares:
-        - name: redirect-https
       services:
         - name: personal-web-page
           port: 80

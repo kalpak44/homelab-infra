@@ -5,7 +5,7 @@ metadata:
   namespace: public
 spec:
   entryPoints:
-    - websecure
+    - public-web-secure
   routes:
     - match: Host(`pavel-usanli.online`)
       kind: Rule

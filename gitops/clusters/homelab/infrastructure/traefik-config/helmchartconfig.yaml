@@ -12,12 +12,71 @@ spec:
     providers:
       kubernetesCRD:
         enabled: true
+        allowCrossNamespace: true
       kubernetesIngress:
         enabled: true
 
     service:
       spec:
         loadBalancerIP: "192.168.1.120"
+      additionalServices:
+        private:
+          spec:
+            loadBalancerIP: "192.168.1.121"
+          annotations:
+            metallb.universe.tf/address-pool: homelab
+
+    ports:
+      web:
+        expose:
+          default: false
+      websecure:
+        expose:
+          default: false
+      public-web:
+        port: 8001
+        expose:
+          default: true
+          private: false
+        exposedPort: 80
+        http:
+          redirections:
+            entryPoint:
+              to: public-web-secure
+              scheme: https
+              permanent: true
+      public-web-secure:
+        port: 8444
+        expose:
+          default: true
+          private: false
+        exposedPort: 443
+        http:
+          tls:
+            enabled: true
+            certResolver: cloudflare
+      private-web:
+        port: 8888
+        expose:
+          default: false
+          private: true
+        exposedPort: 80
+        http:
+          redirections:
+            entryPoint:
+              to: private-web-secure
+              scheme: https
+              permanent: true
+      private-web-secure:
+        port: 9443
+        expose:
+          default: false
+          private: true
+        exposedPort: 443
+        http:
+          tls:
+            enabled: true
+            certResolver: cloudflare
 
     logs:
       general:
