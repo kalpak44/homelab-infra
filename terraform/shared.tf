@@ -10,6 +10,30 @@ resource "cloudflare_record" "proxmox" {
   proxied = false
 }
 
+resource "cloudflare_record" "private_home_page" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "home.internal"
+  content = "192.168.1.121"
+  type    = "A"
+  proxied = false
+}
+
+resource "cloudflare_record" "personal_web_page_apex" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "@"
+  content = var.haproxy_public_ip
+  type    = "A"
+  proxied = true
+}
+
+resource "cloudflare_record" "personal_web_page_www" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "www"
+  content = "pavel-usanli.online"
+  type    = "CNAME"
+  proxied = true
+}
+
 resource "proxmox_download_file" "ubuntu_lxc" {
   content_type        = "vztmpl"
   datastore_id        = "local"

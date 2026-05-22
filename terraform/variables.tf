@@ -28,3 +28,9 @@ variable "cloudflare_api_token" {
   type      = string
   sensitive = true
 }
+
+variable "haproxy_public_ip" {
+  type        = string
+  description = "Public IP address of the HAProxy load balancer (router WAN IP)"
+  default     = ""
+}

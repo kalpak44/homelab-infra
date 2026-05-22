@@ -18,12 +18,14 @@ on:
           - nfs
           - k3s
           - k3s/flux
+          - k3s/flux/personal-web-page
+          - k3s/flux/private-home-page
 
 jobs:
   deploy:
     name: Deploy / ${{ inputs.service }}
     runs-on: self-hosted
-    environment: ${{ contains(fromJSON('["haproxy","nfs","k3s","k3s/flux"]'), inputs.service) && 'prod' || 'common' }}
+    environment: ${{ contains(fromJSON('["haproxy","nfs","k3s","k3s/flux","k3s/flux/personal-web-page","k3s/flux/private-home-page"]'), inputs.service) && 'prod' || 'common' }}
     permissions:
       contents: write
 
@@ -42,10 +44,36 @@ jobs:
         run: terraform init -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Terraform Apply
-        if: inputs.service != 'k3s/flux'
+        if: inputs.service != 'k3s/flux' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page'
         working-directory: terraform
         run: |
           terraform apply -auto-approve \
+            -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
+            -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
+            -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
+            -var ssh_public_key="${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+
+      - name: Terraform Apply (personal-web-page DNS)
+        if: inputs.service == 'k3s/flux/personal-web-page'
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve \
+            -target=cloudflare_record.personal_web_page_apex \
+            -target=cloudflare_record.personal_web_page_www \
+            -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
+            -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
+            -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
+            -var ssh_public_key="${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -var haproxy_public_ip="${{ secrets.HAPROXY_PUBLIC_IP }}"
+
+      - name: Terraform Apply (private-home-page DNS)
+        if: inputs.service == 'k3s/flux/private-home-page'
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve \
+            -target=cloudflare_record.private_home_page \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
             -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
             -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
@@ -62,7 +90,7 @@ jobs:
         run: sudo apt-get install -y python3-passlib
 
       - name: Run Ansible
-        if: inputs.service != 'proxmox-dns'
+        if: inputs.service != 'proxmox-dns' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page'
         working-directory: ansible
         run: |
           run_playbook() {
