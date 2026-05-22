@@ -10,3 +10,33 @@ variable "ssh_public_keys" {
   type    = list(string)
   default = []
 }
+
+variable "container_id" {
+  type    = number
+  default = 200
+}
+
+variable "ip_address" {
+  type    = string
+  default = "192.168.1.2"
+}
+
+variable "gateway" {
+  type    = string
+  default = "192.168.1.1"
+}
+
+variable "cpu_cores" {
+  type    = number
+  default = 1
+}
+
+variable "memory_mb" {
+  type    = number
+  default = 256
+}
+
+variable "disk_size_gb" {
+  type    = number
+  default = 4
+}

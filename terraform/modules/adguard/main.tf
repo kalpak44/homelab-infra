@@ -2,16 +2,16 @@ module "lxc" {
   source = "../proxmox-lxc"
 
   node_name        = "proxmox"
-  container_id     = 200
+  container_id     = var.container_id
   hostname         = "adguard"
   template_file_id = var.template_file_id
 
-  ip_address = "192.168.1.2/24"
-  gateway    = "192.168.1.1"
+  ip_address = "${var.ip_address}/24"
+  gateway    = var.gateway
 
-  memory_mb    = 256
-  cpu_cores    = 1
-  disk_size_gb = 4
+  cpu_cores    = var.cpu_cores
+  memory_mb    = var.memory_mb
+  disk_size_gb = var.disk_size_gb
 
   ssh_public_keys = var.ssh_public_keys
 }
@@ -19,7 +19,7 @@ module "lxc" {
 resource "cloudflare_record" "adguard" {
   zone_id = var.zone_id
   name    = "adguard.internal"
-  content = "192.168.1.2"
+  content = var.ip_address
   type    = "A"
   proxied = false
 }

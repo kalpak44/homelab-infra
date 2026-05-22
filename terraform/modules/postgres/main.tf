@@ -2,16 +2,16 @@ module "lxc" {
   source = "../proxmox-lxc"
 
   node_name        = "proxmox"
-  container_id     = 202
+  container_id     = var.container_id
   hostname         = "postgres"
   template_file_id = var.template_file_id
 
-  ip_address = "192.168.1.4/24"
-  gateway    = "192.168.1.1"
+  ip_address = "${var.ip_address}/24"
+  gateway    = var.gateway
 
-  memory_mb    = 2048
-  cpu_cores    = 1
-  disk_size_gb = 16
+  cpu_cores    = var.cpu_cores
+  memory_mb    = var.memory_mb
+  disk_size_gb = var.disk_size_gb
 
   ssh_public_keys = var.ssh_public_keys
 }
@@ -19,7 +19,7 @@ module "lxc" {
 resource "cloudflare_record" "postgres" {
   zone_id = var.zone_id
   name    = "postgres.internal"
-  content = "192.168.1.4"
+  content = var.ip_address
   type    = "A"
   proxied = false
 }
@@ -27,7 +27,7 @@ resource "cloudflare_record" "postgres" {
 resource "cloudflare_record" "pgadmin" {
   zone_id = var.zone_id
   name    = "pgadmin.internal"
-  content = "192.168.1.4"
+  content = var.ip_address
   type    = "A"
   proxied = false
 }
