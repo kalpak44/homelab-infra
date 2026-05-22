@@ -2,6 +2,17 @@
 - name: Configure NFS server
   hosts: prod-nfs
   become: true
+  gather_facts: false
+
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        sleep: 5
+        timeout: 120
+
+    - name: Gather facts
+      ansible.builtin.setup:
 
   roles:
     - nfs
