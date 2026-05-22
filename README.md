@@ -209,7 +209,8 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
 | `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
 | `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
-| `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by cert-manager for Let's Encrypt DNS-01 |
+| `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |
+| `CLOUDFLARE_ZONE_ID`      | Zone ID for `pavel-usanli.online` — found on the domain overview page in the Cloudflare dashboard (right sidebar) |
 | `FLUX_GITHUB_TOKEN`       | GitHub PAT with `repo` scope — used by Flux CD to read/write this repository during bootstrap |
 
 ### 4. Proxmox — TLS certificate via Let's Encrypt
@@ -217,6 +218,8 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 The default Proxmox cert is signed by its own internal CA, which browsers don't trust. Replace it with a Let's Encrypt cert using the Cloudflare DNS-01 challenge — no need to expose port 80.
 
 **Get a Cloudflare API token** — My Profile → API Tokens → Create Token → Edit zone DNS → scope to `your-domain.com`. Copy the token.
+
+The Proxmox web UI is available at `https://192.168.1.50:8006` or `https://proxmox.internal.pavel-usanli.online:8006`.
 
 **Run on the Proxmox node:**
 
@@ -259,7 +262,7 @@ DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
 
 **Deploy:** Run **Deploy** → `common/adguard`
 
-AdGuard Home is available at `http://192.168.1.2` — no setup wizard, credentials are set from the secrets above.
+AdGuard Home is available at `http://192.168.1.2` or `http://adguard.internal.pavel-usanli.online` — no setup wizard, credentials are set from the secrets above.
 
 **Point your router's DNS to `192.168.1.2`** (or set it per-device) to start filtering.
 
@@ -273,7 +276,7 @@ Secret manager running in an LXC container (`common` env, `192.168.1.3`).
 
 **Deploy:** Run **Deploy** → `common/vault`
 
-The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200`.
+The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200` or `http://vault.internal.pavel-usanli.online:8200`.
 
 > The unseal key and root token are saved to `/root/vault-init.json` on the container — back this file up somewhere safe.
 
@@ -287,17 +290,17 @@ Database server running in an LXC container (`common` env, `192.168.1.4`).
 
 **Deploy:** Run **Deploy** → `common/postgresql`
 
-PostgreSQL 16 listens on `192.168.1.4:5432`. The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
+PostgreSQL 16 listens on `192.168.1.4:5432` (also reachable as `postgresql.internal.pavel-usanli.online:5432`). The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
 
 ### pgAdmin
 
-Web-based PostgreSQL management UI running in an LXC container (`common` env, `192.168.1.5`).
+Web-based PostgreSQL management UI running on the same LXC container as PostgreSQL (`common` env, `192.168.1.4`).
 
 **Secrets required:** `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`
 
-**Deploy:** Run **Deploy** → `common/pgadmin`
+**Deploy:** Run **Deploy** → `common/postgresql` (provisions the container), then re-run with playbook `common/pgadmin` to configure pgAdmin independently if needed.
 
-pgAdmin is available at `http://192.168.1.5`. To connect to PostgreSQL, add a new server in the UI:
+pgAdmin is available at `http://192.168.1.4` or `http://pgadmin.internal.pavel-usanli.online`. To connect to PostgreSQL, add a new server in the UI:
 - **Host:** `192.168.1.4`
 - **Port:** `5432`
 - **Username / Password:** the `POSTGRESQL_USER` / `POSTGRESQL_PASSWORD` secrets above
@@ -310,7 +313,7 @@ Redis + Redis Commander web UI running in a single LXC container (`common` env, 
 
 **Deploy:** Run **Deploy** → `common/redis`
 
-Redis listens on `192.168.1.6:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081`.
+Redis listens on `192.168.1.6:6379` or `redis.internal.pavel-usanli.online:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081` or `http://redis.internal.pavel-usanli.online:8081`.
 
 ### HAProxy (prod load balancer)
 

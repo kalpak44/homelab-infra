@@ -11,7 +11,6 @@ on:
           - common/adguard
           - common/vault
           - common/postgresql
-          - common/pgadmin
           - common/redis
           - prod/haproxy
           - prod/nfs
@@ -38,11 +37,10 @@ jobs:
           SERVICE="${{ inputs.service }}"
           echo "env=${SERVICE%%/*}" >> $GITHUB_OUTPUT
           case "$SERVICE" in
-            common/adguard)    echo "targets=-target=module.adguard"    >> $GITHUB_OUTPUT ;;
-            common/vault)      echo "targets=-target=module.vault"      >> $GITHUB_OUTPUT ;;
-            common/postgresql) echo "targets=-target=module.postgresql" >> $GITHUB_OUTPUT ;;
-            common/pgadmin)    echo "targets=-target=module.pgadmin"    >> $GITHUB_OUTPUT ;;
-            common/redis)      echo "targets=-target=module.redis"      >> $GITHUB_OUTPUT ;;
+            common/adguard)    echo "targets=-target=module.adguard    -target=cloudflare_record.adguard"    >> $GITHUB_OUTPUT ;;
+            common/vault)      echo "targets=-target=module.vault      -target=cloudflare_record.vault"      >> $GITHUB_OUTPUT ;;
+            common/postgresql) echo "targets=-target=module.postgresql -target=cloudflare_record.postgresql -target=cloudflare_record.pgadmin" >> $GITHUB_OUTPUT ;;
+            common/redis)      echo "targets=-target=module.redis      -target=cloudflare_record.redis"      >> $GITHUB_OUTPUT ;;
             prod/k3s)     echo "targets=-target=module.prod_k3s_1 -target=module.prod_k3s_2" >> $GITHUB_OUTPUT ;;
             prod/haproxy)      echo "targets=-target=module.prod_lb"    >> $GITHUB_OUTPUT ;;
             prod/nfs)          echo "targets=-target=module.prod_nfs"   >> $GITHUB_OUTPUT ;;
@@ -60,4 +58,6 @@ jobs:
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
             -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
             -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
-            -var ssh_public_key="${{ secrets.SSH_PUBLIC_KEY }}"
+            -var ssh_public_key="${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -var cloudflare_zone_id="${{ secrets.CLOUDFLARE_ZONE_ID }}"

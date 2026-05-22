@@ -12,7 +12,5 @@ all:
           ansible_host: 192.168.1.3
         postgresql:
           ansible_host: 192.168.1.4
-        pgadmin:
-          ansible_host: 192.168.1.5
-        redis:
+redis:
           ansible_host: 192.168.1.6
