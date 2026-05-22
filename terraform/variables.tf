@@ -1,32 +1,38 @@
 variable "proxmox_endpoint" {
-  type = string
+  description = "Proxmox API endpoint URL, e.g. https://192.168.1.50:8006/"
+  type        = string
 }
 
 variable "proxmox_username" {
-  type      = string
-  sensitive = true
+  description = "Proxmox API username, e.g. root@pam"
+  type        = string
+  sensitive   = true
 }
 
 variable "proxmox_password" {
-  type      = string
-  sensitive = true
+  description = "Proxmox API password"
+  type        = string
+  sensitive   = true
 }
 
 variable "ssh_public_key" {
-  type      = string
-  sensitive = false
-  default   = ""
+  description = "SSH public key injected into all provisioned VMs and containers via cloud-init"
+  type        = string
+  sensitive   = false
+  default     = ""
 }
 
 variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-  default   = ""
+  description = "SSH private key used by Terraform provisioners to connect to VMs and containers"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
+  description = "Cloudflare API token with Zone:DNS:Edit permissions for the managed zone"
+  type        = string
+  sensitive   = true
 }
 
 variable "haproxy_public_ip" {

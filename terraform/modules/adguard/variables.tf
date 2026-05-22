@@ -1,42 +1,51 @@
 variable "zone_id" {
-  type = string
+  description = "Cloudflare zone ID used to create the adguard.internal DNS A record"
+  type        = string
 }
 
 variable "template_file_id" {
-  type = string
+  description = "Proxmox LXC template file ID for the Ubuntu container image"
+  type        = string
 }
 
 variable "ssh_public_keys" {
-  type    = list(string)
-  default = []
+  description = "List of SSH public keys to inject into the container"
+  type        = list(string)
+  default     = []
 }
 
 variable "container_id" {
-  type    = number
-  default = 200
+  description = "Proxmox container ID for the AdGuard Home instance"
+  type        = number
+  default     = 200
 }
 
 variable "ip_address" {
-  type    = string
-  default = "192.168.1.2"
+  description = "Static IPv4 address without CIDR prefix; /24 is appended automatically"
+  type        = string
+  default     = "192.168.1.2"
 }
 
 variable "gateway" {
-  type    = string
-  default = "192.168.1.1"
+  description = "Default gateway"
+  type        = string
+  default     = "192.168.1.1"
 }
 
 variable "cpu_cores" {
-  type    = number
-  default = 1
+  description = "Number of CPU cores"
+  type        = number
+  default     = 1
 }
 
 variable "memory_mb" {
-  type    = number
-  default = 256
+  description = "RAM in MiB"
+  type        = number
+  default     = 256
 }
 
 variable "disk_size_gb" {
-  type    = number
-  default = 4
+  description = "Root disk size in GiB"
+  type        = number
+  default     = 4
 }

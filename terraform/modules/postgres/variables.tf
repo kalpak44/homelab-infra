@@ -1,42 +1,51 @@
 variable "zone_id" {
-  type = string
+  description = "Cloudflare zone ID used to create the postgres.internal and pgadmin.internal DNS A records"
+  type        = string
 }
 
 variable "template_file_id" {
-  type = string
+  description = "Proxmox LXC template file ID for the Ubuntu container image"
+  type        = string
 }
 
 variable "ssh_public_keys" {
-  type    = list(string)
-  default = []
+  description = "List of SSH public keys to inject into the container"
+  type        = list(string)
+  default     = []
 }
 
 variable "container_id" {
-  type    = number
-  default = 202
+  description = "Proxmox container ID for the PostgreSQL instance"
+  type        = number
+  default     = 202
 }
 
 variable "ip_address" {
-  type    = string
-  default = "192.168.1.4"
+  description = "Static IPv4 address without CIDR prefix; /24 is appended automatically"
+  type        = string
+  default     = "192.168.1.4"
 }
 
 variable "gateway" {
-  type    = string
-  default = "192.168.1.1"
+  description = "Default gateway"
+  type        = string
+  default     = "192.168.1.1"
 }
 
 variable "cpu_cores" {
-  type    = number
-  default = 1
+  description = "Number of CPU cores"
+  type        = number
+  default     = 1
 }
 
 variable "memory_mb" {
-  type    = number
-  default = 2048
+  description = "RAM in MiB"
+  type        = number
+  default     = 2048
 }
 
 variable "disk_size_gb" {
-  type    = number
-  default = 16
+  description = "Root disk size in GiB"
+  type        = number
+  default     = 16
 }
