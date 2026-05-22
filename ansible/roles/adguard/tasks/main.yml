@@ -1,4 +1,23 @@
 ---
+- name: Install openssh-server
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    update_cache: true
+
+- name: Disable SSH password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  notify: Restart SSH
+
+- name: Ensure SSH is running
+  ansible.builtin.systemd:
+    name: ssh
+    state: started
+    enabled: true
+
 - name: Disable systemd-resolved
   ansible.builtin.systemd:
     name: systemd-resolved
@@ -13,6 +32,43 @@
     owner: root
     group: root
     mode: "0644"
+
+- name: Install certbot and Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+  when: adguard_tls_enabled
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  when: adguard_tls_enabled
+  no_log: true
+
+- name: Issue Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ adguard_cert_email }}
+      -d {{ adguard_tls_domain }}
+    creates: "{{ adguard_cert_path }}"
+  when: adguard_tls_enabled and adguard_cert_email != ""
+
+- name: Deploy certbot renewal hook to restart AdGuard
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-adguard.sh
+    content: "#!/bin/bash\nsystemctl restart AdGuardHome\n"
+    mode: "0755"
+  when: adguard_tls_enabled
 
 - name: Check if AdGuard Home binary exists
   ansible.builtin.stat:

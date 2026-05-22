@@ -195,6 +195,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `PROXMOX_PASSWORD`        | Proxmox API token secret from step 2a                                        |
 | `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
 | `SSH_PRIVATE_KEY`         | Contents of `~/.ssh/id_ed25519` on the Proxmox node (used by Ansible)        |
+| `LETSENCRYPT_EMAIL`        | Email address for Let's Encrypt account registration                         |
 | `ADGUARD_USERNAME`        | AdGuard admin username of your choice                                         |
 | `ADGUARD_PASSWORD`        | AdGuard admin password of your choice                                         |
 | `VAULT_USERNAME`          | Vault admin username — alphanumeric only, no `@` or special chars            |
@@ -261,7 +262,7 @@ DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
 
 **Deploy:** Run **Deploy** → `common/adguard`
 
-AdGuard Home is available at `http://192.168.1.2` or `http://adguard.internal.pavel-usanli.online` — no setup wizard, credentials are set from the secrets above.
+AdGuard Home is available at `https://adguard.internal.pavel-usanli.online` (or `http://192.168.1.2` before TLS is provisioned). SSH is enabled on port 22 with key-only auth. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
 
 **Point your router's DNS to `192.168.1.2`** (or set it per-device) to start filtering.
 

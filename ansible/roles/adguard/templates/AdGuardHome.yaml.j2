@@ -81,8 +81,8 @@ dns:
   pending_requests:
     enabled: true
 tls:
-  enabled: false
-  server_name: ""
+  enabled: {{ adguard_tls_enabled | lower }}
+  server_name: "{{ adguard_tls_domain if adguard_tls_enabled else '' }}"
   force_https: false
   port_https: 443
   port_dns_over_tls: 853
@@ -91,8 +91,8 @@ tls:
   dnscrypt_config_file: ""
   certificate_chain: ""
   private_key: ""
-  certificate_path: ""
-  private_key_path: ""
+  certificate_path: "{{ adguard_cert_path if adguard_tls_enabled else '' }}"
+  private_key_path: "{{ adguard_key_path if adguard_tls_enabled else '' }}"
   strict_sni_check: false
 querylog:
   dir_path: ""
