@@ -8,23 +8,22 @@ on:
         required: true
         type: choice
         options:
-          - common/all
-          - common/shared
-          - common/adguard
-          - common/vault
-          - common/postgresql
-          - common/redis
-          - prod/all
-          - prod/haproxy
-          - prod/nfs
-          - prod/k3s
-          - prod/k3s/flux
+          - all
+          - proxmox-dns
+          - adguard
+          - vault
+          - postgresql
+          - redis
+          - haproxy
+          - nfs
+          - k3s
+          - k3s/flux
 
 jobs:
   deploy:
     name: Deploy / ${{ inputs.service }}
     runs-on: self-hosted
-    environment: ${{ startsWith(inputs.service, 'prod') && 'prod' || 'common' }}
+    environment: ${{ contains(fromJSON('["haproxy","nfs","k3s","k3s/flux"]'), inputs.service) && 'prod' || 'common' }}
     permissions:
       contents: write
 
@@ -37,21 +36,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve env and playbook
-        id: ctx
-        run: |
-          SERVICE="${{ inputs.service }}"
-          echo "env=${SERVICE%%/*}"      >> $GITHUB_OUTPUT
-          echo "playbook=${SERVICE##*/}" >> $GITHUB_OUTPUT
-
       - name: Terraform Init
-        if: steps.ctx.outputs.playbook != 'flux'
-        working-directory: terraform/envs/${{ steps.ctx.outputs.env }}
+        if: inputs.service != 'k3s/flux'
+        working-directory: terraform
         run: terraform init -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Terraform Apply
-        if: steps.ctx.outputs.playbook != 'flux'
-        working-directory: terraform/envs/${{ steps.ctx.outputs.env }}
+        if: inputs.service != 'k3s/flux'
+        working-directory: terraform
         run: |
           terraform apply -auto-approve \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
@@ -70,13 +62,14 @@ jobs:
         run: sudo apt-get install -y python3-passlib
 
       - name: Run Ansible
-        if: steps.ctx.outputs.playbook != 'shared'
+        if: inputs.service != 'proxmox-dns'
         working-directory: ansible
         run: |
           run_playbook() {
+            local pb=$1 inv=$2
             ansible-playbook \
-              -i inventories/${{ steps.ctx.outputs.env }}.yml \
-              playbooks/$1.yml \
+              -i inventories/$inv.yml \
+              playbooks/$pb.yml \
               -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
               -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
               -e adguard_cert_email="${{ secrets.LETSENCRYPT_EMAIL }}" \
@@ -96,13 +89,12 @@ jobs:
               -e cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
           }
 
-          PLAYBOOK="${{ steps.ctx.outputs.playbook }}"
-          ENV="${{ steps.ctx.outputs.env }}"
-
-          if [[ "$PLAYBOOK" == "all" && "$ENV" == "common" ]]; then
-            for pb in adguard vault postgresql pgadmin redis; do run_playbook $pb; done
-          elif [[ "$PLAYBOOK" == "all" && "$ENV" == "prod" ]]; then
-            for pb in haproxy nfs k3s; do run_playbook $pb; done
-          else
-            run_playbook $PLAYBOOK
-          fi
+          case "${{ inputs.service }}" in
+            all)
+              for pb in adguard vault postgresql pgadmin redis; do run_playbook $pb common; done
+              for pb in haproxy nfs k3s; do run_playbook $pb prod; done
+              ;;
+            haproxy|nfs|k3s)  run_playbook ${{ inputs.service }} prod ;;
+            k3s/flux)          run_playbook flux prod ;;
+            *)                 run_playbook ${{ inputs.service }} common ;;
+          esac

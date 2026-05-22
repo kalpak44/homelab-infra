@@ -384,44 +384,44 @@ kubectl get nodes
 
 ### Deploy options
 
-| Option | Terraform | Ansible |
-|---|---|---|
-| `common/all` | apply whole common env | adguard → vault → postgresql → pgadmin → redis |
-| `common/shared` | apply whole common env | skipped |
-| `common/adguard` | apply whole common env | adguard |
-| `common/vault` | apply whole common env | vault |
-| `common/postgresql` | apply whole common env | postgresql → pgadmin |
-| `common/redis` | apply whole common env | redis |
-| `prod/all` | apply whole prod env | haproxy → nfs → k3s |
-| `prod/haproxy` | apply whole prod env | haproxy |
-| `prod/nfs` | apply whole prod env | nfs |
-| `prod/k3s` | apply whole prod env | k3s |
-| `prod/k3s/flux` | skipped | flux |
+| Option | Terraform | Ansible inventory | Ansible playbooks |
+|---|---|---|---|
+| `all` | apply everything | common + prod | adguard → vault → postgresql → pgadmin → redis → haproxy → nfs → k3s |
+| `proxmox-dns` | apply everything | — | skipped |
+| `adguard` | apply everything | common | adguard |
+| `vault` | apply everything | common | vault |
+| `postgresql` | apply everything | common | postgresql → pgadmin |
+| `redis` | apply everything | common | redis |
+| `haproxy` | apply everything | prod | haproxy |
+| `nfs` | apply everything | prod | nfs |
+| `k3s` | apply everything | prod | k3s |
+| `k3s/flux` | skipped | prod | flux |
+
+> k3s DNS records for apps are managed inside the cluster by Flux/external-dns, not Terraform.
 
 ### Destroy options
 
 | Option | Terraform targets |
 |---|---|
-| `common/all` | entire common env |
-| `common/shared` | `proxmox_download_file.ubuntu_lxc`, `cloudflare_record.proxmox` |
-| `common/adguard` | `module.adguard`, `cloudflare_record.adguard` |
-| `common/vault` | `module.vault`, `cloudflare_record.vault` |
-| `common/postgresql` | `module.postgresql`, `cloudflare_record.postgresql`, `cloudflare_record.pgadmin` |
-| `common/redis` | `module.redis`, `cloudflare_record.redis` |
-| `prod/all` | entire prod env |
-| `prod/haproxy` | `module.prod_lb` |
-| `prod/nfs` | `module.prod_nfs` |
-| `prod/k3s` | `module.prod_k3s_1`, `module.prod_k3s_2` |
+| `all` | entire state |
+| `proxmox-dns` | `cloudflare_record.proxmox` |
+| `adguard` | `module.adguard`, `cloudflare_record.adguard` |
+| `vault` | `module.vault`, `cloudflare_record.vault` |
+| `postgresql` | `module.postgresql`, `cloudflare_record.postgresql`, `cloudflare_record.pgadmin` |
+| `redis` | `module.redis`, `cloudflare_record.redis` |
+| `haproxy` | `module.prod_lb`, `cloudflare_record.haproxy` |
+| `nfs` | `module.prod_nfs`, `cloudflare_record.nfs` |
+| `k3s` | `module.prod_k3s_1`, `module.prod_k3s_2` |
 
 ---
 
-## Local init (one-time, per env)
+## Local init (one-time)
 
 ```bash
 export AWS_ACCESS_KEY_ID=<R2_ACCESS_KEY_ID>
 export AWS_SECRET_ACCESS_KEY=<R2_SECRET_ACCESS_KEY>
 export AWS_ENDPOINT_URL_S3=<R2_ENDPOINT>
 
-cd terraform/envs/prod   # or common
+cd terraform
 terraform init -backend-config="bucket=<R2_BUCKET_NAME>"
 ```
