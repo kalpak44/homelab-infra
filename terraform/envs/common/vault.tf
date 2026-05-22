@@ -17,9 +17,9 @@ module "vault" {
 }
 
 resource "cloudflare_record" "vault" {
-  zone_id = var.cloudflare_zone_id
+  zone_id = data.cloudflare_zone.this.id
   name    = "vault.internal"
-  value   = "192.168.1.3"
+  content = "192.168.1.3"
   type    = "A"
   proxied = false
 }

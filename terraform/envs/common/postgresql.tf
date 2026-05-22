@@ -17,17 +17,17 @@ module "postgresql" {
 }
 
 resource "cloudflare_record" "postgresql" {
-  zone_id = var.cloudflare_zone_id
+  zone_id = data.cloudflare_zone.this.id
   name    = "postgresql.internal"
-  value   = "192.168.1.4"
+  content = "192.168.1.4"
   type    = "A"
   proxied = false
 }
 
 resource "cloudflare_record" "pgadmin" {
-  zone_id = var.cloudflare_zone_id
+  zone_id = data.cloudflare_zone.this.id
   name    = "pgadmin.internal"
-  value   = "192.168.1.4"
+  content = "192.168.1.4"
   type    = "A"
   proxied = false
 }

@@ -17,9 +17,9 @@ module "adguard" {
 }
 
 resource "cloudflare_record" "adguard" {
-  zone_id = var.cloudflare_zone_id
+  zone_id = data.cloudflare_zone.this.id
   name    = "adguard.internal"
-  value   = "192.168.1.2"
+  content = "192.168.1.2"
   type    = "A"
   proxied = false
 }

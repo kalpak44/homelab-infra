@@ -210,7 +210,6 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
 | `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
 | `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |
-| `CLOUDFLARE_ZONE_ID`      | Zone ID for `pavel-usanli.online` — found on the domain overview page in the Cloudflare dashboard (right sidebar) |
 | `FLUX_GITHUB_TOKEN`       | GitHub PAT with `repo` scope — used by Flux CD to read/write this repository during bootstrap |
 
 ### 4. Proxmox — TLS certificate via Let's Encrypt

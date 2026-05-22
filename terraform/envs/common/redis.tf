@@ -17,9 +17,9 @@ module "redis" {
 }
 
 resource "cloudflare_record" "redis" {
-  zone_id = var.cloudflare_zone_id
+  zone_id = data.cloudflare_zone.this.id
   name    = "redis.internal"
-  value   = "192.168.1.6"
+  content = "192.168.1.6"
   type    = "A"
   proxied = false
 }
