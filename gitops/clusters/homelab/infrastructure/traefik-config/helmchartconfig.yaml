@@ -4,4 +4,45 @@ metadata:
   name: traefik
   namespace: kube-system
 spec:
-  valuesContent: ""
+  valuesContent: |
+    ingressClass:
+      enabled: true
+      isDefaultClass: true
+
+    providers:
+      kubernetesCRD:
+        enabled: true
+      kubernetesIngress:
+        enabled: true
+
+    service:
+      spec:
+        loadBalancerIP: "192.168.1.120"
+
+    logs:
+      general:
+        level: INFO
+
+    certificatesResolvers:
+      cloudflare:
+        acme:
+          email: "${LETSENCRYPT_EMAIL}"
+          storage: "/ssl-certs/acme.json"
+          dnsChallenge:
+            provider: cloudflare
+            resolvers:
+              - "1.1.1.1:53"
+
+    env:
+      - name: CF_DNS_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: cloudflare-api-token
+            key: api-token
+
+    persistence:
+      enabled: true
+      name: ssl-certs
+      size: 1Gi
+      accessMode: ReadWriteOnce
+      path: /ssl-certs
