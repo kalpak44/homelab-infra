@@ -58,6 +58,12 @@ variable "gateway" {
   type        = string
 }
 
+variable "data_disk_size_gb" {
+  description = "Optional data disk size in GiB (0 = no data disk)"
+  type        = number
+  default     = 0
+}
+
 variable "ssh_public_keys" {
   description = "List of SSH public keys to inject via cloud-init"
   type        = list(string)

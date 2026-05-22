@@ -121,9 +121,10 @@ module "prod_nfs" {
   vm_id          = 301
   template_vm_id = proxmox_virtual_environment_vm.ubuntu_template.vm_id
 
-  cpu_cores    = 2
-  memory_mb    = 2048
-  disk_size_gb = 512
+  cpu_cores         = 2
+  memory_mb         = 2048
+  disk_size_gb      = 20
+  data_disk_size_gb = 512
 
   ip_address      = "192.168.1.108/24"
   gateway         = "192.168.1.1"

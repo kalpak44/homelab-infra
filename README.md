@@ -333,7 +333,7 @@ k3s two-node cluster with an external HAProxy load balancer and NFS storage, all
 | `prod-k3s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
 | `prod-k3s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
 | `prod-lb` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
-| `prod-nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 512 GB | NFS server — persistent volume storage |
+| `prod-nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 20 GB OS + 512 GB data | NFS server — persistent volume storage |
 | MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
 
 **Traffic flow:**

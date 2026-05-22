@@ -5,6 +5,20 @@
     state: present
     update_cache: true
 
+- name: Format data disk
+  community.general.filesystem:
+    fstype: ext4
+    dev: "{{ nfs_data_disk }}"
+    state: present
+
+- name: Mount data disk
+  ansible.builtin.mount:
+    path: /srv/nfs
+    src: "{{ nfs_data_disk }}"
+    fstype: ext4
+    opts: defaults
+    state: mounted
+
 - name: Create export directory
   ansible.builtin.file:
     path: "{{ nfs_export_path }}"
