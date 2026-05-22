@@ -43,7 +43,11 @@ resource "proxmox_virtual_environment_container" "this" {
     type             = "ubuntu"
   }
 
+  features {
+    nesting = true
+  }
+
   lifecycle {
-    ignore_changes = [unprivileged]
+    ignore_changes = [unprivileged, features]
   }
 }
