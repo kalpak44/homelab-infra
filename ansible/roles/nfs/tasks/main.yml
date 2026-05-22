@@ -1,18 +1,9 @@
 ---
-- name: Install nfs-ganesha and rpcbind
+- name: Install nfs-kernel-server
   ansible.builtin.apt:
-    name:
-      - nfs-ganesha
-      - nfs-ganesha-vfs
-      - rpcbind
+    name: nfs-kernel-server
     state: present
     update_cache: true
-
-- name: Enable and start rpcbind
-  ansible.builtin.systemd:
-    name: rpcbind
-    enabled: true
-    state: started
 
 - name: Create export directory
   ansible.builtin.file:
@@ -22,17 +13,17 @@
     group: nogroup
     mode: "0777"
 
-- name: Configure ganesha
+- name: Configure exports
   ansible.builtin.template:
-    src: ganesha.conf.j2
-    dest: /etc/ganesha/ganesha.conf
+    src: exports.j2
+    dest: /etc/exports
     owner: root
     group: root
     mode: "0644"
-  notify: Restart ganesha
+  notify: Reload exports
 
-- name: Enable and restart ganesha
+- name: Enable and start nfs-kernel-server
   ansible.builtin.systemd:
-    name: nfs-ganesha
+    name: nfs-kernel-server
     enabled: true
-    state: restarted
+    state: started
