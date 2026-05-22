@@ -13,16 +13,16 @@ on:
           - common/postgresql
           - common/pgadmin
           - common/redis
-          - prod/k3s
           - prod/haproxy
           - prod/nfs
-          - prod/flux
+          - prod/k3s
+          - prod/k3s/flux
 
 jobs:
   deploy:
     name: Deploy / ${{ inputs.service }}
     runs-on: self-hosted
-    environment: ${{ startsWith(inputs.service, 'prod/') && 'prod' || 'common' }}
+    environment: ${{ startsWith(inputs.service, 'prod') && 'prod' || 'common' }}
     permissions:
       contents: write
 

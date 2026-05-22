@@ -13,15 +13,15 @@ on:
           - common/postgresql
           - common/pgadmin
           - common/redis
-          - prod/k3s
           - prod/haproxy
           - prod/nfs
+          - prod/k3s
 
 jobs:
   destroy:
     name: Destroy / ${{ inputs.service }}
     runs-on: self-hosted
-    environment: ${{ startsWith(inputs.service, 'prod/') && 'prod' || 'common' }}
+    environment: ${{ startsWith(inputs.service, 'prod') && 'prod' || 'common' }}
 
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
