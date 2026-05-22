@@ -6,9 +6,8 @@ metadata:
 spec:
   dependsOn:
     - name: traefik-config
-    - name: nfs-provisioner
     - name: external-secrets-config
-  interval: 30s
+  interval: 10m
   path: ./gitops/clusters/homelab/apps
   prune: true
   sourceRef:
