@@ -1,7 +1,7 @@
 # homelab-infra
 
 Terraform (state in Cloudflare R2) + Ansible for a Proxmox homelab.
-CI runs on a self-hosted runner on the Proxmox node — plan on PRs, apply on merge to `main`.
+CI runs on a self-hosted runner on the Proxmox node — all deploys and destroys are triggered manually via GitHub Actions.
 
 ---
 
@@ -180,18 +180,6 @@ sudo ./svc.sh uninstall
 
 Then destroy the VM, create a new one from the runner setup steps above, and re-register with GitHub.
 
-#### 2d. Load the NFS kernel module
-
-The NFS server runs in an LXC container but relies on the host kernel's `nfsd` module — containers cannot load kernel modules themselves.
-
-```bash
-# Load now
-modprobe nfsd
-
-# Persist across reboots
-echo nfsd >> /etc/modules
-```
-
 ### 3. GitHub — add repository secrets
 
 Go to **Settings → Secrets and variables → Actions → New repository secret** and add:
@@ -206,10 +194,10 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `PROXMOX_USERNAME`        | `terraform@pve!terraform`                                                    |
 | `PROXMOX_PASSWORD`        | Proxmox API token secret from step 2a                                        |
 | `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
-| `SSH_PRIVATE_KEY`         | Contents of `~/.ssh/id_ed25519` on the Proxmox node (Ansible + Terraform SSH for VM disk import) |
+| `SSH_PRIVATE_KEY`         | Contents of `~/.ssh/id_ed25519` on the Proxmox node (used by Ansible)        |
 | `ADGUARD_USERNAME`        | AdGuard admin username of your choice                                         |
 | `ADGUARD_PASSWORD`        | AdGuard admin password of your choice                                         |
-| `VAULT_USERNAME`          | Vault admin username of your choice                                           |
+| `VAULT_USERNAME`          | Vault admin username — alphanumeric only, no `@` or special chars            |
 | `VAULT_PASSWORD`          | Vault admin password of your choice                                           |
 | `POSTGRESQL_DB`           | PostgreSQL database name to create                                            |
 | `POSTGRESQL_USER`         | PostgreSQL application user to create                                         |
@@ -224,7 +212,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by cert-manager for Let's Encrypt DNS-01 |
 | `FLUX_GITHUB_TOKEN`       | GitHub PAT with `repo` scope — used by Flux CD to read/write this repository during bootstrap |
 
-### 3b. Proxmox — TLS certificate via Let's Encrypt
+### 4. Proxmox — TLS certificate via Let's Encrypt
 
 The default Proxmox cert is signed by its own internal CA, which browsers don't trust. Replace it with a Let's Encrypt cert using the Cloudflare DNS-01 challenge — no need to expose port 80.
 
@@ -253,11 +241,11 @@ pvenode acme cert order
 
 Proxmox renews the certificate automatically via a built-in systemd timer — nothing else is needed.
 
-### 4. GitHub — create environments (optional, for a prod gate)
+### 5. GitHub — create environments
 
-Go to **Settings → Environments** and create three environments: `common`, `dev`, and `prod`.
+Go to **Settings → Environments** and create two environments: `common` and `prod`.
 
-Add a required reviewer to `prod` to require manual approval before applying — `common` and `dev` apply automatically on push to `main`.
+Add a required reviewer to `prod` to require manual approval before running prod deploys.
 
 ---
 
@@ -267,62 +255,37 @@ Add a required reviewer to `prod` to require manual approval before applying —
 
 DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
 
-**Secrets required** (GitHub → Settings → Secrets → Actions):
+**Secrets required:** `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`
 
-| Secret               | Value                         |
-|----------------------|-------------------------------|
-| `ADGUARD_USERNAME`   | Admin username of your choice |
-| `ADGUARD_PASSWORD`   | Admin password of your choice |
-
-**Deploy:**
-
-1. Run **Terraform Apply** → `common` to create the LXC container.
-2. Run **Ansible** → inventory `common`, playbook `adguard`.
+**Deploy:** Run **Deploy** → `common/adguard`
 
 AdGuard Home is available at `http://192.168.1.2` — no setup wizard, credentials are set from the secrets above.
 
 **Point your router's DNS to `192.168.1.2`** (or set it per-device) to start filtering.
 
-**To update AdGuard version** — bump `adguard_version` in `ansible/roles/adguard/defaults/main.yml` and re-run the Ansible workflow.
+**To update AdGuard version** — bump `adguard_version` in `ansible/roles/adguard/defaults/main.yml` and re-run the deploy.
 
 ### HashiCorp Vault
 
 Secret manager running in an LXC container (`common` env, `192.168.1.3`).
 
-**Secrets required** (GitHub → Settings → Secrets → Actions):
+**Secrets required:** `VAULT_USERNAME`, `VAULT_PASSWORD`
 
-| Secret             | Value                        |
-|--------------------|------------------------------|
-| `VAULT_USERNAME`   | Admin username — alphanumeric only, no `@` or special chars |
-| `VAULT_PASSWORD`   | Admin password of your choice |
-
-**Deploy:**
-
-1. Run **Terraform Apply** → `common` to create the LXC container.
-2. Run **Ansible** → inventory `common`, playbook `vault`.
+**Deploy:** Run **Deploy** → `common/vault`
 
 The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200`.
 
 > The unseal key and root token are saved to `/root/vault-init.json` on the container — back this file up somewhere safe.
 
-**To update Vault version** — bump `vault_version` in `ansible/roles/vault/defaults/main.yml` and re-run the Ansible workflow.
+**To update Vault version** — bump `vault_version` in `ansible/roles/vault/defaults/main.yml` and re-run the deploy.
 
 ### PostgreSQL
 
 Database server running in an LXC container (`common` env, `192.168.1.4`).
 
-**Secrets required** (GitHub → Settings → Secrets → Actions):
+**Secrets required:** `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`
 
-| Secret                  | Value                                     |
-|-------------------------|-------------------------------------------|
-| `POSTGRESQL_DB`         | Database name to create                   |
-| `POSTGRESQL_USER`       | Application user to create                |
-| `POSTGRESQL_PASSWORD`   | Password for the application user         |
-
-**Deploy:**
-
-1. Run **Terraform Apply** → `common` to create the LXC container.
-2. Run **Ansible** → inventory `common`, playbook `postgresql`.
+**Deploy:** Run **Deploy** → `common/postgresql`
 
 PostgreSQL 16 listens on `192.168.1.4:5432`. The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
 
@@ -330,17 +293,9 @@ PostgreSQL 16 listens on `192.168.1.4:5432`. The application user and database a
 
 Web-based PostgreSQL management UI running in an LXC container (`common` env, `192.168.1.5`).
 
-**Secrets required** (GitHub → Settings → Secrets → Actions):
+**Secrets required:** `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`
 
-| Secret              | Value                              |
-|---------------------|------------------------------------|
-| `PGADMIN_EMAIL`     | Admin login email of your choice   |
-| `PGADMIN_PASSWORD`  | Admin password of your choice      |
-
-**Deploy:**
-
-1. Run **Terraform Apply** → `common` to create the LXC container.
-2. Run **Ansible** → inventory `common`, playbook `pgadmin`.
+**Deploy:** Run **Deploy** → `common/pgadmin`
 
 pgAdmin is available at `http://192.168.1.5`. To connect to PostgreSQL, add a new server in the UI:
 - **Host:** `192.168.1.4`
@@ -351,36 +306,19 @@ pgAdmin is available at `http://192.168.1.5`. To connect to PostgreSQL, add a ne
 
 Redis + Redis Commander web UI running in a single LXC container (`common` env, `192.168.1.6`).
 
-**Secrets required** (GitHub → Settings → Secrets → Actions):
+**Secrets required:** `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD`
 
-| Secret                     | Value                                    |
-|----------------------------|------------------------------------------|
-| `REDIS_PASSWORD`           | Redis auth password                      |
-| `REDIS_COMMANDER_USER`     | Redis Commander web UI username          |
-| `REDIS_COMMANDER_PASSWORD` | Redis Commander web UI password          |
-
-**Deploy:**
-
-1. Run **Terraform Apply** → `common` to create the LXC container.
-2. Run **Ansible** → inventory `common`, playbook `redis`.
+**Deploy:** Run **Deploy** → `common/redis`
 
 Redis listens on `192.168.1.6:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081`.
 
 ### HAProxy (prod load balancer)
 
-External load balancer for the Kubernetes cluster, running in an LXC container (`prod` env, `192.168.1.109`).
+External load balancer for the k3s cluster, running in an LXC container (`prod` env, `192.168.1.109`).
 
-**Secrets required** (GitHub → Settings → Secrets → Actions):
+**Secrets required:** `HAPROXY_STATS_USER`, `HAPROXY_STATS_PASSWORD`
 
-| Secret                  | Value                                     |
-|-------------------------|-------------------------------------------|
-| `HAPROXY_STATS_USER`    | Stats page username of your choice        |
-| `HAPROXY_STATS_PASSWORD`| Stats page password of your choice        |
-
-**Deploy:**
-
-1. Run **Terraform Apply** → `prod` to create the LXC container.
-2. Run **Ansible** → inventory `prod`, playbook `haproxy`.
+**Deploy:** Run **Deploy** → `prod/haproxy`
 
 HAProxy stats are available at `http://192.168.1.109:8404/stats`. Traffic flow:
 - `:80` — HTTP forwarded to Traefik at `192.168.1.120:80`
@@ -392,10 +330,10 @@ k3s two-node cluster with an external HAProxy load balancer and NFS storage, all
 
 | Host | Type | IP | Spec | Role |
 |---|---|---|---|---|
-| `prod-k8s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
-| `prod-k8s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
+| `prod-k3s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
+| `prod-k3s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
 | `prod-lb` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
-| `prod-nfs` | LXC | 192.168.1.108 | 1 CPU / 1 GB / 256 GB | NFS server — persistent volume storage |
+| `prod-nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 512 GB | NFS server — persistent volume storage |
 | MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
 
 **Traffic flow:**
@@ -413,10 +351,10 @@ Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik 
 
 **Deploy:**
 
-1. Run **Deploy** → `prod/k3s` (creates VMs + installs k3s)
-2. Run **Deploy** → `prod/haproxy` (creates LXC + configures HAProxy)
-3. Run **Deploy** → `prod/nfs` (creates LXC + configures NFS)
-4. Run **Deploy** → `prod/flux` (bootstraps Flux CD + deploys all in-cluster components)
+1. Run **Deploy** → `prod/haproxy` (creates LXC + configures HAProxy)
+2. Run **Deploy** → `prod/nfs` (creates VM + configures NFS)
+3. Run **Deploy** → `prod/k3s` (creates VMs + installs k3s)
+4. Run **Deploy** → `prod/k3s/flux` (bootstraps Flux CD + deploys all in-cluster components)
 
 **kubectl access from your local machine** (on the `192.168.1.0/24` network):
 
@@ -436,10 +374,10 @@ kubectl get nodes
 
 ## CI behaviour
 
-| Event            | Workflow          | What it does                                        |
-|------------------|-------------------|-----------------------------------------------------|
-| Manual dispatch  | `deploy.yml`      | Terraform apply + Ansible for the selected service  |
-| Manual dispatch  | `destroy.yml`     | Terraform destroy for the selected service          |
+| Event           | Workflow       | What it does                                       |
+|-----------------|----------------|----------------------------------------------------|
+| Manual dispatch | `deploy.yml`   | Terraform apply + Ansible for the selected service |
+| Manual dispatch | `destroy.yml`  | Terraform destroy for the selected service         |
 
 ---
 
@@ -450,6 +388,6 @@ export AWS_ACCESS_KEY_ID=<R2_ACCESS_KEY_ID>
 export AWS_SECRET_ACCESS_KEY=<R2_SECRET_ACCESS_KEY>
 export AWS_ENDPOINT_URL_S3=<R2_ENDPOINT>
 
-cd terraform/envs/dev   # or prod
+cd terraform/envs/prod   # or common
 terraform init -backend-config="bucket=<R2_BUCKET_NAME>"
 ```

@@ -57,11 +57,11 @@ resource "proxmox_download_file" "ubuntu_lxc" {
 
 # ── Kubernetes nodes (clone — pure API) ──────────────────────────────────────
 
-module "prod_k8s_1" {
+module "prod_k3s_1" {
   source = "../../modules/proxmox-vm"
 
   node_name      = "proxmox"
-  vm_name        = "prod-k8s-1"
+  vm_name        = "prod-k3s-1"
   vm_id          = 110
   template_vm_id = proxmox_virtual_environment_vm.ubuntu_template.vm_id
 
@@ -74,11 +74,11 @@ module "prod_k8s_1" {
   ssh_public_keys = [var.ssh_public_key]
 }
 
-module "prod_k8s_2" {
+module "prod_k3s_2" {
   source = "../../modules/proxmox-vm"
 
   node_name      = "proxmox"
-  vm_name        = "prod-k8s-2"
+  vm_name        = "prod-k3s-2"
   vm_id          = 111
   template_vm_id = proxmox_virtual_environment_vm.ubuntu_template.vm_id
 

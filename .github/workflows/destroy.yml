@@ -43,7 +43,7 @@ jobs:
             common/postgresql) echo "targets=-target=module.postgresql" >> $GITHUB_OUTPUT ;;
             common/pgadmin)    echo "targets=-target=module.pgadmin"    >> $GITHUB_OUTPUT ;;
             common/redis)      echo "targets=-target=module.redis"      >> $GITHUB_OUTPUT ;;
-            prod/k3s)     echo "targets=-target=module.prod_k8s_1 -target=module.prod_k8s_2" >> $GITHUB_OUTPUT ;;
+            prod/k3s)     echo "targets=-target=module.prod_k3s_1 -target=module.prod_k3s_2" >> $GITHUB_OUTPUT ;;
             prod/haproxy)      echo "targets=-target=module.prod_lb"    >> $GITHUB_OUTPUT ;;
             prod/nfs)          echo "targets=-target=module.prod_nfs"   >> $GITHUB_OUTPUT ;;
           esac

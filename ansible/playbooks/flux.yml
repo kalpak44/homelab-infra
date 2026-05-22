@@ -1,6 +1,6 @@
 ---
 - name: Bootstrap Flux CD
-  hosts: prod-k8s-1
+  hosts: prod-k3s-1
   become: true
 
   vars:
