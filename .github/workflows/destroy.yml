@@ -8,10 +8,13 @@ on:
         required: true
         type: choice
         options:
+          - common/all
+          - common/shared
           - common/adguard
           - common/vault
           - common/postgresql
           - common/redis
+          - prod/all
           - prod/haproxy
           - prod/nfs
           - prod/k3s
@@ -37,13 +40,15 @@ jobs:
           SERVICE="${{ inputs.service }}"
           echo "env=${SERVICE%%/*}" >> $GITHUB_OUTPUT
           case "$SERVICE" in
+            common/shared)     echo "targets=-target=proxmox_download_file.ubuntu_lxc -target=cloudflare_record.proxmox" >> $GITHUB_OUTPUT ;;
             common/adguard)    echo "targets=-target=module.adguard    -target=cloudflare_record.adguard"    >> $GITHUB_OUTPUT ;;
             common/vault)      echo "targets=-target=module.vault      -target=cloudflare_record.vault"      >> $GITHUB_OUTPUT ;;
             common/postgresql) echo "targets=-target=module.postgresql -target=cloudflare_record.postgresql -target=cloudflare_record.pgadmin" >> $GITHUB_OUTPUT ;;
             common/redis)      echo "targets=-target=module.redis      -target=cloudflare_record.redis"      >> $GITHUB_OUTPUT ;;
-            prod/k3s)     echo "targets=-target=module.prod_k3s_1 -target=module.prod_k3s_2" >> $GITHUB_OUTPUT ;;
-            prod/haproxy)      echo "targets=-target=module.prod_lb"    >> $GITHUB_OUTPUT ;;
-            prod/nfs)          echo "targets=-target=module.prod_nfs"   >> $GITHUB_OUTPUT ;;
+            prod/k3s)          echo "targets=-target=module.prod_k3s_1 -target=module.prod_k3s_2"           >> $GITHUB_OUTPUT ;;
+            prod/haproxy)      echo "targets=-target=module.prod_lb"   >> $GITHUB_OUTPUT ;;
+            prod/nfs)          echo "targets=-target=module.prod_nfs"  >> $GITHUB_OUTPUT ;;
+            common/all|prod/all) echo "targets=" >> $GITHUB_OUTPUT ;;
           esac
 
       - name: Terraform Init

@@ -8,10 +8,13 @@ on:
         required: true
         type: choice
         options:
+          - common/all
+          - common/shared
           - common/adguard
           - common/vault
           - common/postgresql
           - common/redis
+          - prod/all
           - prod/haproxy
           - prod/nfs
           - prod/k3s
@@ -67,24 +70,38 @@ jobs:
         run: sudo apt-get install -y python3-passlib
 
       - name: Run Ansible
+        if: steps.ctx.outputs.playbook != 'shared'
         working-directory: ansible
         run: |
-          ansible-playbook \
-            -i inventories/${{ steps.ctx.outputs.env }}.yml \
-            playbooks/${{ steps.ctx.outputs.playbook }}.yml \
-            -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
-            -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
-            -e vault_username="${{ secrets.VAULT_USERNAME }}" \
-            -e vault_password="${{ secrets.VAULT_PASSWORD }}" \
-            -e postgresql_db="${{ secrets.POSTGRESQL_DB }}" \
-            -e postgresql_user="${{ secrets.POSTGRESQL_USER }}" \
-            -e postgresql_password="${{ secrets.POSTGRESQL_PASSWORD }}" \
-            -e pgadmin_email="${{ secrets.PGADMIN_EMAIL }}" \
-            -e pgadmin_password="${{ secrets.PGADMIN_PASSWORD }}" \
-            -e redis_password="${{ secrets.REDIS_PASSWORD }}" \
-            -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
-            -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
-            -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \
-            -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}" \
-            -e flux_github_token="${{ secrets.FLUX_GITHUB_TOKEN }}" \
-            -e cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          run_playbook() {
+            ansible-playbook \
+              -i inventories/${{ steps.ctx.outputs.env }}.yml \
+              playbooks/$1.yml \
+              -e adguard_username="${{ secrets.ADGUARD_USERNAME }}" \
+              -e adguard_password="${{ secrets.ADGUARD_PASSWORD }}" \
+              -e vault_username="${{ secrets.VAULT_USERNAME }}" \
+              -e vault_password="${{ secrets.VAULT_PASSWORD }}" \
+              -e postgresql_db="${{ secrets.POSTGRESQL_DB }}" \
+              -e postgresql_user="${{ secrets.POSTGRESQL_USER }}" \
+              -e postgresql_password="${{ secrets.POSTGRESQL_PASSWORD }}" \
+              -e pgadmin_email="${{ secrets.PGADMIN_EMAIL }}" \
+              -e pgadmin_password="${{ secrets.PGADMIN_PASSWORD }}" \
+              -e redis_password="${{ secrets.REDIS_PASSWORD }}" \
+              -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
+              -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
+              -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \
+              -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}" \
+              -e flux_github_token="${{ secrets.FLUX_GITHUB_TOKEN }}" \
+              -e cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          }
+
+          PLAYBOOK="${{ steps.ctx.outputs.playbook }}"
+          ENV="${{ steps.ctx.outputs.env }}"
+
+          if [[ "$PLAYBOOK" == "all" && "$ENV" == "common" ]]; then
+            for pb in adguard vault postgresql pgadmin redis; do run_playbook $pb; done
+          elif [[ "$PLAYBOOK" == "all" && "$ENV" == "prod" ]]; then
+            for pb in haproxy nfs k3s; do run_playbook $pb; done
+          else
+            run_playbook $PLAYBOOK
+          fi
