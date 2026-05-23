@@ -58,7 +58,7 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   agent {
     enabled = true
-    timeout = "15m"
+    timeout = "1m"
   }
 
   lifecycle {
