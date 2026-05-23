@@ -118,14 +118,15 @@ spec:
         enabled: true
         format: json
         fields:
-          defaultMode: drop
-          names:
-            ClientHost: keep
-            RequestHost: keep
-            RequestMethod: keep
-            RequestPath: keep
-            RequestScheme: keep
-            DownstreamStatus: keep
+          general:
+            defaultMode: drop
+            names:
+              ClientHost: keep
+              RequestHost: keep
+              RequestMethod: keep
+              RequestPath: keep
+              RequestScheme: keep
+              DownstreamStatus: keep
           headers:
             defaultMode: drop
             names:
