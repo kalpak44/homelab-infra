@@ -6,6 +6,8 @@ resources:
   - service.yaml
   - ingressroute.yaml
 
+namespace: private
+
 configMapGenerator:
   - name: private-home-page-html
     files:
