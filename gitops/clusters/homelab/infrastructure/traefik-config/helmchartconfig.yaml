@@ -116,6 +116,11 @@ spec:
         level: INFO
       access:
         enabled: true
+        fields:
+          headers:
+            defaultMode: drop
+            names:
+              Host: keep
 
     certificatesResolvers:
       cloudflare:
