@@ -5,6 +5,9 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |
+    api:
+      dashboard: true
+
     ingressClass:
       enabled: true
       isDefaultClass: true

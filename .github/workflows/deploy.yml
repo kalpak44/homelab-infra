@@ -3,6 +3,11 @@ name: Deploy Service
 on:
   workflow_dispatch:
     inputs:
+      refresh:
+        description: "Refresh Terraform state before apply"
+        required: false
+        type: boolean
+        default: true
       service:
         description: "Service to deploy"
         required: true
@@ -22,6 +27,7 @@ on:
           - k3s/flux/private-home-page
           - k3s/flux/mite-assistant-mcp
           - k3s/flux/crowdsec-web-ui
+          - k3s/flux/traefik
 
 jobs:
   deploy:
@@ -35,6 +41,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
       TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      TF_REFRESH_FLAG: ${{ inputs.refresh == false && '-refresh=false' || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +52,10 @@ jobs:
         run: terraform init -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Terraform Apply
-        if: inputs.service != 'k3s/flux' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui'
+        if: inputs.service != 'k3s/flux' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui' && inputs.service != 'k3s/flux/traefik'
         working-directory: terraform
         run: |
-          terraform apply -auto-approve \
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
             -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
             -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
@@ -59,7 +66,7 @@ jobs:
         if: inputs.service == 'k3s/flux/personal-web-page'
         working-directory: terraform
         run: |
-          terraform apply -auto-approve \
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
             -target=cloudflare_record.personal_web_page_apex \
             -target=cloudflare_record.personal_web_page_www \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
@@ -73,7 +80,7 @@ jobs:
         if: inputs.service == 'k3s/flux/private-home-page'
         working-directory: terraform
         run: |
-          terraform apply -auto-approve \
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
             -target=cloudflare_record.private_home_page \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
             -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
@@ -85,7 +92,7 @@ jobs:
         if: inputs.service == 'k3s/flux/mite-assistant-mcp'
         working-directory: terraform
         run: |
-          terraform apply -auto-approve \
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
             -target=cloudflare_record.mite_assistant \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
             -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
@@ -98,8 +105,20 @@ jobs:
         if: inputs.service == 'k3s/flux/crowdsec-web-ui'
         working-directory: terraform
         run: |
-          terraform apply -auto-approve \
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
             -target=cloudflare_record.crowdsec_web_ui \
+            -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
+            -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
+            -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
+            -var ssh_public_key="${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+
+      - name: Terraform Apply (traefik DNS)
+        if: inputs.service == 'k3s/flux/traefik'
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
+            -target=cloudflare_record.traefik \
             -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
             -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
             -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
@@ -116,7 +135,7 @@ jobs:
         run: sudo apt-get install -y python3-passlib
 
       - name: Run Ansible
-        if: inputs.service != 'proxmox-dns' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui'
+        if: inputs.service != 'proxmox-dns' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui' && inputs.service != 'k3s/flux/traefik'
         working-directory: ansible
         run: |
           run_playbook() {
