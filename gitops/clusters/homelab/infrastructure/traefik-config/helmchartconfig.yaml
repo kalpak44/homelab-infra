@@ -114,6 +114,8 @@ spec:
     logs:
       general:
         level: INFO
+      access:
+        enabled: true
 
     certificatesResolvers:
       cloudflare:
