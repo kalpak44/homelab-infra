@@ -4,7 +4,7 @@ metadata:
   name: nfs-provisioner
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   path: ./gitops/clusters/homelab/infrastructure/nfs-provisioner
   prune: true
   sourceRef:
