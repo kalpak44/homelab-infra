@@ -69,6 +69,38 @@ spec:
                 - "2a06:98c0::/29"
                 - "2c0f:f248::/32"
 
+      scenarios:
+        http-error-threshold.yaml: |
+          type: leakybucket
+          name: custom/http-error-threshold
+          description: "Block IP after 5 non-2xx HTTP responses"
+          filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
+          groupby: evt.Meta.source_ip
+          capacity: 5
+          leakspeed: "30s"
+          blackhole: 1h
+          labels:
+            service: http
+            type: http-error
+            remediation: true
+
+      profiles.yaml: |
+        name: http_error_ban
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-threshold"
+        decisions:
+          - type: ban
+            duration: 1h
+        on_success: break
+        ---
+        name: default_ip_remediation
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() contains "crowdsecurity/"
+        decisions:
+          - type: ban
+            duration: 4h
+        on_success: break
+
     lapi:
       replicas: 1
       env:
