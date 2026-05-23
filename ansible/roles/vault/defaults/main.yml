@@ -9,3 +9,8 @@ vault_username: ""
 vault_password: ""
 k3s_api_host: "192.168.1.110"
 k3s_api_port: "6443"
+vault_tls_enabled: true
+vault_tls_domain: "vault.internal.pavel-usanli.online"
+vault_cert_path: "/etc/vault.d/tls/cert.pem"
+vault_key_path: "/etc/vault.d/tls/key.pem"
+vault_addr: "{{ 'https' if vault_tls_enabled else 'http' }}://127.0.0.1:{{ vault_api_port }}"

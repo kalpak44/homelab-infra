@@ -44,6 +44,80 @@
     group: vault
     mode: "0750"
 
+- name: Install certbot and Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+  when: vault_tls_enabled
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  when: vault_tls_enabled
+  no_log: true
+
+- name: Create TLS directory
+  ansible.builtin.file:
+    path: /etc/vault.d/tls
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0750"
+  when: vault_tls_enabled
+
+- name: Issue Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ letsencrypt_email }}
+      -d {{ vault_tls_domain }}
+    creates: "/etc/letsencrypt/live/{{ vault_tls_domain }}/fullchain.pem"
+  when: vault_tls_enabled and letsencrypt_email != ""
+
+- name: Copy TLS certificate for Vault
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ vault_tls_domain }}/fullchain.pem"
+    dest: "{{ vault_cert_path }}"
+    remote_src: true
+    owner: vault
+    group: vault
+    mode: "0640"
+  when: vault_tls_enabled
+  notify: Restart Vault
+
+- name: Copy TLS private key for Vault
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ vault_tls_domain }}/privkey.pem"
+    dest: "{{ vault_key_path }}"
+    remote_src: true
+    owner: vault
+    group: vault
+    mode: "0640"
+  when: vault_tls_enabled
+  notify: Restart Vault
+
+- name: Deploy certbot renewal hook for Vault
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-vault.sh
+    content: |
+      #!/bin/bash
+      cp /etc/letsencrypt/live/{{ vault_tls_domain }}/fullchain.pem {{ vault_cert_path }}
+      cp /etc/letsencrypt/live/{{ vault_tls_domain }}/privkey.pem {{ vault_key_path }}
+      chown vault:vault {{ vault_cert_path }} {{ vault_key_path }}
+      chmod 640 {{ vault_cert_path }} {{ vault_key_path }}
+      systemctl restart vault
+    mode: "0755"
+  when: vault_tls_enabled
+
 - name: Deploy Vault configuration
   ansible.builtin.template:
     src: vault.hcl.j2
@@ -67,7 +141,8 @@
   ansible.builtin.command:
     cmd: vault status -format=json
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
   register: vault_status_wait
   until: vault_status_wait.rc in [0, 2]
   retries: 12
@@ -79,7 +154,8 @@
   ansible.builtin.command:
     cmd: vault status -format=json
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
   register: vault_status
   changed_when: false
   failed_when: false
@@ -96,7 +172,8 @@
       > /root/vault-init.json
     creates: /root/vault-init.json
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
   when: not vault_initialized
   no_log: true
 
@@ -121,7 +198,8 @@
   ansible.builtin.command:
     cmd: vault status -format=json
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
   register: vault_status_current
   changed_when: false
   failed_when: false
@@ -130,7 +208,8 @@
   ansible.builtin.command:
     cmd: vault operator unseal {{ vault_unseal_key }}
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
   when: (vault_status_current.stdout | from_json).sealed
   no_log: true
   changed_when: true
@@ -139,7 +218,8 @@
   ansible.builtin.command:
     cmd: vault auth enable userpass
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   register: auth_enable
   failed_when:
@@ -167,7 +247,8 @@
       }
       POLICY
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
   when: vault_username != "" and vault_password != ""
@@ -189,7 +270,8 @@
       - "auth/userpass/users/{{ vault_username | trim }}"
       - "@/tmp/.vault_user.json"
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
   when: vault_username != "" and vault_password != ""
@@ -205,7 +287,8 @@
   ansible.builtin.command:
     cmd: vault secrets enable -path=secret kv-v2
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   register: kv_enable
   failed_when:
@@ -298,7 +381,8 @@
   ansible.builtin.command:
     cmd: vault auth enable kubernetes
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   register: k8s_auth_enable
   failed_when:
@@ -320,7 +404,8 @@
       kubernetes_ca_cert=@/tmp/.k3s-ca.crt
       token_reviewer_jwt="{{ vault_reviewer_jwt }}"
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
   no_log: true
@@ -342,7 +427,8 @@
       }
       POLICY
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
 
@@ -355,6 +441,7 @@
       policies=external-secrets
       ttl=1h
   environment:
-    VAULT_ADDR: "http://127.0.0.1:{{ vault_api_port }}"
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true

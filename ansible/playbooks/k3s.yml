@@ -22,7 +22,7 @@
         cmd: >-
           curl -sfL https://get.k3s.io |
           INSTALL_K3S_VERSION="{{ k3s_version }}"
-          INSTALL_K3S_EXEC="--disable servicelb --node-ip={{ k3s_server_ip }} --write-kubeconfig-mode=644"
+          INSTALL_K3S_EXEC="--disable servicelb --node-ip={{ k3s_server_ip }} --tls-san={{ k3s_server_ip }} --write-kubeconfig-mode=644"
           sh -
       when: not k3s_bin.stat.exists
 
