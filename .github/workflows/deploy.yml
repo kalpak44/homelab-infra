@@ -27,7 +27,6 @@ jobs:
   deploy:
     name: Deploy / ${{ inputs.service }}
     runs-on: self-hosted
-    environment: ${{ contains(fromJSON('["haproxy","nfs","k3s","k3s/flux","k3s/flux/personal-web-page","k3s/flux/private-home-page"]'), inputs.service) && 'prod' || 'common' }}
     permissions:
       contents: write
 
