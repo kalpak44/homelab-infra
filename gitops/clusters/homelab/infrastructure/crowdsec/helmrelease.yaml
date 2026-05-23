@@ -71,7 +71,7 @@ spec:
 
       scenarios:
         http-error-threshold.yaml: |
-          type: leakybucket
+          type: leaky
           name: custom/http-error-threshold
           description: "Block IP after 5 non-2xx HTTP responses"
           filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
