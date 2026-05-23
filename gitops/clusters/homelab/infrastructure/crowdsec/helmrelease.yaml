@@ -4,7 +4,7 @@ metadata:
   name: crowdsec
   namespace: crowdsec
 spec:
-  interval: 10m
+  interval: 30s
   chart:
     spec:
       chart: crowdsec
