@@ -8,4 +8,5 @@ resources:
   - nfs-provisioner.yaml
   - external-secrets.yaml
   - external-secrets-config.yaml
+  - crowdsec.yaml
   - apps.yaml

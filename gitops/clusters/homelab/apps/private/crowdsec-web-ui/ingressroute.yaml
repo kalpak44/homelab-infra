@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: crowdsec-web-ui
+  namespace: private
+spec:
+  entryPoints:
+    - private-web-secure
+  routes:
+    - match: Host(`crowdsec.internal.pavel-usanli.online`)
+      kind: Rule
+      services:
+        - name: crowdsec-web-ui
+          port: 3000
+  tls:
+    certResolver: cloudflare

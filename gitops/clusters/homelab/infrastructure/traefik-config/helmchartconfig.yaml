@@ -55,6 +55,8 @@ spec:
           tls:
             enabled: true
             certResolver: cloudflare
+          middlewares:
+            - "crowdsec-bouncer@kubernetescrd"
       private-web:
         port: 8888
         expose:
@@ -105,3 +107,14 @@ spec:
       size: 1Gi
       accessMode: ReadWriteOnce
       path: /ssl-certs
+
+    experimental:
+      plugins:
+        crowdsec-bouncer-traefik-plugin:
+          moduleName: "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
+          version: "v1.6.0"
+
+    volumes:
+      - name: crowdsec-bouncer-secret
+        mountPath: "/run/secrets/crowdsec"
+        type: secret

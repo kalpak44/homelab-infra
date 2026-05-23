@@ -1,0 +1,113 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: crowdsec
+  namespace: crowdsec
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: crowdsec
+      version: "0.24.x"
+      sourceRef:
+        kind: HelmRepository
+        name: crowdsec
+        namespace: flux-system
+  install:
+    crds: Create
+  upgrade:
+    crds: CreateReplace
+  values:
+    container_runtime: containerd
+
+    config:
+      config.yaml.local: |
+        api:
+          server:
+            trusted_ips:
+              - 127.0.0.1
+              - ::1
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+            auto_registration:
+              enabled: true
+              token: "${REGISTRATION_TOKEN}"
+              allowed_ranges:
+                - "127.0.0.1/32"
+                - "192.168.0.0/16"
+                - "10.0.0.0/8"
+                - "172.16.0.0/12"
+
+    lapi:
+      replicas: 1
+      env:
+        - name: BOUNCER_KEY_traefik
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-secrets
+              key: bouncer-api-key
+        - name: WEBUI_MACHINE_ID
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-secrets
+              key: webui-machine-id
+        - name: WEBUI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-secrets
+              key: webui-password
+
+      lifecycle:
+        postStart:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - |
+                for i in $(seq 1 60); do
+                  cscli machines add "${WEBUI_MACHINE_ID}" \
+                    --password "${WEBUI_PASSWORD}" \
+                    -f /dev/null 2>/dev/null && exit 0
+                  sleep 2
+                done
+                exit 0
+
+      persistentVolume:
+        data:
+          storageClassName: nfs
+          size: 1Gi
+        config:
+          storageClassName: nfs
+          size: 100Mi
+
+      resources:
+        limits:
+          memory: 500Mi
+          cpu: 500m
+        requests:
+          cpu: 100m
+          memory: 200Mi
+
+    agent:
+      acquisition:
+        - namespace: kube-system
+          podName: "traefik-*"
+          program: traefik
+
+      env:
+        - name: COLLECTIONS
+          value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve"
+
+      persistentVolume:
+        config:
+          enabled: true
+          storageClassName: nfs
+          size: 100Mi
+
+      resources:
+        limits:
+          memory: 250Mi
+          cpu: 500m
+        requests:
+          cpu: 50m
+          memory: 100Mi
