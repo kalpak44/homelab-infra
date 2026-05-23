@@ -5,3 +5,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingressroute.yaml
+
+configMapGenerator:
+  - name: private-home-page-html
+    files:
+      - index.html

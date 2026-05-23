@@ -22,3 +22,11 @@ spec:
             httpGet:
               path: /
               port: 80
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+      volumes:
+        - name: html
+          configMap:
+            name: private-home-page-html
