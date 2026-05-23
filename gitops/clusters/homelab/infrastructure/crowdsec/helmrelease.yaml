@@ -73,12 +73,24 @@ spec:
         http-error-threshold.yaml: |
           type: leaky
           name: custom/http-error-threshold
-          description: "Block IP after 5 non-2xx HTTP responses"
+          description: "Block IP after 5 non-2xx HTTP responses within 1 minute"
+
+          # Only count HTTP events that have a status code and are not 2xx (e.g. 404, 403, 500)
           filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
+
+          # Group events by source IP — each IP gets its own bucket
           groupby: evt.Meta.source_ip
+
+          # Bucket holds up to 5 events before overflowing (triggering a ban)
           capacity: 5
-          leakspeed: "30s"
+
+          # One event leaks out every 12s → effective window = capacity × leakspeed = 5 × 12s = 60s
+          # If an IP hits 6 non-2xx responses within ~60s the bucket overflows and a ban is issued
+          leakspeed: "12s"
+
+          # After firing once, suppress further alerts for this IP for 1 hour (avoid alert spam)
           blackhole: 1h
+
           labels:
             service: http
             type: http-error
