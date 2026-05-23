@@ -156,6 +156,9 @@ spec:
       accessMode: ReadWriteOnce
       path: /ssl-certs
 
+    additionalArguments:
+      - "--accesslog.fields.defaultmode=drop"
+
     experimental:
       plugins:
         crowdsec-bouncer-traefik-plugin:
