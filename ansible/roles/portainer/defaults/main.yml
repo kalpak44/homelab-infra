@@ -1,0 +1,8 @@
+---
+portainer_data_volume: portainer_data
+portainer_internal_port: 9000
+portainer_admin_username: admin
+portainer_admin_password: ""
+portainer_tls_enabled: true
+portainer_tls_domain: "portainer.internal.pavel-usanli.online"
+letsencrypt_email: ""

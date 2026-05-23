@@ -56,6 +56,20 @@ module "redis" {
   disk_size_gb = 4
 }
 
+# Portainer — Docker management UI
+module "portainer" {
+  source           = "./modules/portainer"
+  zone_id          = data.cloudflare_zone.this.id
+  template_file_id = proxmox_download_file.ubuntu_lxc.id
+  ssh_public_keys  = [var.ssh_public_key]
+
+  container_id = 205
+  ip_address   = "192.168.1.7"
+  cpu_cores    = 1
+  memory_mb    = 1024
+  disk_size_gb = 10
+}
+
 # HAProxy — external load balancer for the k3s cluster
 module "haproxy" {
   source           = "./modules/haproxy"

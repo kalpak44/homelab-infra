@@ -208,6 +208,8 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `REDIS_PASSWORD`          | Redis auth password                                                           |
 | `REDIS_COMMANDER_USER`    | Redis Commander web UI username                                               |
 | `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
+| `PORTAINER_ADMIN_USERNAME`| Portainer admin username — suggested: `admin`                                 |
+| `PORTAINER_ADMIN_PASSWORD`| Portainer admin password of your choice                                       |
 | `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
 | `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
 | `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |
@@ -316,6 +318,20 @@ Redis + Redis Commander web UI running in a single LXC container (`common` env, 
 
 Redis listens on `192.168.1.6:6379` or `redis.internal.pavel-usanli.online:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081` or `http://redis.internal.pavel-usanli.online:8081`.
 
+### Portainer
+
+Docker management UI running in a privileged LXC container (`common` env, `192.168.1.7`).
+
+**Secrets required:** `PORTAINER_ADMIN_USERNAME`, `PORTAINER_ADMIN_PASSWORD`
+
+**Deploy:** Run **Deploy** → `portainer`
+
+Portainer CE runs as a Docker container inside the LXC. nginx listens on port 80 and 443 — HTTP requests are force-redirected to HTTPS. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
+
+Portainer is available at `https://portainer.internal.pavel-usanli.online` (or `http://192.168.1.7` before TLS is provisioned). The admin account is initialised automatically on first deploy. SSH is enabled on port 22 with key-only auth.
+
+> The LXC runs in privileged mode (`unprivileged = false`) — required for Docker inside LXC.
+
 ### HAProxy (prod load balancer)
 
 External load balancer for the k3s cluster, running in an LXC container (`prod` env, `192.168.1.109`).
@@ -347,10 +363,14 @@ Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik 
 
 **In-cluster components** (deployed via Flux CD, watching `gitops/clusters/homelab/`):
 - **MetalLB** — assigns IPs from the `192.168.1.120–130` pool to LoadBalancer services
-- **Traefik** — ingress controller at `192.168.1.120`, TLS via Cloudflare DNS-01 Let's Encrypt
+- **Traefik** — ingress controller at `192.168.1.120`, TLS via Cloudflare DNS-01 Let's Encrypt — [`https://traefik.internal.pavel-usanli.online`](https://traefik.internal.pavel-usanli.online)
 - **NFS provisioner** — StorageClass `nfs` backed by `192.168.1.108:/srv/nfs/k8s`
 - **Flux CD** — GitOps operator
 - **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into k8s secrets
+- **CrowdSec** — intrusion detection + bouncer for Traefik — UI at [`https://crowdsec.internal.pavel-usanli.online`](https://crowdsec.internal.pavel-usanli.online)
+
+**Apps:**
+- **Private home page** — internal dashboard — [`https://home.internal.pavel-usanli.online`](https://home.internal.pavel-usanli.online)
 
 **Deploy:**
 
@@ -386,12 +406,13 @@ kubectl get nodes
 
 | Option | Terraform | Ansible playbooks |
 |---|---|---|
-| `all` | apply everything | adguard → vault → postgres → redis → haproxy → nfs → k3s |
+| `all` | apply everything | adguard → vault → postgres → redis → portainer → haproxy → nfs → k3s |
 | `proxmox-dns` | apply everything | skipped |
 | `adguard` | apply everything | adguard |
 | `vault` | apply everything | vault |
 | `postgres` | apply everything | postgres |
 | `redis` | apply everything | redis |
+| `portainer` | apply everything | portainer |
 | `haproxy` | apply everything | haproxy |
 | `nfs` | apply everything | nfs |
 | `k3s` | apply everything | k3s |
@@ -413,6 +434,7 @@ kubectl get nodes
 | `vault` | `module.vault` |
 | `postgres` | `module.postgres` |
 | `redis` | `module.redis` |
+| `portainer` | `module.portainer` |
 | `haproxy` | `module.haproxy` |
 | `nfs` | `module.nfs` |
 | `k3s` | `module.k3s` |

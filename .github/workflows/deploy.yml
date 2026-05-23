@@ -19,6 +19,7 @@ on:
           - vault
           - postgres
           - redis
+          - portainer
           - haproxy
           - nfs
           - k3s
@@ -156,6 +157,8 @@ jobs:
               -e redis_password="${{ secrets.REDIS_PASSWORD }}" \
               -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
               -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
+              -e portainer_admin_username="${{ secrets.PORTAINER_ADMIN_USERNAME }}" \
+              -e portainer_admin_password="${{ secrets.PORTAINER_ADMIN_PASSWORD }}" \
               -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \
               -e haproxy_stats_password="${{ secrets.HAPROXY_STATS_PASSWORD }}" \
               -e flux_github_token="${{ secrets.FLUX_GITHUB_TOKEN }}" \
@@ -163,7 +166,7 @@ jobs:
           }
 
           case "${{ inputs.service }}" in
-            all)      for pb in adguard vault postgres redis haproxy nfs k3s; do run_playbook $pb; done ;;
+            all)      for pb in adguard vault postgres redis portainer haproxy nfs k3s; do run_playbook $pb; done ;;
             k3s/flux) run_playbook flux ;;
             *)        run_playbook ${{ inputs.service }} ;;
           esac

@@ -14,6 +14,7 @@ on:
           - vault
           - postgres
           - redis
+          - portainer
           - haproxy
           - nfs
           - k3s
@@ -39,8 +40,9 @@ jobs:
             adguard)     echo "targets=-target=module.adguard"  >> $GITHUB_OUTPUT ;;
             vault)       echo "targets=-target=module.vault"    >> $GITHUB_OUTPUT ;;
             postgres)    echo "targets=-target=module.postgres" >> $GITHUB_OUTPUT ;;
-            redis)       echo "targets=-target=module.redis"    >> $GITHUB_OUTPUT ;;
-            haproxy)     echo "targets=-target=module.haproxy"  >> $GITHUB_OUTPUT ;;
+            redis)       echo "targets=-target=module.redis"       >> $GITHUB_OUTPUT ;;
+            portainer)   echo "targets=-target=module.portainer" >> $GITHUB_OUTPUT ;;
+            haproxy)     echo "targets=-target=module.haproxy"   >> $GITHUB_OUTPUT ;;
             nfs)         echo "targets=-target=module.nfs"      >> $GITHUB_OUTPUT ;;
             k3s)         echo "targets=-target=module.k3s"      >> $GITHUB_OUTPUT ;;
             all)         echo "targets=" >> $GITHUB_OUTPUT ;;
