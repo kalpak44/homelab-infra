@@ -53,7 +53,7 @@ module "ollama" {
   ip_address   = "192.168.1.5"
   cpu_cores    = 8
   memory_mb    = 12288
-  disk_size_gb = 25
+  disk_size_gb = 60
 }
 
 # Redis + Redis Commander — cache and web UI
