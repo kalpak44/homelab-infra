@@ -178,6 +178,8 @@ spec:
       env:
         - name: COLLECTIONS
           value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve"
+        - name: SCENARIOS
+          value: "LePresidente/adguardhome-bf crowdsecurity/http-probing crowdsecurity/http-bad-user-agent crowdsecurity/http-backdoors-attempts crowdsecurity/http-sensitive-files crowdsecurity/ssh-bf"
 
       persistentVolume:
         config:
