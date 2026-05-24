@@ -308,6 +308,27 @@ pgAdmin is available at `https://pgadmin.internal.pavel-usanli.online` (or `http
 - **Port:** `5432`
 - **Username / Password:** the `POSTGRESQL_USER` / `POSTGRESQL_PASSWORD` secrets above
 
+### Ollama
+
+Local LLM inference server running in an LXC container (`common` env, `192.168.1.5`).
+
+**Secrets required:** none
+
+**Deploy:** Run **Deploy** → `ollama`
+
+Ollama runs `qwen2.5:14b` (Q4 quantisation, ~9 GB) and listens on `192.168.1.5:11434` (also reachable as `ollama.internal.pavel-usanli.online:11434`). The model is pulled automatically during the first deploy — expect a few minutes depending on download speed.
+
+Use it from any LAN client:
+
+```bash
+curl http://192.168.1.5:11434/api/generate \
+  -d '{"model":"qwen2.5:14b","prompt":"Hello"}'
+```
+
+Or point the Shopify app's LLM provider settings to `http://192.168.1.5:11434` (Ollama-compatible endpoint).
+
+**To switch models** — change `ollama_model` in `ansible/roles/ollama/defaults/main.yml` and re-run the deploy.
+
 ### Redis
 
 Redis + Redis Commander web UI running in a single LXC container (`common` env, `192.168.1.6`).
@@ -404,12 +425,13 @@ kubectl get nodes
 
 | Option | Terraform | Ansible playbooks |
 |---|---|---|
-| `all` | apply everything | adguard → vault → postgres → redis → portainer → haproxy → nfs → k3s |
+| `all` | apply everything | adguard → vault → postgres → redis → ollama → portainer → haproxy → nfs → k3s |
 | `proxmox-dns` | apply everything | skipped |
 | `adguard` | apply everything | adguard |
 | `vault` | apply everything | vault |
 | `postgres` | apply everything | postgres |
 | `redis` | apply everything | redis |
+| `ollama` | apply everything | ollama |
 | `portainer` | apply everything | portainer |
 | `haproxy` | apply everything | haproxy |
 | `nfs` | apply everything | nfs |
@@ -432,6 +454,7 @@ kubectl get nodes
 | `vault` | `module.vault` |
 | `postgres` | `module.postgres` |
 | `redis` | `module.redis` |
+| `ollama` | `module.ollama` |
 | `portainer` | `module.portainer` |
 | `haproxy` | `module.haproxy` |
 | `nfs` | `module.nfs` |
