@@ -114,7 +114,7 @@
 - name: Load pre-configured server into pgAdmin
   ansible.builtin.command:
     cmd: >
-      python3 /usr/pgadmin4/web/setup.py
+      /usr/pgadmin4/venv/bin/python /usr/pgadmin4/web/setup.py
       --load-servers /tmp/pgadmin-servers.json
       --user {{ pgadmin_email }}
   when: pgadmin_email != "" and postgresql_user is defined
