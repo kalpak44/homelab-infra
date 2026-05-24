@@ -3,3 +3,8 @@
   ansible.builtin.systemd:
     name: apache2
     state: restarted
+
+- name: Reload Apache2
+  ansible.builtin.systemd:
+    name: apache2
+    state: reloaded

@@ -1,0 +1,10 @@
+<VirtualHost *:443>
+    ServerName {{ pgadmin_tls_domain }}
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/{{ pgadmin_tls_domain }}/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/{{ pgadmin_tls_domain }}/privkey.pem
+
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    SSLCipherSuite HIGH:!aNULL:!MD5
+</VirtualHost>

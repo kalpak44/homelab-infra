@@ -1,9 +1,13 @@
 ---
+- name: Update apt cache and upgrade packages
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: full
+
 - name: Install dependencies
   ansible.builtin.apt:
     name: [curl, gnupg]
     state: present
-    update_cache: true
 
 - name: Add pgAdmin4 GPG key
   ansible.builtin.shell:
@@ -20,10 +24,10 @@
     filename: pgadmin4
     state: present
 
-- name: Install pgadmin4-web
+- name: Install pgadmin4-web (latest)
   ansible.builtin.apt:
     name: pgadmin4-web
-    state: present
+    state: latest
     update_cache: true
 
 - name: Run pgAdmin web setup
@@ -34,6 +38,70 @@
     PGADMIN_SETUP_EMAIL: "{{ pgadmin_email }}"
     PGADMIN_SETUP_PASSWORD: "{{ pgadmin_password }}"
   no_log: true
+  notify: Restart Apache2
+
+- name: Install certbot and Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+  when: pgadmin_tls_enabled
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  when: pgadmin_tls_enabled
+  no_log: true
+
+- name: Issue Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ letsencrypt_email }}
+      -d {{ pgadmin_tls_domain }}
+    creates: "/etc/letsencrypt/live/{{ pgadmin_tls_domain }}/fullchain.pem"
+  when: pgadmin_tls_enabled and letsencrypt_email != ""
+
+- name: Enable Apache2 SSL and rewrite modules
+  ansible.builtin.command:
+    cmd: a2enmod ssl rewrite
+    creates: /etc/apache2/mods-enabled/ssl.load
+  notify: Restart Apache2
+
+- name: Configure HTTP vhost to redirect to HTTPS
+  ansible.builtin.copy:
+    dest: /etc/apache2/sites-available/000-default.conf
+    content: |
+      <VirtualHost *:80>
+          RewriteEngine On
+          RewriteRule ^(.*)$ https://%{HTTP_HOST}$1 [R=301,L]
+      </VirtualHost>
+    mode: "0644"
+  notify: Restart Apache2
+
+- name: Deploy HTTPS vhost for pgAdmin
+  ansible.builtin.template:
+    src: pgadmin4-ssl.conf.j2
+    dest: /etc/apache2/sites-available/pgadmin4-ssl.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: pgadmin_tls_enabled
+  notify: Restart Apache2
+
+- name: Enable HTTPS vhost
+  ansible.builtin.command:
+    cmd: a2ensite pgadmin4-ssl
+    creates: /etc/apache2/sites-enabled/pgadmin4-ssl.conf
+  when: pgadmin_tls_enabled
   notify: Restart Apache2
 
 - name: Add root redirect to pgAdmin
@@ -49,6 +117,13 @@
     cmd: a2enconf pgadmin4-redirect
     creates: /etc/apache2/conf-enabled/pgadmin4-redirect.conf
   notify: Restart Apache2
+
+- name: Deploy certbot renewal hook to reload Apache2
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-apache2.sh
+    content: "#!/bin/bash\nsystemctl reload apache2\n"
+    mode: "0755"
+  when: pgadmin_tls_enabled
 
 - name: Ensure Apache2 is running
   ansible.builtin.systemd:

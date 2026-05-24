@@ -303,7 +303,7 @@ Web-based PostgreSQL management UI running on the same LXC container as PostgreS
 
 **Deploy:** Run **Deploy** → `postgres`
 
-pgAdmin is available at `http://192.168.1.4` or `http://pgadmin.internal.pavel-usanli.online`. To connect to PostgreSQL, add a new server in the UI:
+pgAdmin is available at `https://pgadmin.internal.pavel-usanli.online` (or `http://192.168.1.4` before TLS is provisioned — HTTP redirects to HTTPS once deployed). A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge. To connect to PostgreSQL, add a new server in the UI:
 - **Host:** `192.168.1.4`
 - **Port:** `5432`
 - **Username / Password:** the `POSTGRESQL_USER` / `POSTGRESQL_PASSWORD` secrets above
