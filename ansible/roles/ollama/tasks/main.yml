@@ -16,6 +16,15 @@
     content: "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/{{ rocm_version }} noble main\n"
     mode: "0644"
 
+- name: Pin ROCm packages to prefer radeon repo over system packages
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/rocm-pin
+    content: |
+      Package: *
+      Pin: origin repo.radeon.com
+      Pin-Priority: 1001
+    mode: "0644"
+
 - name: Install ROCm HIP libraries
   ansible.builtin.apt:
     name: rocm-hip-libraries
