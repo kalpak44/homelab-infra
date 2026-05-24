@@ -388,6 +388,8 @@ Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik 
 - **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into k8s secrets
 - **CrowdSec** — intrusion detection + bouncer for Traefik — UI at [`https://crowdsec.internal.pavel-usanli.online`](https://crowdsec.internal.pavel-usanli.online)
 
+> **One-time setup:** after first deploy, go to [app.crowdsec.net](https://app.crowdsec.net) → **Security Engines** and accept the enrollment request. The engine enrolls automatically on every deploy using the `CROWDSEC_ENROLLMENT_KEY` stored in Vault under `secret/crowdsec-secrets`. Once accepted, all five console options (including `console_management` for central blocklist sync) are enabled automatically on restart.
+
 **Apps:**
 - **Private home page** — internal dashboard — [`https://home.internal.pavel-usanli.online`](https://home.internal.pavel-usanli.online)
 
