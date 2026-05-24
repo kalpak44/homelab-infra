@@ -15,6 +15,10 @@ spec:
       crowdsecLapiKeyFile: /run/secrets/crowdsec/bouncer-api-key
       crowdsecLapiHost: crowdsec-service.crowdsec.svc.cluster.local:8080
       crowdsecLapiScheme: http
+      crowdsecAppsecEnabled: true
+      crowdsecAppsecHost: crowdsec-appsec.crowdsec.svc.cluster.local:7422
+      crowdsecAppsecFailureBlock: true
+      crowdsecAppsecUnreachableBlock: false
       forwardedHeadersTrustedIPs:
         - 10.0.0.0/8
         - 172.16.0.0/12
