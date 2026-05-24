@@ -209,7 +209,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `REDIS_COMMANDER_USER`    | Redis Commander web UI username                                               |
 | `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
 | `PORTAINER_ADMIN_USERNAME`| Portainer admin username — suggested: `admin`                                 |
-| `PORTAINER_ADMIN_PASSWORD`| Portainer admin password of your choice                                       |
+| `PORTAINER_ADMIN_PASSWORD`| Portainer admin password — **minimum 12 characters** (Portainer requirement)  |
 | `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
 | `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
 | `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |

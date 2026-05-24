@@ -95,20 +95,11 @@
     mode: "0755"
   when: portainer_tls_enabled
 
-- name: Ensure nginx is running
+- name: Ensure nginx is running and reload config
   ansible.builtin.systemd:
     name: nginx
-    state: started
+    state: reloaded
     enabled: true
-
-- name: Write Portainer admin password hash
-  ansible.builtin.copy:
-    dest: /root/.portainer-password
-    content: "{{ portainer_admin_password | password_hash('bcrypt') }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
 
 - name: Check if Portainer container exists
   ansible.builtin.command:
@@ -125,8 +116,27 @@
       --restart always
       -v /var/run/docker.sock:/var/run/docker.sock
       -v {{ portainer_data_volume }}:/data
-      -v /root/.portainer-password:/tmp/portainer_password:ro
       -p 127.0.0.1:{{ portainer_internal_port }}:9000
       portainer/portainer-ce:latest
-      --admin-password-file /tmp/portainer_password
   when: portainer_inspect.rc != 0
+
+- name: Wait for Portainer API to be ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ portainer_internal_port }}/api/status"
+    status_code: 200
+  register: portainer_status
+  until: portainer_status.status == 200
+  retries: 18
+  delay: 5
+
+- name: Initialize Portainer admin user
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ portainer_internal_port }}/api/users/admin/init"
+    method: POST
+    body_format: json
+    body:
+      Username: "{{ portainer_admin_username }}"
+      Password: "{{ portainer_admin_password }}"
+    status_code: [200, 409]
+  when: portainer_admin_password != ""
+  no_log: true
