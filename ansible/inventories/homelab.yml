@@ -3,6 +3,13 @@ all:
     ansible_ssh_private_key_file: ~/.ssh/id_ed25519
 
   children:
+    proxmox_host:
+      vars:
+        ansible_user: root
+      hosts:
+        proxmox:
+          ansible_host: 192.168.1.50
+
     lxc:
       vars:
         ansible_user: root

@@ -1,4 +1,32 @@
 ---
+- name: Configure GPU passthrough on Proxmox host
+  hosts: proxmox_host
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Add GPU device passthrough to LXC config
+      ansible.builtin.blockinfile:
+        path: /etc/pve/lxc/205.conf
+        marker: "# {mark} GPU PASSTHROUGH"
+        block: |
+          lxc.cgroup2.devices.allow: c 226:0 rwm
+          lxc.cgroup2.devices.allow: c 226:128 rwm
+          lxc.cgroup2.devices.allow: c 235:* rwm
+          lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
+          lxc.mount.entry: /dev/kfd dev/kfd none bind,optional,create=file
+
+    - name: Restart Ollama LXC container
+      ansible.builtin.command:
+        cmd: pct restart 205
+
+    - name: Wait for container to be reachable
+      ansible.builtin.wait_for:
+        host: 192.168.1.5
+        port: 22
+        delay: 5
+        timeout: 60
+
 - name: Configure Ollama
   hosts: ollama
   become: true

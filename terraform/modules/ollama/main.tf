@@ -14,6 +14,7 @@ module "lxc" {
   disk_size_gb = var.disk_size_gb
 
   ssh_public_keys = var.ssh_public_keys
+  unprivileged    = false
 }
 
 resource "cloudflare_record" "ollama" {
