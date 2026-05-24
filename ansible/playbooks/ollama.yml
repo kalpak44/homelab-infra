@@ -18,7 +18,7 @@
 
     - name: Restart Ollama LXC container
       ansible.builtin.command:
-        cmd: pct restart 205
+        cmd: pct reboot 205
 
     - name: Wait for container to be reachable
       ansible.builtin.wait_for:
