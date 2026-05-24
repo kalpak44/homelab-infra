@@ -203,7 +203,7 @@ spec:
               - -c
               - |
                 cscli appsec-configs install crowdsecurity/appsec-default || true
-                cscli appsec-rules install crowdsecurity/appsec-generic-rules crowdsecurity/appsec-crs crowdsecurity/virtual-patching || true
+                cscli appsec-rules install crowdsecurity/crs crowdsecurity/base-config crowdsecurity/appsec-generic-test || true
 
       persistentVolume:
         config:
