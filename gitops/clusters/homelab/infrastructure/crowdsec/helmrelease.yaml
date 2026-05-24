@@ -195,8 +195,15 @@ spec:
           value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/whitelist-good-actors"
         - name: SCENARIOS
           value: "LePresidente/adguardhome-bf crowdsecurity/http-probing crowdsecurity/http-bad-user-agent crowdsecurity/http-backdoors-attempts crowdsecurity/http-sensitive-files crowdsecurity/ssh-bf crowdsecurity/http-path-traversal-probing crowdsecurity/http-sqli-probing crowdsecurity/http-xss-probing crowdsecurity/http-crawl-non_statics"
-        - name: APPSEC_CONFIGS
-          value: "crowdsecurity/appsec-generic-rules crowdsecurity/appsec-crs crowdsecurity/appsec-virtual-patching"
+      lifecycle:
+        postStart:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - |
+                cscli appsec-configs install crowdsecurity/appsec-default || true
+                cscli appsec-rules install crowdsecurity/appsec-generic-rules crowdsecurity/appsec-crs crowdsecurity/virtual-patching || true
 
       persistentVolume:
         config:
