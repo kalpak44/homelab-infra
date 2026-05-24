@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "postgres",
+      "Group": "Servers",
+      "Host": "{{ pgadmin_postgres_host }}",
+      "Port": {{ pgadmin_postgres_port }},
+      "MaintenanceDB": "postgres",
+      "Username": "{{ postgresql_user }}",
+      "SSLMode": "prefer"
+    }
+  }
+}
