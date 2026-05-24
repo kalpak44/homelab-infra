@@ -3,21 +3,21 @@ variable "zone_id" {
   type        = string
 }
 
-variable "template_file_id" {
-  description = "Proxmox LXC template file ID for the Ubuntu container image"
-  type        = string
+variable "template_vm_id" {
+  description = "Proxmox VM ID of the Ubuntu template to clone from"
+  type        = number
 }
 
 variable "ssh_public_keys" {
-  description = "List of SSH public keys to inject into the container"
+  description = "List of SSH public keys to inject via cloud-init"
   type        = list(string)
   default     = []
 }
 
-variable "container_id" {
-  description = "Proxmox container ID for the Portainer instance"
+variable "vm_id" {
+  description = "Proxmox VM ID for the Portainer instance"
   type        = number
-  default     = 205
+  default     = 302
 }
 
 variable "ip_address" {

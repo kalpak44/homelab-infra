@@ -1,10 +1,10 @@
-module "lxc" {
-  source = "../proxmox-lxc"
+module "vm" {
+  source = "../proxmox-vm"
 
-  node_name        = "proxmox"
-  container_id     = var.container_id
-  hostname         = "portainer"
-  template_file_id = var.template_file_id
+  node_name      = "proxmox"
+  vm_name        = "portainer"
+  vm_id          = var.vm_id
+  template_vm_id = var.template_vm_id
 
   ip_address = "${var.ip_address}/24"
   gateway    = var.gateway
@@ -14,9 +14,6 @@ module "lxc" {
   disk_size_gb = var.disk_size_gb
 
   ssh_public_keys = var.ssh_public_keys
-
-  # Docker requires a privileged container
-  unprivileged = false
 }
 
 resource "cloudflare_record" "portainer" {

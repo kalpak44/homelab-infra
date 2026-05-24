@@ -320,17 +320,15 @@ Redis listens on `192.168.1.6:6379` or `redis.internal.pavel-usanli.online:6379`
 
 ### Portainer
 
-Docker management UI running in a privileged LXC container (`common` env, `192.168.1.7`).
+Docker management UI running in a VM (`common` env, `192.168.1.7`).
 
 **Secrets required:** `PORTAINER_ADMIN_USERNAME`, `PORTAINER_ADMIN_PASSWORD`
 
 **Deploy:** Run **Deploy** → `portainer`
 
-Portainer CE runs as a Docker container inside the LXC. nginx listens on port 80 and 443 — HTTP requests are force-redirected to HTTPS. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
+Portainer CE runs as a Docker container inside the VM. nginx listens on port 80 and 443 — HTTP requests are force-redirected to HTTPS. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
 
 Portainer is available at `https://portainer.internal.pavel-usanli.online` (or `http://192.168.1.7` before TLS is provisioned). The admin account is initialised automatically on first deploy. SSH is enabled on port 22 with key-only auth.
-
-> The LXC runs in privileged mode (`unprivileged = false`) — required for Docker inside LXC.
 
 ### HAProxy (prod load balancer)
 

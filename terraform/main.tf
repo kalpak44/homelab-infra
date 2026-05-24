@@ -58,16 +58,16 @@ module "redis" {
 
 # Portainer — Docker management UI
 module "portainer" {
-  source           = "./modules/portainer"
-  zone_id          = data.cloudflare_zone.this.id
-  template_file_id = proxmox_download_file.ubuntu_lxc.id
-  ssh_public_keys  = [var.ssh_public_key]
+  source          = "./modules/portainer"
+  zone_id         = data.cloudflare_zone.this.id
+  template_vm_id  = proxmox_virtual_environment_vm.ubuntu_template.vm_id
+  ssh_public_keys = [var.ssh_public_key]
 
-  container_id = 205
+  vm_id        = 302
   ip_address   = "192.168.1.7"
-  cpu_cores    = 1
-  memory_mb    = 1024
-  disk_size_gb = 10
+  cpu_cores    = 2
+  memory_mb    = 2048
+  disk_size_gb = 20
 }
 
 # HAProxy — external load balancer for the k3s cluster

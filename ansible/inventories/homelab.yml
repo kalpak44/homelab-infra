@@ -15,8 +15,6 @@ all:
           ansible_host: 192.168.1.4
         redis:
           ansible_host: 192.168.1.6
-        portainer:
-          ansible_host: 192.168.1.7
         haproxy:
           ansible_host: 192.168.1.109
 
@@ -35,3 +33,5 @@ all:
       hosts:
         nfs:
           ansible_host: 192.168.1.108
+        portainer:
+          ansible_host: 192.168.1.7
