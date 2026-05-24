@@ -13,6 +13,8 @@ all:
           ansible_host: 192.168.1.3
         postgres:
           ansible_host: 192.168.1.4
+        ollama:
+          ansible_host: 192.168.1.5
         redis:
           ansible_host: 192.168.1.6
         haproxy:
