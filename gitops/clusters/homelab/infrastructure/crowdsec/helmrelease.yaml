@@ -131,6 +131,11 @@ spec:
             secretKeyRef:
               name: crowdsec-secrets
               key: webui-password
+        - name: ENROLLMENT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-secrets
+              key: enrollment-key
 
       lifecycle:
         postStart:
@@ -142,10 +147,10 @@ spec:
                 for i in $(seq 1 60); do
                   cscli machines add "${WEBUI_MACHINE_ID}" \
                     --password "${WEBUI_PASSWORD}" \
-                    -f /dev/null 2>/dev/null && exit 0
+                    -f /dev/null 2>/dev/null && break
                   sleep 2
                 done
-                exit 0
+                cscli console enroll --overwrite "${ENROLLMENT_KEY}" || true
 
       persistentVolume:
         data:
