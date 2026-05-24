@@ -97,6 +97,14 @@ spec:
             remediation: true
 
       profiles.yaml: |
+        name: repeat_offender
+        filters:
+          - Alert.Remediation == true && Alert.GetScope() == "Ip" && Alert.GetDecisionsCount("ban") >= 3
+        decisions:
+          - type: ban
+            duration: 24h
+        on_success: break
+        ---
         name: http_error_ban
         filters:
           - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-threshold"
@@ -184,11 +192,11 @@ spec:
 
       env:
         - name: COLLECTIONS
-          value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve"
+          value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/whitelist-good-actors"
         - name: SCENARIOS
           value: "LePresidente/adguardhome-bf crowdsecurity/http-probing crowdsecurity/http-bad-user-agent crowdsecurity/http-backdoors-attempts crowdsecurity/http-sensitive-files crowdsecurity/ssh-bf crowdsecurity/http-path-traversal-probing crowdsecurity/http-sqli-probing crowdsecurity/http-xss-probing crowdsecurity/http-crawl-non_statics"
         - name: APPSEC_CONFIGS
-          value: "crowdsecurity/appsec-generic-rules crowdsecurity/appsec-crs"
+          value: "crowdsecurity/appsec-generic-rules crowdsecurity/appsec-crs crowdsecurity/appsec-virtual-patching"
 
       persistentVolume:
         config:
