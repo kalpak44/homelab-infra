@@ -16,7 +16,7 @@ resource "proxmox_virtual_environment_container" "this" {
     }
 
     user_account {
-      password = "root"
+      password = "ubuntu"
       keys     = var.ssh_public_keys
     }
   }
