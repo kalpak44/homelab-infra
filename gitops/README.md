@@ -21,6 +21,7 @@ gitops/clusters/homelab/
     │   └── mite-assistant-mcp/    # Mite time-tracking MCP server
     └── private/
         ├── private-home-page/     # Internal services dashboard
+        ├── headlamp/              # Kubernetes dashboard
         └── crowdsec-web-ui/       # CrowdSec web UI (private access)
 ```
 
