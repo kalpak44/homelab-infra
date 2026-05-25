@@ -5,8 +5,9 @@ metadata:
   namespace: crowdsec
 spec:
   selector:
-    app.kubernetes.io/name: crowdsec
-    app.kubernetes.io/component: agent
+    k8s-app: crowdsec
+    type: appsec
+    version: v1
   ports:
     - name: appsec
       port: 7422
