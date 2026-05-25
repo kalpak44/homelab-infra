@@ -1,6 +1,0 @@
----
-ollama_port: 11434
-ollama_model: qwen2.5:14b
-rocm_version: "6.3"
-rocm_path: /opt/rocm
-rocm_gfx_version: "11.0.3"

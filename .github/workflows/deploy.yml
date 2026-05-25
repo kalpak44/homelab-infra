@@ -19,7 +19,6 @@ on:
           - vault
           - postgres
           - redis
-          - ollama
           - portainer
           - haproxy
           - nfs
@@ -167,7 +166,7 @@ jobs:
           }
 
           case "${{ inputs.service }}" in
-            all)      for pb in adguard vault postgres redis ollama portainer haproxy nfs k3s; do run_playbook $pb; done ;;
+            all)      for pb in adguard vault postgres redis portainer haproxy nfs k3s; do run_playbook $pb; done ;;
             k3s/flux) run_playbook flux ;;
             *)        run_playbook ${{ inputs.service }} ;;
           esac
