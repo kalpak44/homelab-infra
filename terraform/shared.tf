@@ -50,6 +50,14 @@ resource "cloudflare_record" "mite_assistant" {
   proxied = true
 }
 
+resource "cloudflare_record" "capacity_planner" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "planner"
+  content = var.haproxy_public_ip
+  type    = "A"
+  proxied = true
+}
+
 resource "cloudflare_record" "personal_web_page_apex" {
   zone_id = data.cloudflare_zone.this.id
   name    = "@"

@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: capacity-planner
+  namespace: public
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`planner.pavel-usanli.online`)
+      kind: Rule
+      services:
+        - name: capacity-planner
+          port: 80
+  tls:
+    certResolver: cloudflare

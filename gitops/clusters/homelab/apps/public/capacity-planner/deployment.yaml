@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capacity-planner
+  namespace: public
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: capacity-planner
+  template:
+    metadata:
+      labels:
+        app: capacity-planner
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+      volumes:
+        - name: html
+          configMap:
+            name: capacity-planner-html

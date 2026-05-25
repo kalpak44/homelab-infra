@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - personal-web-page
   - mite-assistant-mcp
+  - capacity-planner
