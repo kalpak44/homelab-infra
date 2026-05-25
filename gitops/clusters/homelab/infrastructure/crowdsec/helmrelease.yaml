@@ -162,7 +162,7 @@ spec:
                     -f /dev/null 2>/dev/null && break
                   sleep 2
                 done
-                cscli console enroll --overwrite "${ENROLLMENT_KEY}" || true
+                cscli console enroll "${ENROLLMENT_KEY}" || true
                 cscli console enable console_management manual || true
 
       persistentVolume:
