@@ -2,7 +2,7 @@ resource "proxmox_virtual_environment_vm" "this" {
   node_name = var.node_name
   name      = var.vm_name
   vm_id     = var.vm_id
-  start_on_boot = true
+  on_boot       = true
 
   clone {
     vm_id = var.template_vm_id
