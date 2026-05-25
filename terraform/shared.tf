@@ -34,6 +34,14 @@ resource "cloudflare_record" "traefik" {
   proxied = false
 }
 
+resource "cloudflare_record" "headlamp" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "headlamp.internal"
+  content = "192.168.1.121"
+  type    = "A"
+  proxied = false
+}
+
 resource "cloudflare_record" "mite_assistant" {
   zone_id = data.cloudflare_zone.this.id
   name    = "mite-assistant"
