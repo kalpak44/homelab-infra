@@ -153,7 +153,7 @@ spec:
               - -c
               - |
                 cscli allowlists create trusted_ips --description "Trusted client IPs" 2>/dev/null || true
-                cscli allowlists add trusted_ips 46.10.211.21 --description "Pavel public IP" 2>/dev/null || true
+                cscli allowlists add trusted_ips 46.10.211.21 -d "Trusted client IP" 2>/dev/null || true
                 for i in $(seq 1 60); do
                   cscli machines add "${WEBUI_MACHINE_ID}" \
                     --password "${WEBUI_PASSWORD}" \
