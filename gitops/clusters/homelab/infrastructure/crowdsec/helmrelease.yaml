@@ -99,7 +99,7 @@ spec:
       profiles.yaml: |
         name: repeat_offender
         filters:
-          - Alert.Remediation == true && Alert.GetScope() == "Ip" && Alert.GetDecisionsCount("ban") >= 3
+          - Alert.Remediation == true && Alert.GetScope() == "Ip" && GetDecisionsCount(Alert.GetValue()) >= 3
         decisions:
           - type: ban
             duration: 24h
