@@ -81,12 +81,11 @@ spec:
           # Group events by source IP — each IP gets its own bucket
           groupby: evt.Meta.source_ip
 
-          # Bucket holds up to 5 events before overflowing (triggering a ban)
-          capacity: 5
+          # capacity 4 + 1 overflow event = 5 non-2xx responses trigger a ban
+          capacity: 4
 
-          # One event leaks out every 12s → effective window = capacity × leakspeed = 5 × 12s = 60s
-          # If an IP hits 6 non-2xx responses within ~60s the bucket overflows and a ban is issued
-          leakspeed: "12s"
+          # leakspeed 15s → effective window = 4 × 15s = 60s
+          leakspeed: "15s"
 
           # After firing once, suppress further alerts for this IP for 1 hour (avoid alert spam)
           blackhole: 1h
