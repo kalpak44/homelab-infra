@@ -3,7 +3,7 @@ resource "proxmox_virtual_environment_container" "this" {
   vm_id        = var.container_id
   unprivileged = var.unprivileged
   started      = true
-  on_boot      = true
+  start_on_boot = true
 
   initialization {
     hostname = var.hostname
