@@ -28,7 +28,7 @@
 
 - name: Initialize cluster if not present
   ansible.builtin.command:
-    cmd: "pg_createcluster --locale=C.UTF-8 {{ postgresql_version }} main"
+    cmd: "pg_createcluster --locale=C.UTF-8 {{ postgresql_version }} main -- --encoding=UTF8"
     creates: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
 
 - name: Ensure PostgreSQL is running
