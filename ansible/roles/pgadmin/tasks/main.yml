@@ -6,7 +6,7 @@
 
 - name: Install dependencies
   ansible.builtin.apt:
-    name: [curl, gnupg]
+    name: [curl, gnupg, sqlite3]
     state: present
 
 - name: Add pgAdmin4 GPG key
@@ -111,13 +111,20 @@
     mode: "0644"
   when: pgadmin_email != "" and postgresql_user is defined
 
+- name: Check if PostgreSQL server already registered in pgAdmin
+  ansible.builtin.command:
+    cmd: sqlite3 /var/lib/pgadmin/pgadmin4.db "SELECT COUNT(*) FROM server WHERE name='postgres'"
+  register: pgadmin_server_count
+  changed_when: false
+  when: pgadmin_email != "" and postgresql_user is defined
+
 - name: Load pre-configured server into pgAdmin
   ansible.builtin.command:
     cmd: >
       /usr/pgadmin4/venv/bin/python /usr/pgadmin4/web/setup.py
       load-servers /tmp/pgadmin-servers.json
       --user {{ pgadmin_email }}
-  when: pgadmin_email != "" and postgresql_user is defined
+  when: pgadmin_email != "" and postgresql_user is defined and pgadmin_server_count.stdout | trim == "0"
   changed_when: true
 
 - name: Add root redirect to pgAdmin
