@@ -85,7 +85,7 @@
 
 - name: Create database if not exists
   ansible.builtin.command:
-    cmd: "createdb -O {{ postgresql_user }} {{ postgresql_db }}"
+    cmd: "createdb -O {{ postgresql_user }} -E UTF8 -T template0 {{ postgresql_db }}"
   become: true
   become_user: postgres
   when:
