@@ -62,9 +62,9 @@
       psql -c "DO $$
       BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgresql_user }}') THEN
-          CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}';
+          CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}' SUPERUSER CREATEDB CREATEROLE;
         ELSE
-          ALTER USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}';
+          ALTER USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}' SUPERUSER CREATEDB CREATEROLE;
         END IF;
       END $$;"
   become: true
