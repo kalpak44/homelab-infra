@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: shopify-gpt-assistant
+  namespace: public
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`shopify-gpt-assistant.pavel-usanli.online`)
+      kind: Rule
+      services:
+        - name: shopify-gpt-assistant
+          port: 80
+  tls:
+    certResolver: cloudflare

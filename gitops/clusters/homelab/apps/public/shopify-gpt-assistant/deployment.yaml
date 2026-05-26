@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shopify-gpt-assistant
+  namespace: public
+  labels:
+    app: shopify-gpt-assistant
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      app: shopify-gpt-assistant
+  template:
+    metadata:
+      labels:
+        app: shopify-gpt-assistant
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: shopify-gpt-assistant
+          image: ghcr.io/kalpak44/shopify-gpt-assistant:6f10430
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 512Mi
+            limits:
+              memory: 512Mi
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: SHOPIFY_APP_URL
+              value: https://shopify-gpt-assistant.pavel-usanli.online
+            - name: HOST
+              value: 0.0.0.0
+            - name: SCOPES
+              value: write_products
+            - name: SHOPIFY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shopify-gpt-assistant-secrets
+                  key: SHOPIFY_API_KEY
+            - name: SHOPIFY_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: shopify-gpt-assistant-secrets
+                  key: SHOPIFY_API_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shopify-gpt-assistant-secrets
+                  key: DATABASE_URL

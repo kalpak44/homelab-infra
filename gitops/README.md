@@ -76,6 +76,21 @@ vault kv put secret/mite-assistant-mcp-secrets \
   mite-url="https://<account>.mite.de"
 ```
 
+### `secret/shopify-gpt-assistant-secrets`
+
+| Property | Description |
+|---|---|
+| `api-key` | Shopify app API key |
+| `api-secret` | Shopify app API secret |
+| `database-url` | Database connection string used by the app |
+
+```bash
+vault kv put secret/shopify-gpt-assistant-secrets \
+  api-key="<shopify-api-key>" \
+  api-secret="<shopify-api-secret>" \
+  database-url="<database-url>"
+```
+
 ### Manual k8s secret — `cloudflare-api-token` (namespace: `kube-system`)
 
 Used by Traefik for Cloudflare DNS-01 Let's Encrypt challenges. Created by the k3s Ansible playbook.

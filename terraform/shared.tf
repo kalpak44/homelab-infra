@@ -58,6 +58,14 @@ resource "cloudflare_record" "capacity_planner" {
   proxied = true
 }
 
+resource "cloudflare_record" "shopify_gpt_assistant" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "shopify-gpt-assistant"
+  content = var.haproxy_public_ip
+  type    = "A"
+  proxied = true
+}
+
 resource "cloudflare_record" "personal_web_page_apex" {
   zone_id = data.cloudflare_zone.this.id
   name    = "@"
