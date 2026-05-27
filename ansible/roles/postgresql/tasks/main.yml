@@ -44,6 +44,13 @@
     line: "listen_addresses = '*'"
   notify: Restart PostgreSQL
 
+- name: Set default client encoding to UTF-8
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+    regexp: "^#?client_encoding"
+    line: "client_encoding = UTF8"
+  notify: Restart PostgreSQL
+
 - name: Deploy pg_hba.conf
   ansible.builtin.template:
     src: pg_hba.conf.j2
