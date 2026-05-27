@@ -3,9 +3,9 @@
 #
 # Secrets are read from environment variables — add them to ~/.zshrc or ~/.zshenv:
 #
-#   export AWS_ACCESS_KEY_ID=...
-#   export AWS_SECRET_ACCESS_KEY=...
-#   export AWS_ENDPOINT_URL_S3=...
+#   export R2_ACCESS_KEY_ID=...
+#   export R2_SECRET_ACCESS_KEY=...
+#   export R2_ENDPOINT=...           # https://<account-id>.r2.cloudflarestorage.com
 #   export R2_BUCKET_NAME=...
 #   export CLOUDFLARE_API_TOKEN=...
 #   export PROXMOX_ENDPOINT=...
@@ -29,7 +29,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Validate required env vars ────────────────────────────────────────────────
 REQUIRED_VARS=(
-  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL_S3
+  R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT
   R2_BUCKET_NAME CLOUDFLARE_API_TOKEN
   PROXMOX_ENDPOINT PROXMOX_USERNAME PROXMOX_PASSWORD
   SSH_PUBLIC_KEY SSH_PRIVATE_KEY
@@ -58,7 +58,10 @@ fi
 # ── Decode SSH private key (stored as base64 in system env) ──────────────────
 SSH_PRIVATE_KEY_DECODED="$(echo "$SSH_PRIVATE_KEY" | base64 --decode)"
 
-# ── Wire Terraform env vars ───────────────────────────────────────────────────
+# ── Map R2 vars → AWS env vars expected by Terraform S3 backend ──────────────
+export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+export AWS_ENDPOINT_URL_S3="$R2_ENDPOINT"
 export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY_DECODED"
 
 # ── Resolve Terraform targets ─────────────────────────────────────────────────
