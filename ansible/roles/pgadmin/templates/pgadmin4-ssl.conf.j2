@@ -8,9 +8,7 @@
     SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
     SSLCipherSuite HIGH:!aNULL:!MD5
 
-    # pgAdmin4 app — created by setup-web.sh
-    Include /etc/apache2/conf-available/pgadmin4.conf
-
-    # Redirect bare / to /pgadmin4
+    # pgadmin4.conf is loaded globally via a2enconf — no Include here to
+    # avoid duplicate WSGI daemon definitions. The redirect is sufficient.
     RedirectMatch ^/$ /pgadmin4
 </VirtualHost>
