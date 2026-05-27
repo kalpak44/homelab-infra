@@ -23,26 +23,21 @@
     state: present
 
 # --- Pre-install cluster defaults -----------------------------------------
-# Must be done before the package installs — apt triggers pg_createcluster
-# which reads createcluster.conf, so the cluster gets UTF-8 from the start.
+# Deploy createcluster.conf before the package installs so the cluster
+# auto-created by apt already uses the correct encoding and locale.
 
 - name: Install postgresql-common
   ansible.builtin.apt:
     name: postgresql-common
     state: present
 
-- name: Configure createcluster defaults (UTF-8 / C.UTF-8)
-  ansible.builtin.lineinfile:
-    path: /etc/postgresql-common/createcluster.conf
-    regexp: "{{ item.regexp }}"
-    line: "{{ item.line }}"
-    create: true
+- name: Deploy createcluster.conf
+  ansible.builtin.template:
+    src: createcluster.conf.j2
+    dest: /etc/postgresql-common/createcluster.conf
     owner: root
     group: root
     mode: "0644"
-  loop:
-    - { regexp: "^#?encoding", line: "encoding = UTF8" }
-    - { regexp: "^#?locale",   line: "locale = C.UTF-8" }
 
 # --- Install --------------------------------------------------------------
 
@@ -69,8 +64,6 @@
   changed_when: true
 
 # --- Start ---------------------------------------------------------------
-# Use the specific instance unit (postgresql@18-main) instead of the meta
-# service so we get accurate start/stop status for this cluster.
 
 - name: Start and enable PostgreSQL cluster
   ansible.builtin.systemd:
@@ -81,14 +74,21 @@
 
 # --- Configure -----------------------------------------------------------
 
-- name: Configure postgresql.conf
-  ansible.builtin.lineinfile:
-    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
-    regexp: "{{ item.regexp }}"
-    line: "{{ item.line }}"
-  loop:
-    - { regexp: "^#?listen_addresses", line: "listen_addresses = '*'" }
-    - { regexp: "^#?client_encoding",  line: "client_encoding = UTF8" }
+- name: Ensure conf.d directory exists
+  ansible.builtin.file:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/conf.d"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+
+- name: Deploy homelab overrides to conf.d
+  ansible.builtin.template:
+    src: conf.d/homelab.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/conf.d/homelab.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
   notify: Restart PostgreSQL
 
 - name: Deploy pg_hba.conf

@@ -1,0 +1,39 @@
+# Ansible-managed — /etc/postgresql-common/createcluster.conf
+# Default values for pg_createcluster(8)
+# Occurrences of '%v' are replaced by the major version number,
+# and '%c' by the cluster name. Use '%%' for a literal '%'.
+
+# Create a "main" cluster when a new postgresql-NN server package is installed
+# and no clusters exist yet.
+#create_main_cluster = true
+
+# Default start.conf value, must be one of "auto", "manual", and "disabled".
+#start_conf = 'auto'
+
+# Default data directory.
+#data_directory = '/var/lib/postgresql/%v/%c'
+
+# Default directory for transaction logs (unset = stays in data directory).
+#waldir = '/var/lib/postgresql/wal/%v/%c/pg_wal'
+
+# Options to pass to initdb — encoding and locale go here, NOT as bare keys
+# below, because bare keys after the marker are copied verbatim into
+# postgresql.conf where "encoding" and "locale" are not valid parameters.
+initdb_options = '--encoding UTF8 --locale C.UTF-8'
+
+# The following options are copied into the new cluster's postgresql.conf:
+
+# Enable SSL by default
+ssl = on
+
+# Show cluster name in process title
+cluster_name = '%v/%c'
+
+# Add prefix to log lines
+log_line_prefix = '%%m [%%p] %%q%%u@%%d '
+
+# Pull in extra config snippets from conf.d/
+add_include_dir = 'conf.d'
+
+# Directory for additional createcluster config
+include_dir '/etc/postgresql-common/createcluster.d'
