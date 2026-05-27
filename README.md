@@ -438,3 +438,60 @@ kubectl get nodes
 | `haproxy` | `module.haproxy` |
 | `nfs` | `module.nfs` |
 | `k3s` | `module.k3s` |
+
+---
+
+## Local scripts
+
+Local equivalents of the GitHub Actions workflows. Secrets are read from system environment variables (`~/.zshrc` or `~/.zshenv`).
+
+### deploy
+
+```bash
+.scripts/deploy.sh <service> [--no-refresh]
+```
+
+| `<service>` | Terraform | Ansible |
+|---|---|---|
+| `all` | full apply | all playbooks in order |
+| `proxmox-dns` | `cloudflare_record.proxmox` | — |
+| `adguard` | `module.adguard` | `adguard.yml` |
+| `vault` | `module.vault` | `vault.yml` |
+| `postgres` | `module.postgres` | `postgres.yml` |
+| `redis` | `module.redis` | `redis.yml` |
+| `portainer` | `module.portainer` | `portainer.yml` |
+| `haproxy` | `module.haproxy` | `haproxy.yml` |
+| `nfs` | `module.nfs` | `nfs.yml` |
+| `k3s` | `module.k3s` | `k3s.yml` |
+| `k3s/flux` | — | `flux.yml` |
+| `k3s/flux/personal-web-page` | DNS record only | — |
+| `k3s/flux/private-home-page` | DNS record only | — |
+| `k3s/flux/mite-assistant-mcp` | DNS record only | — |
+| `k3s/flux/crowdsec-web-ui` | DNS record only | — |
+| `k3s/flux/traefik` | DNS record only | — |
+| `k3s/flux/headlamp` | DNS record only | — |
+| `k3s/flux/capacity-planner` | DNS record only | — |
+| `k3s/flux/shopify-gpt-assistant` | DNS record only | — |
+
+`--no-refresh` skips Terraform state refresh before apply.
+
+### destroy
+
+```bash
+.scripts/destroy.sh <service>
+```
+
+Prompts for confirmation before running. No Ansible step — destroying the Terraform module removes the VM/LXC.
+
+| `<service>` | Terraform target |
+|---|---|
+| `all` | entire state |
+| `proxmox-dns` | `cloudflare_record.proxmox` |
+| `adguard` | `module.adguard` |
+| `vault` | `module.vault` |
+| `postgres` | `module.postgres` |
+| `redis` | `module.redis` |
+| `portainer` | `module.portainer` |
+| `haproxy` | `module.haproxy` |
+| `nfs` | `module.nfs` |
+| `k3s` | `module.k3s` |
