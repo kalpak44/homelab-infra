@@ -89,11 +89,15 @@ homelab-infra/
 - Secrets flow: Vault → External Secrets Operator → Kubernetes Secret → app.
 - The self-hosted GitHub Actions runner lives at VM 101 on the Proxmox node.
 
-## README update rule
+## Keep these four things in sync on every service change
 
-**When adding or removing any service, always update both READMEs:**
+When adding **or** removing any service, all of the following must be updated together — never update one without the others:
 
-- `README.md` — for infrastructure-layer services (Proxmox VMs/LXCs, DNS records, Ansible-managed services).
-- `gitops/README.md` — for in-cluster services (public and private k3s workloads).
+| What | Why |
+|---|---|
+| `README.md` | Source of truth for infrastructure-layer services (VMs/LXCs, IPs, DNS) |
+| `gitops/README.md` | Source of truth for in-cluster services (public + private k3s workloads) |
+| `.github/workflows/deploy.yml` + `destroy.yml` | CI/CD must know about the service |
+| `.scripts/deploy.sh` + `destroy.sh` | Local scripts must mirror the workflows exactly |
 
-These files are the single source of truth for what is deployed. Keep them in sync with every change.
+See `.claude/rules/github-workflows.md` for the full per-service checklists.

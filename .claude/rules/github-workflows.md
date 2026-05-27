@@ -123,10 +123,31 @@ When adding a new service, keep `.scripts/deploy.sh` and `.scripts/destroy.sh` i
 2. **`deploy.yml`** — the generic "Terraform Apply" and "Run Ansible" steps already handle unknown services via `*)` fallback, so no extra step needed unless the service has special DNS-only behaviour.
 3. **`destroy.yml`** — add `<service>` to the `service` input choices.
 4. **`destroy.yml`** — add a line to the `case` statement: `<service>) echo "targets=-target=module.<service>" >> $GITHUB_OUTPUT ;;`
+5. **`.scripts/deploy.sh`** — add `<service>` to the `case` block (mirrors the workflow deploy logic).
+6. **`.scripts/destroy.sh`** — add `<service>` to the `TARGETS` case block (mirrors `destroy.yml`).
+7. **`README.md`** — add the new service to the services table (IP, description).
+
+## Checklist — removing an infrastructure service (VM/LXC)
+
+1. **`deploy.yml`** — remove `<service>` from the `service` input choices.
+2. **`destroy.yml`** — remove `<service>` from the `service` input choices and its `case` line.
+3. **`.scripts/deploy.sh`** — remove the `<service>` case block.
+4. **`.scripts/destroy.sh`** — remove the `<service>` case line.
+5. **`README.md`** — remove the service from the services table.
 
 ## Checklist — adding a new in-cluster service (`k3s/flux/<name>`)
 
 1. **`deploy.yml`** — add `k3s/flux/<name>` to the `service` input choices.
 2. **`deploy.yml`** — add a dedicated step "Terraform Apply (`<name>` DNS)" with `if: inputs.service == 'k3s/flux/<name>'` and the correct `-target=cloudflare_record.<terraform_resource_name>`.
 3. **`deploy.yml`** — append `&& inputs.service != 'k3s/flux/<name>'` to the `if` condition of both the generic "Terraform Apply" step and the "Run Ansible" step.
-4. In-cluster services are **not added to `destroy.yml`** — Flux handles removal by deleting the gitops manifests; DNS records are cleaned up via a targeted `proxmox-dns` or direct Terraform run.
+4. **`.scripts/deploy.sh`** — add a matching `k3s/flux/<name>)` case block with the same `-target` flags.
+5. **`gitops/README.md`** — add the new service (hostname, namespace, description).
+6. In-cluster services are **not added to `destroy.yml`** or `.scripts/destroy.sh` — Flux handles removal by deleting the gitops manifests; DNS records are cleaned up via a targeted `proxmox-dns` or direct Terraform run.
+
+## Checklist — removing an in-cluster service (`k3s/flux/<name>`)
+
+1. Delete the manifests under `gitops/clusters/homelab/apps/<public|private>/<name>/`.
+2. **`deploy.yml`** — remove `k3s/flux/<name>` from the `service` input choices, its dedicated DNS step, and its exclusions from the generic "Terraform Apply" and "Run Ansible" `if` conditions.
+3. **`.scripts/deploy.sh`** — remove the `k3s/flux/<name>` case block.
+4. **`gitops/README.md`** — remove the service entry.
+5. Clean up the DNS record: run a targeted Terraform destroy for `cloudflare_record.<name>` or remove it from `terraform/shared.tf` and apply.
