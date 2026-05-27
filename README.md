@@ -438,16 +438,3 @@ kubectl get nodes
 | `haproxy` | `module.haproxy` |
 | `nfs` | `module.nfs` |
 | `k3s` | `module.k3s` |
-
----
-
-## Local init (one-time)
-
-```bash
-export AWS_ACCESS_KEY_ID=<R2_ACCESS_KEY_ID>
-export AWS_SECRET_ACCESS_KEY=<R2_SECRET_ACCESS_KEY>
-export AWS_ENDPOINT_URL_S3=<R2_ENDPOINT>
-
-cd terraform
-terraform init -backend-config="bucket=<R2_BUCKET_NAME>"
-```
