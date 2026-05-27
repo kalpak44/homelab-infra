@@ -71,6 +71,9 @@ homelab-infra/
 │       └── apps/
 │           ├── public/  # Internet-facing workloads
 │           └── private/ # Internal-only workloads
+├── .scripts/
+│   ├── deploy.sh        # Local equivalent of deploy.yml — source .env, then run
+│   └── destroy.sh       # Local equivalent of destroy.yml — source .env, then run
 └── .github/workflows/
     ├── deploy.yml       # Terraform apply + Ansible (manual trigger, self-hosted runner)
     └── destroy.yml      # Terraform destroy (target module)

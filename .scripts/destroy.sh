@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Local equivalent of .github/workflows/destroy.yml
+#
+# Usage:
+#   ./destroy.sh <service>
+#
+# <service> options:
+#   all
+#   proxmox-dns
+#   adguard | vault | postgres | redis | portainer | haproxy | nfs | k3s
+#
+# Examples:
+#   ./destroy.sh postgres
+#   ./destroy.sh all
+
+set -euo pipefail
+
+# ── Resolve script + repo root ────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$REPO_ROOT/.env"
+
+# ── Load secrets ──────────────────────────────────────────────────────────────
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "❌  .env not found at $ENV_FILE" >&2
+  exit 1
+fi
+# shellcheck source=../.env
+source "$ENV_FILE"
+
+# ── Args ──────────────────────────────────────────────────────────────────────
+SERVICE="${1:-}"
+if [[ -z "$SERVICE" ]]; then
+  echo "Usage: $0 <service>" >&2
+  exit 1
+fi
+
+# ── Export env vars expected by Terraform ─────────────────────────────────────
+export AWS_ACCESS_KEY_ID
+export AWS_SECRET_ACCESS_KEY
+export AWS_ENDPOINT_URL_S3
+export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY"
+
+# ── Resolve Terraform targets ─────────────────────────────────────────────────
+case "$SERVICE" in
+  proxmox-dns) TARGETS="-target=cloudflare_record.proxmox" ;;
+  adguard)     TARGETS="-target=module.adguard"   ;;
+  vault)       TARGETS="-target=module.vault"     ;;
+  postgres)    TARGETS="-target=module.postgres"  ;;
+  redis)       TARGETS="-target=module.redis"     ;;
+  portainer)   TARGETS="-target=module.portainer" ;;
+  haproxy)     TARGETS="-target=module.haproxy"   ;;
+  nfs)         TARGETS="-target=module.nfs"       ;;
+  k3s)         TARGETS="-target=module.k3s"       ;;
+  all)         TARGETS=""                         ;;
+  *)
+    echo "❌  Unknown service: $SERVICE" >&2
+    exit 1
+    ;;
+esac
+
+# ── Safety prompt ─────────────────────────────────────────────────────────────
+echo "⚠️   About to DESTROY: $SERVICE"
+read -r -p "    Type the service name to confirm: " CONFIRM
+if [[ "$CONFIRM" != "$SERVICE" ]]; then
+  echo "❌  Aborted." >&2
+  exit 1
+fi
+
+# ── Terraform Init ────────────────────────────────────────────────────────────
+TF_DIR="$REPO_ROOT/terraform"
+
+echo "▶  terraform init"
+terraform -chdir="$TF_DIR" init \
+  -backend-config="bucket=$R2_BUCKET_NAME"
+
+# ── Terraform Destroy ─────────────────────────────────────────────────────────
+echo "▶  terraform destroy"
+# shellcheck disable=SC2086
+terraform -chdir="$TF_DIR" destroy -auto-approve \
+  $TARGETS \
+  -var proxmox_endpoint="$PROXMOX_ENDPOINT" \
+  -var proxmox_username="$PROXMOX_USERNAME" \
+  -var proxmox_password="$PROXMOX_PASSWORD" \
+  -var ssh_public_key="$SSH_PUBLIC_KEY" \
+  -var cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
+
+echo "✅  Done: $SERVICE destroyed"
