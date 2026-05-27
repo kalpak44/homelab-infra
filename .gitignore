@@ -24,6 +24,7 @@ id_rsa*
 id_ed25519*
 vault_pass.txt
 .vault_pass
+.env
 
 # OS
 .DS_Store
