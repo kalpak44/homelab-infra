@@ -39,6 +39,8 @@ spec:
           env:
             - name: NODE_ENV
               value: production
+            - name: DEBUGG
+              value: "true"
             - name: SHOPIFY_APP_URL
               value: https://shopify-gpt-assistant.pavel-usanli.online
             - name: HOST
