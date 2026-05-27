@@ -46,6 +46,10 @@ Manages all workloads running inside the k3s cluster:
 
 @.claude/rules/github-workflows.md
 
+## Local Rules — Git
+
+@.claude/rules/git.md
+
 ---
 
 ## Repository Layout
