@@ -12,7 +12,7 @@
 #   export PROXMOX_USERNAME=...
 #   export PROXMOX_PASSWORD=...
 #   export SSH_PUBLIC_KEY=...
-#   export SSH_PRIVATE_KEY=...
+#   export SSH_PRIVATE_KEY=...   # base64-encoded — store with: base64 -i ~/.ssh/id_ed25519 | tr -d '\n'
 #
 # Usage:
 #   ./destroy.sh <service>
@@ -55,8 +55,11 @@ if [[ -z "$SERVICE" ]]; then
   exit 1
 fi
 
+# ── Decode SSH private key (stored as base64 in system env) ──────────────────
+SSH_PRIVATE_KEY_DECODED="$(echo "$SSH_PRIVATE_KEY" | base64 --decode)"
+
 # ── Wire Terraform env vars ───────────────────────────────────────────────────
-export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY"
+export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY_DECODED"
 
 # ── Resolve Terraform targets ─────────────────────────────────────────────────
 case "$SERVICE" in

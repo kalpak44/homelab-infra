@@ -12,7 +12,7 @@
 #   export PROXMOX_USERNAME=...
 #   export PROXMOX_PASSWORD=...
 #   export SSH_PUBLIC_KEY=...
-#   export SSH_PRIVATE_KEY=...
+#   export SSH_PRIVATE_KEY=...   # base64-encoded — store with: base64 -i ~/.ssh/id_ed25519 | tr -d '\n'
 #   export HAPROXY_PUBLIC_IP=...
 #   export HAPROXY_STATS_USER=...
 #   export HAPROXY_STATS_PASSWORD=...
@@ -100,8 +100,11 @@ if [[ "${2:-}" == "--no-refresh" ]]; then
   REFRESH_FLAG="-refresh=false"
 fi
 
+# ── Decode SSH private key (stored as base64 in system env) ──────────────────
+SSH_PRIVATE_KEY_DECODED="$(echo "$SSH_PRIVATE_KEY" | base64 --decode)"
+
 # ── Wire Terraform env vars ───────────────────────────────────────────────────
-export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY"
+export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY_DECODED"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 TF_DIR="$REPO_ROOT/terraform"
@@ -129,7 +132,7 @@ tf_apply() {
 write_ssh_key() {
   echo "▶  writing SSH key to ~/.ssh/id_ed25519"
   mkdir -p ~/.ssh
-  echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+  echo "$SSH_PRIVATE_KEY_DECODED" > ~/.ssh/id_ed25519
   chmod 600 ~/.ssh/id_ed25519
 }
 
