@@ -1,0 +1,9 @@
+-- Ansible-managed: application user bootstrap
+DO $body$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgresql_user | replace("'", "''") }}') THEN
+    CREATE USER "{{ postgresql_user }}" WITH PASSWORD '{{ postgresql_password | replace("'", "''") }}' SUPERUSER CREATEDB CREATEROLE;
+  ELSE
+    ALTER USER "{{ postgresql_user }}" WITH PASSWORD '{{ postgresql_password | replace("'", "''") }}' SUPERUSER CREATEDB CREATEROLE;
+  END IF;
+END $body$;
