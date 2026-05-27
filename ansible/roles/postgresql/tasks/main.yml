@@ -81,6 +81,12 @@
 - name: Flush handlers to apply config before creating objects
   ansible.builtin.meta: flush_handlers
 
+- name: Wait for PostgreSQL socket to be ready
+  ansible.builtin.wait_for:
+    path: /var/run/postgresql/.s.PGSQL.5432
+    state: present
+    timeout: 30
+
 - name: Write user creation SQL
   ansible.builtin.template:
     src: create_user.sql.j2
