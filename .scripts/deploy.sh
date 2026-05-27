@@ -1,6 +1,38 @@
 #!/usr/bin/env bash
 # Local equivalent of .github/workflows/deploy.yml
 #
+# Secrets are read from environment variables — add them to ~/.zshrc or ~/.zshenv:
+#
+#   export AWS_ACCESS_KEY_ID=...
+#   export AWS_SECRET_ACCESS_KEY=...
+#   export AWS_ENDPOINT_URL_S3=...
+#   export R2_BUCKET_NAME=...
+#   export CLOUDFLARE_API_TOKEN=...
+#   export PROXMOX_ENDPOINT=...
+#   export PROXMOX_USERNAME=...
+#   export PROXMOX_PASSWORD=...
+#   export SSH_PUBLIC_KEY=...
+#   export SSH_PRIVATE_KEY=...
+#   export HAPROXY_PUBLIC_IP=...
+#   export HAPROXY_STATS_USER=...
+#   export HAPROXY_STATS_PASSWORD=...
+#   export ADGUARD_USERNAME=...
+#   export ADGUARD_PASSWORD=...
+#   export LETSENCRYPT_EMAIL=...
+#   export VAULT_USERNAME=...
+#   export VAULT_PASSWORD=...
+#   export POSTGRESQL_DB=...
+#   export POSTGRESQL_USER=...
+#   export POSTGRESQL_PASSWORD=...
+#   export PGADMIN_EMAIL=...
+#   export PGADMIN_PASSWORD=...
+#   export REDIS_PASSWORD=...
+#   export REDIS_COMMANDER_USER=...
+#   export REDIS_COMMANDER_PASSWORD=...
+#   export PORTAINER_ADMIN_USERNAME=...
+#   export PORTAINER_ADMIN_PASSWORD=...
+#   export FLUX_GITHUB_TOKEN=...
+#
 # Usage:
 #   ./deploy.sh <service> [--no-refresh]
 #
@@ -17,27 +49,44 @@
 #   k3s/flux/headlamp
 #   k3s/flux/capacity-planner
 #   k3s/flux/shopify-gpt-assistant
-#
-# Examples:
-#   ./deploy.sh all
-#   ./deploy.sh postgres
-#   ./deploy.sh k3s/flux/capacity-planner
-#   ./deploy.sh k3s --no-refresh
 
 set -euo pipefail
 
-# ── Resolve script + repo root ────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env"
 
-# ── Load secrets ──────────────────────────────────────────────────────────────
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "❌  .env not found at $ENV_FILE" >&2
-  exit 1
-fi
-# shellcheck source=../.env
-source "$ENV_FILE"
+# ── Validate required env vars ────────────────────────────────────────────────
+check_vars() {
+  local missing=()
+  for var in "$@"; do
+    if [[ -z "${!var:-}" ]]; then
+      missing+=("$var")
+    fi
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "❌  Missing environment variables:" >&2
+    for v in "${missing[@]}"; do echo "    $v" >&2; done
+    echo "    Add them to ~/.zshrc or ~/.zshenv and reload your shell." >&2
+    exit 1
+  fi
+}
+
+CORE_TF_VARS=(
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL_S3
+  R2_BUCKET_NAME CLOUDFLARE_API_TOKEN
+  PROXMOX_ENDPOINT PROXMOX_USERNAME PROXMOX_PASSWORD
+  SSH_PUBLIC_KEY SSH_PRIVATE_KEY
+)
+ANSIBLE_VARS=(
+  ADGUARD_USERNAME ADGUARD_PASSWORD LETSENCRYPT_EMAIL
+  VAULT_USERNAME VAULT_PASSWORD
+  POSTGRESQL_DB POSTGRESQL_USER POSTGRESQL_PASSWORD
+  PGADMIN_EMAIL PGADMIN_PASSWORD
+  REDIS_PASSWORD REDIS_COMMANDER_USER REDIS_COMMANDER_PASSWORD
+  PORTAINER_ADMIN_USERNAME PORTAINER_ADMIN_PASSWORD
+  HAPROXY_STATS_USER HAPROXY_STATS_PASSWORD HAPROXY_PUBLIC_IP
+  FLUX_GITHUB_TOKEN
+)
 
 # ── Args ──────────────────────────────────────────────────────────────────────
 SERVICE="${1:-}"
@@ -51,10 +100,7 @@ if [[ "${2:-}" == "--no-refresh" ]]; then
   REFRESH_FLAG="-refresh=false"
 fi
 
-# ── Export env vars expected by Terraform ─────────────────────────────────────
-export AWS_ACCESS_KEY_ID
-export AWS_SECRET_ACCESS_KEY
-export AWS_ENDPOINT_URL_S3
+# ── Wire Terraform env vars ───────────────────────────────────────────────────
 export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -117,22 +163,22 @@ run_playbook() {
 # ── Main dispatch ─────────────────────────────────────────────────────────────
 case "$SERVICE" in
 
-  # ── DNS-only (no Ansible) ──────────────────────────────────────────────────
   proxmox-dns)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.proxmox
     ;;
 
-  # ── Infrastructure services (Terraform + Ansible) ─────────────────────────
   adguard|vault|postgres|redis|portainer|haproxy|nfs|k3s)
+    check_vars "${CORE_TF_VARS[@]}" "${ANSIBLE_VARS[@]}"
     tf_init
     tf_apply
     write_ssh_key
     run_playbook "$SERVICE"
     ;;
 
-  # ── Full stack ────────────────────────────────────────────────────────────
   all)
+    check_vars "${CORE_TF_VARS[@]}" "${ANSIBLE_VARS[@]}"
     tf_init
     tf_apply
     write_ssh_key
@@ -141,14 +187,14 @@ case "$SERVICE" in
     done
     ;;
 
-  # ── Flux bootstrap only (no Terraform) ────────────────────────────────────
   k3s/flux)
+    check_vars "${ANSIBLE_VARS[@]}"
     write_ssh_key
     run_playbook flux
     ;;
 
-  # ── In-cluster services — DNS record only ─────────────────────────────────
   k3s/flux/personal-web-page)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply \
       -target=cloudflare_record.personal_web_page_apex \
@@ -156,43 +202,49 @@ case "$SERVICE" in
     ;;
 
   k3s/flux/private-home-page)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.private_home_page
     ;;
 
   k3s/flux/mite-assistant-mcp)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.mite_assistant
     ;;
 
   k3s/flux/crowdsec-web-ui)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.crowdsec_web_ui
     ;;
 
   k3s/flux/traefik)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.traefik
     ;;
 
   k3s/flux/headlamp)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.headlamp
     ;;
 
   k3s/flux/capacity-planner)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.capacity_planner
     ;;
 
   k3s/flux/shopify-gpt-assistant)
+    check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.shopify_gpt_assistant
     ;;
 
   *)
     echo "❌  Unknown service: $SERVICE" >&2
-    echo "    Run '$0 --help' for options." >&2
     exit 1
     ;;
 esac

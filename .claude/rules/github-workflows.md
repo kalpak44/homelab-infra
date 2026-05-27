@@ -107,6 +107,16 @@ No Ansible step in destroy. Destroying the Terraform module removes the VM/LXC; 
 
 ---
 
+## Local scripts
+
+`.scripts/deploy.sh` and `.scripts/destroy.sh` are local equivalents of the two workflows.  
+They read all secrets from **system environment variables** (set in `~/.zshrc` or `~/.zshenv`) — no `.env` file needed.  
+Each script validates that required vars are present before running and prints a clear error listing any that are missing.
+
+When adding a new service, keep `.scripts/deploy.sh` and `.scripts/destroy.sh` in sync with the workflow changes using the same checklist below.
+
+---
+
 ## Checklist — adding a new infrastructure service (VM/LXC)
 
 1. **`deploy.yml`** — add `<service>` to the `service` input choices.

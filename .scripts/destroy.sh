@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 # Local equivalent of .github/workflows/destroy.yml
 #
+# Secrets are read from environment variables — add them to ~/.zshrc or ~/.zshenv:
+#
+#   export AWS_ACCESS_KEY_ID=...
+#   export AWS_SECRET_ACCESS_KEY=...
+#   export AWS_ENDPOINT_URL_S3=...
+#   export R2_BUCKET_NAME=...
+#   export CLOUDFLARE_API_TOKEN=...
+#   export PROXMOX_ENDPOINT=...
+#   export PROXMOX_USERNAME=...
+#   export PROXMOX_PASSWORD=...
+#   export SSH_PUBLIC_KEY=...
+#   export SSH_PRIVATE_KEY=...
+#
 # Usage:
 #   ./destroy.sh <service>
 #
@@ -8,25 +21,32 @@
 #   all
 #   proxmox-dns
 #   adguard | vault | postgres | redis | portainer | haproxy | nfs | k3s
-#
-# Examples:
-#   ./destroy.sh postgres
-#   ./destroy.sh all
 
 set -euo pipefail
 
-# ── Resolve script + repo root ────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env"
 
-# ── Load secrets ──────────────────────────────────────────────────────────────
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "❌  .env not found at $ENV_FILE" >&2
+# ── Validate required env vars ────────────────────────────────────────────────
+REQUIRED_VARS=(
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL_S3
+  R2_BUCKET_NAME CLOUDFLARE_API_TOKEN
+  PROXMOX_ENDPOINT PROXMOX_USERNAME PROXMOX_PASSWORD
+  SSH_PUBLIC_KEY SSH_PRIVATE_KEY
+)
+
+missing=()
+for var in "${REQUIRED_VARS[@]}"; do
+  if [[ -z "${!var:-}" ]]; then
+    missing+=("$var")
+  fi
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "❌  Missing environment variables:" >&2
+  for v in "${missing[@]}"; do echo "    $v" >&2; done
+  echo "    Add them to ~/.zshrc or ~/.zshenv and reload your shell." >&2
   exit 1
 fi
-# shellcheck source=../.env
-source "$ENV_FILE"
 
 # ── Args ──────────────────────────────────────────────────────────────────────
 SERVICE="${1:-}"
@@ -35,10 +55,7 @@ if [[ -z "$SERVICE" ]]; then
   exit 1
 fi
 
-# ── Export env vars expected by Terraform ─────────────────────────────────────
-export AWS_ACCESS_KEY_ID
-export AWS_SECRET_ACCESS_KEY
-export AWS_ENDPOINT_URL_S3
+# ── Wire Terraform env vars ───────────────────────────────────────────────────
 export TF_VAR_ssh_private_key="$SSH_PRIVATE_KEY"
 
 # ── Resolve Terraform targets ─────────────────────────────────────────────────
@@ -67,14 +84,13 @@ if [[ "$CONFIRM" != "$SERVICE" ]]; then
   exit 1
 fi
 
-# ── Terraform Init ────────────────────────────────────────────────────────────
+# ── Terraform Init + Destroy ──────────────────────────────────────────────────
 TF_DIR="$REPO_ROOT/terraform"
 
 echo "▶  terraform init"
 terraform -chdir="$TF_DIR" init \
   -backend-config="bucket=$R2_BUCKET_NAME"
 
-# ── Terraform Destroy ─────────────────────────────────────────────────────────
 echo "▶  terraform destroy"
 # shellcheck disable=SC2086
 terraform -chdir="$TF_DIR" destroy -auto-approve \
