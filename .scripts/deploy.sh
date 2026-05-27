@@ -139,6 +139,11 @@ write_ssh_key() {
   chmod 600 ~/.ssh/id_ed25519
 }
 
+install_collections() {
+  echo "▶  ansible-galaxy collection install"
+  ansible-galaxy collection install -r "$ANSIBLE_DIR/requirements.yml"
+}
+
 run_playbook() {
   local pb="$1"
   echo "▶  ansible-playbook $pb.yml"
@@ -180,6 +185,7 @@ case "$SERVICE" in
     tf_init
     tf_apply
     write_ssh_key
+    install_collections
     run_playbook "$SERVICE"
     ;;
 
@@ -188,6 +194,7 @@ case "$SERVICE" in
     tf_init
     tf_apply
     write_ssh_key
+    install_collections
     for pb in adguard vault postgres redis portainer haproxy nfs k3s; do
       run_playbook "$pb"
     done
@@ -196,6 +203,7 @@ case "$SERVICE" in
   k3s/flux)
     check_vars "${ANSIBLE_VARS[@]}"
     write_ssh_key
+    install_collections
     run_playbook flux
     ;;
 

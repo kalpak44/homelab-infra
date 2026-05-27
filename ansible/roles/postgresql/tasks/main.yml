@@ -1,7 +1,7 @@
 ---
 - name: Install dependencies
   ansible.builtin.apt:
-    name: [curl, gnupg]
+    name: [curl, gnupg, python3-psycopg2]
     state: present
     update_cache: true
 
@@ -81,39 +81,24 @@
 - name: Flush handlers to apply config before creating objects
   ansible.builtin.meta: flush_handlers
 
-- name: Create application user
-  ansible.builtin.command:
-    cmd: >
-      psql -c "DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgresql_user }}') THEN
-          CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}' SUPERUSER CREATEDB CREATEROLE;
-        ELSE
-          ALTER USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}' SUPERUSER CREATEDB CREATEROLE;
-        END IF;
-      END $$;"
+- name: Create or update application user
+  community.postgresql.postgresql_user:
+    name: "{{ postgresql_user }}"
+    password: "{{ postgresql_password }}"
+    role_attr_flags: SUPERUSER,CREATEDB,CREATEROLE
+    state: present
   become: true
   become_user: postgres
-  changed_when: true
-  when: postgresql_user != "" and postgresql_password != ""
   no_log: true
+  when: postgresql_user != "" and postgresql_password != ""
 
 - name: Create application database
-  ansible.builtin.command:
-    cmd: >
-      psql -c "SELECT 1 FROM pg_database WHERE datname = '{{ postgresql_db }}'"
+  community.postgresql.postgresql_db:
+    name: "{{ postgresql_db }}"
+    owner: "{{ postgresql_user }}"
+    encoding: UTF8
+    template: template0
+    state: present
   become: true
   become_user: postgres
-  register: db_check
-  changed_when: false
-  when: postgresql_db != ""
-
-- name: Create database if not exists
-  ansible.builtin.command:
-    cmd: "createdb -O {{ postgresql_user }} -E UTF8 -T template0 {{ postgresql_db }}"
-  become: true
-  become_user: postgres
-  when:
-    - postgresql_db != ""
-    - postgresql_user != ""
-    - db_check.stdout is not search("1 row")
+  when: postgresql_db != "" and postgresql_user != ""
