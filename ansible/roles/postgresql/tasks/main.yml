@@ -1,5 +1,7 @@
 ---
-- name: Install dependencies
+# --- Repository -----------------------------------------------------------
+
+- name: Install prerequisites
   ansible.builtin.apt:
     name: [curl, gnupg, python3-psycopg2]
     state: present
@@ -20,53 +22,73 @@
     filename: pgdg
     state: present
 
-- name: Install postgresql-common (provides pg_createcluster config)
+# --- Pre-install cluster defaults -----------------------------------------
+# Must be done before the package installs — apt triggers pg_createcluster
+# which reads createcluster.conf, so the cluster gets UTF-8 from the start.
+
+- name: Install postgresql-common
   ansible.builtin.apt:
     name: postgresql-common
     state: present
 
-# Set encoding and locale before PostgreSQL is installed so the cluster
-# auto-created by apt already uses UTF-8 — no drop/recreate needed.
-- name: Configure default cluster encoding to UTF-8
+- name: Configure createcluster defaults (UTF-8 / C.UTF-8)
   ansible.builtin.lineinfile:
     path: /etc/postgresql-common/createcluster.conf
-    regexp: "^#?encoding"
-    line: "encoding = UTF8"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
     create: true
     owner: root
     group: root
     mode: "0644"
+  loop:
+    - { regexp: "^#?encoding", line: "encoding = UTF8" }
+    - { regexp: "^#?locale",   line: "locale = C.UTF-8" }
 
-- name: Configure default cluster locale to C.UTF-8
-  ansible.builtin.lineinfile:
-    path: /etc/postgresql-common/createcluster.conf
-    regexp: "^#?locale"
-    line: "locale = C.UTF-8"
+# --- Install --------------------------------------------------------------
 
-- name: Install PostgreSQL
+- name: Install PostgreSQL {{ postgresql_version }}
   ansible.builtin.apt:
     name: "postgresql-{{ postgresql_version }}"
     state: present
     update_cache: true
 
-- name: Ensure PostgreSQL is running
+# --- Ensure cluster exists ------------------------------------------------
+# On some minimal LXC images the cluster is not auto-created by apt.
+
+- name: Check if cluster data directory exists
+  ansible.builtin.stat:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+  register: pg_cluster
+
+- name: Create cluster if missing
+  ansible.builtin.command:
+    cmd: >
+      pg_createcluster --locale C.UTF-8 --encoding UTF8
+      {{ postgresql_version }} main
+  when: not pg_cluster.stat.exists
+  changed_when: true
+
+# --- Start ---------------------------------------------------------------
+# Use the specific instance unit (postgresql@18-main) instead of the meta
+# service so we get accurate start/stop status for this cluster.
+
+- name: Start and enable PostgreSQL cluster
   ansible.builtin.systemd:
-    name: postgresql
+    name: "postgresql@{{ postgresql_version }}-main"
     state: started
     enabled: true
+    daemon_reload: true
 
-- name: Configure listen addresses
+# --- Configure -----------------------------------------------------------
+
+- name: Configure postgresql.conf
   ansible.builtin.lineinfile:
     path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
-    regexp: "^#?listen_addresses"
-    line: "listen_addresses = '*'"
-  notify: Restart PostgreSQL
-
-- name: Set default client encoding to UTF-8
-  ansible.builtin.lineinfile:
-    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
-    regexp: "^#?client_encoding"
-    line: "client_encoding = UTF8"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: "^#?listen_addresses", line: "listen_addresses = '*'" }
+    - { regexp: "^#?client_encoding",  line: "client_encoding = UTF8" }
   notify: Restart PostgreSQL
 
 - name: Deploy pg_hba.conf
@@ -78,14 +100,16 @@
     mode: "0640"
   notify: Restart PostgreSQL
 
-- name: Flush handlers to apply config before creating objects
+- name: Flush handlers to apply config
   ansible.builtin.meta: flush_handlers
 
-- name: Wait for PostgreSQL socket to be ready
+- name: Wait for PostgreSQL socket
   ansible.builtin.wait_for:
-    path: /var/run/postgresql/.s.PGSQL.5432
+    path: "/var/run/postgresql/.s.PGSQL.{{ postgresql_port }}"
     state: present
     timeout: 30
+
+# --- Bootstrap user and database -----------------------------------------
 
 - name: Write user creation SQL
   ansible.builtin.template:
@@ -95,15 +119,15 @@
     group: postgres
     mode: "0600"
   no_log: true
-  when: postgresql_user != "" and postgresql_password != ""
+  when: postgresql_user != ""
 
 - name: Create or update application user
   ansible.builtin.command:
     cmd: psql -v ON_ERROR_STOP=1 -f /tmp/pg_create_user.sql
-  become: true
   become_user: postgres
   changed_when: true
-  when: postgresql_user != "" and postgresql_password != ""
+  no_log: true
+  when: postgresql_user != ""
 
 - name: Remove user creation SQL
   ansible.builtin.file:
@@ -112,8 +136,9 @@
 
 - name: Check if application database exists
   ansible.builtin.command:
-    cmd: psql -tAc "SELECT 1 FROM pg_database WHERE datname = '{{ postgresql_db | replace(\"'\", \"''\") }}'"
-  become: true
+    cmd: >
+      psql -tAc
+      "SELECT 1 FROM pg_database WHERE datname = '{{ postgresql_db | replace("'", "''") }}'"
   become_user: postgres
   register: db_check
   changed_when: false
@@ -121,8 +146,10 @@
 
 - name: Create application database
   ansible.builtin.command:
-    cmd: createdb -O "{{ postgresql_user }}" -E UTF8 -T template0 "{{ postgresql_db }}"
-  become: true
+    cmd: >
+      createdb -O "{{ postgresql_user }}"
+      -E UTF8 -T template0
+      "{{ postgresql_db }}"
   become_user: postgres
   changed_when: true
   when:

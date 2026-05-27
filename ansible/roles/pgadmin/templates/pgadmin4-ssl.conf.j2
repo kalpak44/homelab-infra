@@ -7,4 +7,10 @@
 
     SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
     SSLCipherSuite HIGH:!aNULL:!MD5
+
+    # pgAdmin4 app — created by setup-web.sh
+    Include /etc/apache2/conf-available/pgadmin4.conf
+
+    # Redirect bare / to /pgadmin4
+    RedirectMatch ^/$ /pgadmin4
 </VirtualHost>

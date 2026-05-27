@@ -127,20 +127,6 @@
   when: pgadmin_email != "" and postgresql_user is defined and pgadmin_server_count.stdout | trim == "0"
   changed_when: true
 
-- name: Add root redirect to pgAdmin
-  ansible.builtin.copy:
-    dest: /etc/apache2/conf-available/pgadmin4-redirect.conf
-    content: |
-      RedirectMatch ^/$ /pgadmin4
-    mode: "0644"
-  notify: Restart Apache2
-
-- name: Enable redirect config
-  ansible.builtin.command:
-    cmd: a2enconf pgadmin4-redirect
-    creates: /etc/apache2/conf-enabled/pgadmin4-redirect.conf
-  notify: Restart Apache2
-
 - name: Deploy certbot renewal hook to reload Apache2
   ansible.builtin.copy:
     dest: /etc/letsencrypt/renewal-hooks/deploy/reload-apache2.sh
