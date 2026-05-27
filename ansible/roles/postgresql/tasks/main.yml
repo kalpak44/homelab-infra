@@ -26,16 +26,43 @@
     state: present
     update_cache: true
 
-- name: Initialize cluster if not present
-  ansible.builtin.command:
-    cmd: "pg_createcluster --locale=C.UTF-8 {{ postgresql_version }} main -- --encoding=UTF8"
-    creates: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
-
+# apt auto-creates the cluster with the system locale (SQL_ASCII).
+# We start it, check the encoding, and recreate with UTF-8 if needed.
+# Safe on fresh LXCs — no data exists yet at this point.
 - name: Ensure PostgreSQL is running
   ansible.builtin.systemd:
     name: postgresql
     state: started
     enabled: true
+
+- name: Check cluster encoding
+  ansible.builtin.command:
+    cmd: psql -tAc "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='postgres'"
+  become: true
+  become_user: postgres
+  register: cluster_encoding
+  changed_when: false
+
+- name: Recreate cluster with UTF-8 encoding
+  when: cluster_encoding.stdout | trim != 'UTF8'
+  block:
+    - name: Stop PostgreSQL
+      ansible.builtin.systemd:
+        name: postgresql
+        state: stopped
+
+    - name: Drop SQL_ASCII cluster created by apt
+      ansible.builtin.command:
+        cmd: "pg_dropcluster {{ postgresql_version }} main"
+
+    - name: Create cluster with C.UTF-8 locale and UTF8 encoding
+      ansible.builtin.command:
+        cmd: "pg_createcluster --locale=C.UTF-8 {{ postgresql_version }} main -- --encoding=UTF8"
+
+    - name: Start PostgreSQL
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
 
 - name: Configure listen addresses
   ansible.builtin.lineinfile:
