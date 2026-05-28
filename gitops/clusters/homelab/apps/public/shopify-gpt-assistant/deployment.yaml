@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: shopify-gpt-assistant
-          image: ghcr.io/kalpak44/shopify-gpt-assistant:42a5836
+          image: ghcr.io/kalpak44/shopify-gpt-assistant:f5b5181
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -38,7 +38,7 @@ spec:
               memory: 512Mi
           env:
             - name: NODE_ENV
-              value: production
+              value: development
             - name: DEBUGG
               value: "true"
             - name: OPENAI_BASE_URL
