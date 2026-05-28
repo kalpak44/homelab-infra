@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: shopify-gpt-assistant
-          image: ghcr.io/kalpak44/shopify-gpt-assistant:220283f
+          image: ghcr.io/kalpak44/shopify-gpt-assistant:df79d81
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
