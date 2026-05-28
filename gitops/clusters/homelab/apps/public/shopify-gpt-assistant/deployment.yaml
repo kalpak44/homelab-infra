@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: shopify-gpt-assistant
-          image: ghcr.io/kalpak44/shopify-gpt-assistant:f742018
+          image: ghcr.io/kalpak44/shopify-gpt-assistant:220283f
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -41,6 +41,8 @@ spec:
               value: production
             - name: DEBUGG
               value: "true"
+            - name: OPENAI_BASE_URL
+              value: https://api.openai.com/v1
             - name: SHOPIFY_APP_URL
               value: https://shopify-gpt-assistant.pavel-usanli.online
             - name: HOST
@@ -62,3 +64,9 @@ spec:
                 secretKeyRef:
                   name: shopify-gpt-assistant-secrets
                   key: DATABASE_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shopify-gpt-assistant-secrets
+                  key: OPENAI_API_KEY
+
