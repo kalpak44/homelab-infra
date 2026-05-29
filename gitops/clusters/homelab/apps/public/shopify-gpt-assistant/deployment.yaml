@@ -46,7 +46,7 @@ spec:
             - name: HOST
               value: 0.0.0.0
             - name: MAX_TOOL_ITERATIONS
-              value: 20
+              value: "20"
             - name: SHOPIFY_API_KEY
               valueFrom:
                 secretKeyRef:
