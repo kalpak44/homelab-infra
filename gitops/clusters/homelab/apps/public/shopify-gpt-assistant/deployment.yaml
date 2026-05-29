@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: shopify-gpt-assistant
-          image: ghcr.io/kalpak44/shopify-gpt-assistant:e8b7b69
+          image: ghcr.io/kalpak44/shopify-gpt-assistant:7ebcaeb
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -45,6 +45,8 @@ spec:
               value: https://shopify-gpt-assistant.pavel-usanli.online
             - name: HOST
               value: 0.0.0.0
+            - name: MAX_TOOL_ITERATIONS
+              value: 20
             - name: SHOPIFY_API_KEY
               valueFrom:
                 secretKeyRef:
