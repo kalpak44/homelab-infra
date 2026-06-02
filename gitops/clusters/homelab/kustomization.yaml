@@ -9,4 +9,5 @@ resources:
   - external-secrets.yaml
   - external-secrets-config.yaml
   - crowdsec.yaml
+  - sablier.yaml
   - apps.yaml

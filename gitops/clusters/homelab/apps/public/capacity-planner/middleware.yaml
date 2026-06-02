@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: capacity-planner-sablier
+  namespace: public
+spec:
+  plugin:
+    sablier:
+      names: deployment_public_capacity-planner_1
+      sablierUrl: http://sablier.kube-system:10000
+      sessionDuration: 10m
+      dynamic:
+        displayName: Capacity Planner
+        refreshFrequency: 5s
+        showDetails: "true"
+        theme: hacker-terminal

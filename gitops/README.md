@@ -14,7 +14,8 @@ gitops/clusters/homelab/
 │   ├── external-secrets/ # External Secrets Operator (syncs Vault → k8s secrets)
 │   ├── external-secrets-config/  # ClusterSecretStore pointing at Vault
 │   ├── traefik-config/   # Traefik ingress config, Cloudflare DNS-01 TLS, CrowdSec middleware
-│   └── crowdsec/         # CrowdSec IDS + AppSec engine + web UI
+│   ├── crowdsec/         # CrowdSec IDS + AppSec engine + web UI
+│   └── sablier/          # Sablier scale-on-demand (starts workloads on request, idles after inactivity)
 └── apps/
     ├── public/
     │   ├── personal-web-page/     # Personal website
