@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: personal-web-page
-          image: ghcr.io/kalpak44/kalpak44:5da4105
+          image: ghcr.io/kalpak44/kalpak44:8cdb04b
           ports:
             - containerPort: 80
           readinessProbe:
