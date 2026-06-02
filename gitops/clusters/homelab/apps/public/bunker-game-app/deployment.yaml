@@ -13,16 +13,32 @@ spec:
       labels:
         app: bunker-game-app
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: bunker
           image: kalpak44/bunker-party:9619fe4ec7b042b182d1811647c65d6f713b24f7
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
           resources:
             requests:
               cpu: 50m
               memory: 64Mi
+              ephemeral-storage: 64Mi
             limits:
               cpu: 200m
               memory: 256Mi
+              ephemeral-storage: 256Mi
