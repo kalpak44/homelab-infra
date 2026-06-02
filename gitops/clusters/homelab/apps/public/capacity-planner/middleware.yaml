@@ -13,4 +13,4 @@ spec:
         displayName: Capacity Planner
         refreshFrequency: 5s
         showDetails: "true"
-        theme: hacker-terminal
+        theme: ghost
