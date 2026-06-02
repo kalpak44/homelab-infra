@@ -49,6 +49,7 @@
 #   k3s/flux/headlamp
 #   k3s/flux/capacity-planner
 #   k3s/flux/shopify-gpt-assistant
+#   k3s/flux/bunker-game-app
 
 set -euo pipefail
 
@@ -255,6 +256,12 @@ case "$SERVICE" in
     check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.shopify_gpt_assistant
+    ;;
+
+  k3s/flux/bunker-game-app)
+    check_vars "${CORE_TF_VARS[@]}"
+    tf_init
+    tf_apply -target=cloudflare_record.bunker_game_app
     ;;
 
   *)

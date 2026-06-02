@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bunker-game-app
+  namespace: public
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: bunker-game-app
+  template:
+    metadata:
+      labels:
+        app: bunker-game-app
+    spec:
+      containers:
+        - name: bunker
+          image: kalpak44/bunker-party:9619fe4ec7b042b182d1811647c65d6f713b24f7
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

@@ -58,6 +58,14 @@ resource "cloudflare_record" "capacity_planner" {
   proxied = true
 }
 
+resource "cloudflare_record" "bunker_game_app" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "bunker"
+  content = var.haproxy_public_ip
+  type    = "A"
+  proxied = true
+}
+
 resource "cloudflare_record" "shopify_gpt_assistant" {
   zone_id = data.cloudflare_zone.this.id
   name    = "shopify-gpt-assistant"

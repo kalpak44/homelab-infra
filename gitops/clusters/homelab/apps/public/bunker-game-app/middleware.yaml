@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: bunker-game-app-sablier
+  namespace: public
+spec:
+  plugin:
+    sablier:
+      names: deployment_public_bunker-game-app_1
+      sablierUrl: http://sablier.kube-system:10000
+      sessionDuration: 10m
+      dynamic:
+        displayName: Bunker Party
+        refreshFrequency: 5s
+        showDetails: "true"
+        theme: ghost
