@@ -70,6 +70,20 @@ spec:
                 - "2c0f:f248::/32"
 
       scenarios:
+        http-error-burst.yaml: |
+          type: counter
+          name: custom/http-error-burst
+          description: "Block IP after 20 non-2xx HTTP responses within 10 seconds (automated/brute-force detection)"
+          filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
+          groupby: evt.Meta.source_ip
+          duration: 10s
+          capacity: 20
+          blackhole: 24h
+          labels:
+            service: http
+            type: http-error-burst
+            remediation: true
+
         http-error-threshold.yaml: |
           type: leaky
           name: custom/http-error-threshold
@@ -99,6 +113,14 @@ spec:
         name: repeat_offender
         filters:
           - Alert.Remediation == true && Alert.GetScope() == "Ip" && GetDecisionsCount(Alert.GetValue()) >= 3
+        decisions:
+          - type: ban
+            duration: 24h
+        on_success: break
+        ---
+        name: http_error_burst_ban
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-burst"
         decisions:
           - type: ban
             duration: 24h
