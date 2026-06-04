@@ -18,11 +18,20 @@ spec:
       labels:
         app: personal-web-page
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: personal-web-page
-          image: ghcr.io/kalpak44/kalpak44:410dc6c
+          image: ghcr.io/kalpak44/kalpak44:71a8c77
           ports:
             - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+              ephemeral-storage: 50Mi
+            limits:
+              memory: 64Mi
+              ephemeral-storage: 100Mi
           readinessProbe:
             httpGet:
               path: /
