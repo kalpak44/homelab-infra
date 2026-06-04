@@ -11,7 +11,7 @@ spec:
       updateIntervalSeconds: 60
       defaultDecisionSeconds: 60
       httpTimeoutSeconds: 10
-      crowdsecMode: live
+      crowdsecMode: stream
       crowdsecLapiKeyFile: /run/secrets/crowdsec/bouncer-api-key
       crowdsecLapiHost: crowdsec-service.crowdsec.svc.cluster.local:8080
       crowdsecLapiScheme: http

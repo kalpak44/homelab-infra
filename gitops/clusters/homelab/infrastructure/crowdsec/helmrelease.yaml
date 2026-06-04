@@ -71,13 +71,13 @@ spec:
 
       scenarios:
         http-error-burst.yaml: |
-          type: counter
+          type: leaky
           name: custom/http-error-burst
           description: "Block IP after 20 non-2xx HTTP responses within 10 seconds (automated/brute-force detection)"
           filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
           groupby: evt.Meta.source_ip
-          duration: 10s
           capacity: 20
+          leakspeed: "500ms"
           blackhole: 24h
           labels:
             service: http
