@@ -115,6 +115,19 @@ module "nfs" {
   data_disk_size_gb = 512 # NFS data disk mounted at /srv/nfs
 }
 
+# ─── Cloudflare-only services ────────────────────────────────────────────────
+
+# Cloudflare Email Routing — contact@pavel-usanli.online → pavel.usanli@gmail.com
+module "cloudflare_email" {
+  source            = "./modules/cloudflare-email"
+  zone_id           = data.cloudflare_zone.this.id
+  account_id        = data.cloudflare_zone.this.account_id
+  alias_name        = "contact"
+  destination_email = "pavel.usanli@gmail.com"
+}
+
+# ─── VMs ─────────────────────────────────────────────────────────────────────
+
 # k3s cluster — two-node control-plane + worker, managed by Flux CD
 module "k3s" {
   source          = "./modules/k3s"

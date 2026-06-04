@@ -403,6 +403,16 @@ export KUBECONFIG=~/.kube/homelab.yaml
 kubectl get nodes
 ```
 
+### Cloudflare Email Routing
+
+Email alias managed entirely in Cloudflare — no server required.
+
+`contact@pavel-usanli.online` forwards to `pavel.usanli@gmail.com`.
+
+**Deploy:** Run **Deploy** → `cloudflare-email`
+
+> After the first deploy, Cloudflare sends a one-time verification email to `pavel.usanli@gmail.com`. Click the link to activate routing. MX records are managed automatically by Cloudflare.
+
 ---
 
 ## CI behaviour
@@ -430,6 +440,7 @@ kubectl get nodes
 | `k3s/flux/personal-web-page` | `cloudflare_record.personal_web_page_apex` + `www` (requires `HAPROXY_PUBLIC_IP`) | skipped |
 | `k3s/flux/private-home-page` | `cloudflare_record.private_home_page` | skipped |
 | `k3s/flux/mite-assistant-mcp` | `cloudflare_record.mite_assistant` (requires `HAPROXY_PUBLIC_IP`) | skipped |
+| `cloudflare-email` | `module.cloudflare_email` (targeted) | skipped |
 
 > Ansible always uses the single `inventories/homelab.yml` inventory.
 > `k3s/flux/*` options run a targeted Terraform apply for the app's Cloudflare DNS record only — no Ansible step.
@@ -448,6 +459,7 @@ kubectl get nodes
 | `haproxy` | `module.haproxy` |
 | `nfs` | `module.nfs` |
 | `k3s` | `module.k3s` |
+| `cloudflare-email` | `module.cloudflare_email` |
 
 ---
 
@@ -482,6 +494,7 @@ Local equivalents of the GitHub Actions workflows. Secrets are read from system 
 | `k3s/flux/headlamp` | DNS record only | — |
 | `k3s/flux/capacity-planner` | DNS record only | — |
 | `k3s/flux/shopify-gpt-assistant` | DNS record only | — |
+| `cloudflare-email` | `module.cloudflare_email` (targeted) | — |
 
 `--no-refresh` skips Terraform state refresh before apply.
 
@@ -505,3 +518,4 @@ Prompts for confirmation before running. No Ansible step — destroying the Terr
 | `haproxy` | `module.haproxy` |
 | `nfs` | `module.nfs` |
 | `k3s` | `module.k3s` |
+| `cloudflare-email` | `module.cloudflare_email` |

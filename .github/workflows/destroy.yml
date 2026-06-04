@@ -19,6 +19,7 @@ on:
           - haproxy
           - nfs
           - k3s
+          - cloudflare-email
 
 jobs:
   destroy:
@@ -46,8 +47,9 @@ jobs:
             portainer)   echo "targets=-target=module.portainer" >> $GITHUB_OUTPUT ;;
             haproxy)     echo "targets=-target=module.haproxy"   >> $GITHUB_OUTPUT ;;
             nfs)         echo "targets=-target=module.nfs"      >> $GITHUB_OUTPUT ;;
-            k3s)         echo "targets=-target=module.k3s"      >> $GITHUB_OUTPUT ;;
-            all)         echo "targets=" >> $GITHUB_OUTPUT ;;
+            k3s)              echo "targets=-target=module.k3s"              >> $GITHUB_OUTPUT ;;
+            cloudflare-email) echo "targets=-target=module.cloudflare_email" >> $GITHUB_OUTPUT ;;
+            all)              echo "targets=" >> $GITHUB_OUTPUT ;;
           esac
 
       - name: Terraform Init

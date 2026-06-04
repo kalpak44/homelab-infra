@@ -52,6 +52,7 @@
 #   k3s/flux/capacity-planner
 #   k3s/flux/shopify-gpt-assistant
 #   k3s/flux/bunker-game-app
+#   cloudflare-email
 
 set -euo pipefail
 
@@ -267,6 +268,12 @@ case "$SERVICE" in
     check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.bunker_game_app
+    ;;
+
+  cloudflare-email)
+    check_vars "${CORE_TF_VARS[@]}"
+    tf_init
+    tf_apply -target=module.cloudflare_email
     ;;
 
   *)

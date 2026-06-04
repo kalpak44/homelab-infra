@@ -21,6 +21,7 @@
 #   all
 #   proxmox-dns
 #   adguard | vault | postgres | redis | rabbitmq | portainer | haproxy | nfs | k3s
+#   cloudflare-email
 
 set -euo pipefail
 
@@ -75,8 +76,9 @@ case "$SERVICE" in
   portainer)   TARGETS="-target=module.portainer" ;;
   haproxy)     TARGETS="-target=module.haproxy"   ;;
   nfs)         TARGETS="-target=module.nfs"       ;;
-  k3s)         TARGETS="-target=module.k3s"       ;;
-  all)         TARGETS=""                         ;;
+  k3s)              TARGETS="-target=module.k3s"              ;;
+  cloudflare-email) TARGETS="-target=module.cloudflare_email" ;;
+  all)              TARGETS=""                                ;;
   *)
     echo "❌  Unknown service: $SERVICE" >&2
     exit 1
