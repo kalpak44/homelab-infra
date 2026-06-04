@@ -413,15 +413,18 @@ Email alias managed entirely in Cloudflare — no server required.
 
 > After the first deploy, Cloudflare sends a one-time verification email to `pavel.usanli@gmail.com`. Click the link to activate routing. MX records are managed automatically by Cloudflare.
 
-**One-time manual step before first deploy** — the Cloudflare API token cannot enable Email Routing (that endpoint requires Global API Key access). Enable it once in the dashboard: **Cloudflare → pavel-usanli.online → Email Routing → Get started**.
-
 **Required API token permissions** — the shared `CLOUDFLARE_API_TOKEN` must include these in addition to `Zone:DNS:Edit`:
 
 | Type | Resource | Permission |
 |---|---|---|
 | Account | Email Routing Addresses | Edit |
+| Account | Email Routing Addresses | Read |
+| Zone | Email Routing Rules | Edit |
+| Zone | Email Routing Rules | Read |
+| Zone | Zone Settings | Edit |
+| Zone | Zone Settings | Read |
 
-Edit the token in **Cloudflare → My Profile → API Tokens** and add the permission. The token value stays the same — no GitHub secret update needed.
+Edit the token in **Cloudflare → My Profile → API Tokens** and add all six rows. The token value stays the same — no GitHub secret update needed.
 
 ---
 
