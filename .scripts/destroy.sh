@@ -20,7 +20,7 @@
 # <service> options:
 #   all
 #   proxmox-dns
-#   adguard | vault | postgres | redis | portainer | haproxy | nfs | k3s
+#   adguard | vault | postgres | redis | rabbitmq | portainer | haproxy | nfs | k3s
 
 set -euo pipefail
 
@@ -71,6 +71,7 @@ case "$SERVICE" in
   vault)       TARGETS="-target=module.vault"     ;;
   postgres)    TARGETS="-target=module.postgres"  ;;
   redis)       TARGETS="-target=module.redis"     ;;
+  rabbitmq)    TARGETS="-target=module.rabbitmq"  ;;
   portainer)   TARGETS="-target=module.portainer" ;;
   haproxy)     TARGETS="-target=module.haproxy"   ;;
   nfs)         TARGETS="-target=module.nfs"       ;;

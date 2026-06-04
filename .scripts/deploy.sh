@@ -29,6 +29,8 @@
 #   export REDIS_PASSWORD=...
 #   export REDIS_COMMANDER_USER=...
 #   export REDIS_COMMANDER_PASSWORD=...
+#   export RABBITMQ_USER=...
+#   export RABBITMQ_PASSWORD=...
 #   export PORTAINER_ADMIN_USERNAME=...
 #   export PORTAINER_ADMIN_PASSWORD=...
 #   export FLUX_GITHUB_TOKEN=...
@@ -39,7 +41,7 @@
 # <service> options:
 #   all
 #   proxmox-dns
-#   adguard | vault | postgres | redis | portainer | haproxy | nfs | k3s
+#   adguard | vault | postgres | redis | rabbitmq | portainer | haproxy | nfs | k3s
 #   k3s/flux
 #   k3s/flux/personal-web-page
 #   k3s/flux/private-home-page
@@ -84,6 +86,7 @@ ANSIBLE_VARS=(
   POSTGRESQL_DB POSTGRESQL_USER POSTGRESQL_PASSWORD
   PGADMIN_EMAIL PGADMIN_PASSWORD
   REDIS_PASSWORD REDIS_COMMANDER_USER REDIS_COMMANDER_PASSWORD
+  RABBITMQ_USER RABBITMQ_PASSWORD
   PORTAINER_ADMIN_USERNAME PORTAINER_ADMIN_PASSWORD
   HAPROXY_STATS_USER HAPROXY_STATS_PASSWORD HAPROXY_PUBLIC_IP
   FLUX_GITHUB_TOKEN
@@ -164,6 +167,8 @@ run_playbook() {
     -e redis_password="$REDIS_PASSWORD" \
     -e redis_commander_user="$REDIS_COMMANDER_USER" \
     -e redis_commander_password="$REDIS_COMMANDER_PASSWORD" \
+    -e rabbitmq_user="$RABBITMQ_USER" \
+    -e rabbitmq_password="$RABBITMQ_PASSWORD" \
     -e portainer_admin_username="$PORTAINER_ADMIN_USERNAME" \
     -e portainer_admin_password="$PORTAINER_ADMIN_PASSWORD" \
     -e haproxy_stats_user="$HAPROXY_STATS_USER" \
@@ -181,7 +186,7 @@ case "$SERVICE" in
     tf_apply -target=cloudflare_record.proxmox
     ;;
 
-  adguard|vault|postgres|redis|portainer|haproxy|nfs|k3s)
+  adguard|vault|postgres|redis|rabbitmq|portainer|haproxy|nfs|k3s)
     check_vars "${CORE_TF_VARS[@]}" "${ANSIBLE_VARS[@]}"
     tf_init
     tf_apply
@@ -196,7 +201,7 @@ case "$SERVICE" in
     tf_apply
     write_ssh_key
     install_collections
-    for pb in adguard vault postgres redis portainer haproxy nfs k3s; do
+    for pb in adguard vault postgres redis rabbitmq portainer haproxy nfs k3s; do
       run_playbook "$pb"
     done
     ;;

@@ -42,6 +42,20 @@ module "postgres" {
   disk_size_gb = 16
 }
 
+# RabbitMQ — message broker
+module "rabbitmq" {
+  source           = "./modules/rabbitmq"
+  zone_id          = data.cloudflare_zone.this.id
+  template_file_id = proxmox_download_file.ubuntu_lxc.id
+  ssh_public_keys  = [var.ssh_public_key]
+
+  container_id = 205
+  ip_address   = "192.168.1.8"
+  cpu_cores    = 1
+  memory_mb    = 1024
+  disk_size_gb = 8
+}
+
 # Redis + Redis Commander — cache and web UI
 module "redis" {
   source           = "./modules/redis"

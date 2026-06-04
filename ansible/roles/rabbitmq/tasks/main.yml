@@ -1,0 +1,94 @@
+- name: Install RabbitMQ
+  apt:
+    name: rabbitmq-server
+    state: present
+    update_cache: true
+
+- name: Enable and start RabbitMQ
+  systemd:
+    name: rabbitmq-server
+    enabled: true
+    state: started
+
+- name: Enable management plugin
+  command: rabbitmq-plugins enable rabbitmq_management
+  register: plugin_result
+  changed_when: "'Plugin configuration unchanged' not in plugin_result.stdout"
+
+- name: Create admin user
+  command: rabbitmqctl add_user {{ rabbitmq_user }} {{ rabbitmq_password }}
+  register: create_user
+  failed_when: create_user.rc != 0 and 'already_exists' not in create_user.stderr
+  changed_when: create_user.rc == 0
+  no_log: true
+
+- name: Set admin user tags
+  command: rabbitmqctl set_user_tags {{ rabbitmq_user }} administrator
+  changed_when: true
+
+- name: Set admin user permissions
+  command: rabbitmqctl set_permissions -p {{ rabbitmq_vhost }} {{ rabbitmq_user }} ".*" ".*" ".*"
+  changed_when: true
+
+- name: Delete guest user
+  command: rabbitmqctl delete_user guest
+  register: delete_guest
+  failed_when: delete_guest.rc != 0 and 'no_such_user' not in delete_guest.stderr
+  changed_when: delete_guest.rc == 0
+
+- name: Install certbot, Cloudflare plugin, and nginx
+  apt:
+    name:
+      - certbot
+      - python3-certbot-dns-cloudflare
+      - nginx
+    state: present
+
+- name: Deploy Cloudflare credentials
+  copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    mode: "0600"
+
+- name: Issue Let's Encrypt certificate
+  command: >
+    certbot certonly --dns-cloudflare
+    --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+    --dns-cloudflare-propagation-seconds 30
+    --non-interactive --agree-tos
+    -m {{ letsencrypt_email }}
+    -d {{ rabbitmq_domain }}
+  args:
+    creates: /etc/letsencrypt/live/{{ rabbitmq_domain }}/fullchain.pem
+
+- name: Deploy nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/sites-available/rabbitmq
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable nginx site
+  file:
+    src: /etc/nginx/sites-available/rabbitmq
+    dest: /etc/nginx/sites-enabled/rabbitmq
+    state: link
+  notify: Reload nginx
+
+- name: Remove nginx default site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Enable and start nginx
+  systemd:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Deploy certbot renewal hook
+  template:
+    src: restart-nginx.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-nginx.sh
+    mode: "0755"

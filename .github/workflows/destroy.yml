@@ -14,6 +14,7 @@ on:
           - vault
           - postgres
           - redis
+          - rabbitmq
           - portainer
           - haproxy
           - nfs
@@ -41,6 +42,7 @@ jobs:
             vault)       echo "targets=-target=module.vault"    >> $GITHUB_OUTPUT ;;
             postgres)    echo "targets=-target=module.postgres" >> $GITHUB_OUTPUT ;;
             redis)       echo "targets=-target=module.redis"       >> $GITHUB_OUTPUT ;;
+            rabbitmq)    echo "targets=-target=module.rabbitmq"    >> $GITHUB_OUTPUT ;;
             portainer)   echo "targets=-target=module.portainer" >> $GITHUB_OUTPUT ;;
             haproxy)     echo "targets=-target=module.haproxy"   >> $GITHUB_OUTPUT ;;
             nfs)         echo "targets=-target=module.nfs"      >> $GITHUB_OUTPUT ;;

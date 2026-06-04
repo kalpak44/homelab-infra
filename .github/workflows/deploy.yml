@@ -19,6 +19,7 @@ on:
           - vault
           - postgres
           - redis
+          - rabbitmq
           - portainer
           - haproxy
           - nfs
@@ -216,6 +217,8 @@ jobs:
               -e redis_password="${{ secrets.REDIS_PASSWORD }}" \
               -e redis_commander_user="${{ secrets.REDIS_COMMANDER_USER }}" \
               -e redis_commander_password="${{ secrets.REDIS_COMMANDER_PASSWORD }}" \
+              -e rabbitmq_user="${{ secrets.RABBITMQ_USER }}" \
+              -e rabbitmq_password="${{ secrets.RABBITMQ_PASSWORD }}" \
               -e portainer_admin_username="${{ secrets.PORTAINER_ADMIN_USERNAME }}" \
               -e portainer_admin_password="${{ secrets.PORTAINER_ADMIN_PASSWORD }}" \
               -e haproxy_stats_user="${{ secrets.HAPROXY_STATS_USER }}" \

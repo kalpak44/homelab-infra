@@ -318,6 +318,16 @@ Redis + Redis Commander web UI running in a single LXC container (`common` env, 
 
 Redis listens on `192.168.1.6:6379` or `redis.internal.pavel-usanli.online:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081` or `http://redis.internal.pavel-usanli.online:8081`.
 
+### RabbitMQ
+
+Message broker running in an LXC container (`common` env, `192.168.1.8`).
+
+**Secrets required:** `RABBITMQ_USER`, `RABBITMQ_PASSWORD`
+
+**Deploy:** Run **Deploy** → `rabbitmq`
+
+RabbitMQ AMQP listens on `192.168.1.8:5672` (also reachable as `rabbitmq.internal.pavel-usanli.online:5672`). The management UI is available at `https://rabbitmq.internal.pavel-usanli.online` (or `http://192.168.1.8:15672` before TLS is provisioned). A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
+
 ### Portainer
 
 Docker management UI running in a VM (`common` env, `192.168.1.7`).
