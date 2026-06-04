@@ -84,6 +84,20 @@ spec:
             type: http-error-burst
             remediation: true
 
+        actuator-probing.yaml: |
+          type: leaky
+          name: custom/actuator-probing
+          description: "Block IPs probing Spring Boot Actuator endpoints"
+          filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator'"
+          groupby: evt.Meta.source_ip
+          capacity: 3
+          leakspeed: "10s"
+          blackhole: 24h
+          labels:
+            service: http
+            type: actuator-probe
+            remediation: true
+
         http-error-threshold.yaml: |
           type: leaky
           name: custom/http-error-threshold
@@ -132,6 +146,14 @@ spec:
         decisions:
           - type: ban
             duration: 1h
+        on_success: break
+        ---
+        name: actuator_probe_ban
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() == "custom/actuator-probing"
+        decisions:
+          - type: ban
+            duration: 24h
         on_success: break
         ---
         name: default_ip_remediation
@@ -212,7 +234,7 @@ spec:
         - name: COLLECTIONS
           value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/whitelist-good-actors"
         - name: SCENARIOS
-          value: "LePresidente/adguardhome-bf crowdsecurity/http-probing crowdsecurity/http-bad-user-agent crowdsecurity/http-backdoors-attempts crowdsecurity/http-sensitive-files crowdsecurity/ssh-bf crowdsecurity/http-path-traversal-probing crowdsecurity/http-sqli-probing crowdsecurity/http-xss-probing crowdsecurity/http-crawl-non_statics"
+          value: "LePresidente/adguardhome-bf crowdsecurity/http-probing crowdsecurity/http-bad-user-agent crowdsecurity/http-backdoors-attempts crowdsecurity/http-sensitive-files crowdsecurity/ssh-bf crowdsecurity/http-path-traversal-probing crowdsecurity/http-sqli-probing crowdsecurity/http-xss-probing crowdsecurity/http-crawl-non_statics crowdsecurity/http-generic-bf crowdsecurity/http-admin-interface-probing crowdsecurity/http-w00tw00t crowdsecurity/http-open-proxy"
 
       persistentVolume:
         config:
