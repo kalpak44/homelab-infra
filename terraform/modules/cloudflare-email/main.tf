@@ -15,13 +15,13 @@ resource "cloudflare_email_routing_rule" "alias" {
   enabled  = true
   priority = 1
 
-  matcher {
+  matchers {
     type  = "literal"
     field = "to"
     value = "${var.alias_name}@${var.domain}"
   }
 
-  action {
+  actions {
     type  = "forward"
     value = [var.destination_email]
   }
