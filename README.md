@@ -426,6 +426,42 @@ Email alias managed entirely in Cloudflare — no server required.
 
 Edit the token in **Cloudflare → My Profile → API Tokens** and add all six rows. The token value stays the same — no GitHub secret update needed.
 
+#### Sending from `contact@pavel-usanli.online` via Gmail
+
+To reply or compose from this address inside Gmail, add it as a "Send as" address backed by Mailjet SMTP.
+
+**Gmail → All Settings → Accounts and Import → Send mail as → Add another email address**
+
+| Field | Value |
+|---|---|
+| Name | Pavel Usanli (or whatever recipients should see) |
+| Email | `contact@pavel-usanli.online` |
+| SMTP Server | `in-v3.mailjet.com` |
+| Port | `587` |
+| Username | Mailjet API Key |
+| Password | Mailjet Secret Key |
+| Connection | TLS |
+
+Gmail will send a verification email to `contact@pavel-usanli.online` — it arrives in your Gmail inbox (forwarded by Cloudflare Email Routing). Click the link to confirm. After that you can select `contact@pavel-usanli.online` as the From address when composing.
+
+#### DMARC — recommended DNS record
+
+Add a TXT record in Cloudflare for `_dmarc.pavel-usanli.online`:
+
+```
+Content: v=DMARC1; p=none; rua=mailto:contact@pavel-usanli.online
+```
+
+What each part means:
+
+| Field | Value | Meaning |
+|---|---|---|
+| `v=DMARC1` | version | Identifies this as a DMARC record |
+| `p=none` | policy | Monitor only — don't reject or quarantine failing emails; safe starting point |
+| `rua=mailto:...` | reporting URI | Receiving servers send aggregate reports here so you can see who is sending mail on behalf of your domain |
+
+Start with `p=none` to collect data. Once reports confirm all legitimate senders pass SPF/DKIM, tighten to `p=quarantine` (spam-folder) and eventually `p=reject` (drop).
+
 ---
 
 ## CI behaviour
