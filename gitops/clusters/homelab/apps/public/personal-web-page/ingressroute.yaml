@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - public-web-secure
   routes:
-    - match: Host(`pavel-usanli.online`)
+    - match: Host(`pavel-usanli.online`) || Host(`www.pavel-usanli.online`)
       kind: Rule
       services:
         - name: personal-web-page
