@@ -36,3 +36,13 @@ services:
     volumes:
       - /mnt/data/qbittorrent/config:/config
       - /mnt/data/downloads:/downloads
+
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: filebrowser
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    volumes:
+      - /mnt/data/downloads:/srv
+      - /mnt/data/filebrowser/database.db:/database.db
