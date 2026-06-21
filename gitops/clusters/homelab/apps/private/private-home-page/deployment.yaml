@@ -26,6 +26,9 @@ spec:
             - name: html
               mountPath: /usr/share/nginx/html/index.html
               subPath: index.html
+            - name: html
+              mountPath: /usr/share/nginx/html/portainer.html
+              subPath: portainer.html
       volumes:
         - name: html
           configMap:

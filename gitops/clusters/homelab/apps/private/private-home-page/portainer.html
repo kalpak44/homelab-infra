@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Portainer Apps — Home Services</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bg: {DEFAULT: '#020617', soft: '#0f172a'},
+                        card: {DEFAULT: '#020617', soft: '#0b1220'},
+                        accent: {DEFAULT: '#38bdf8'}
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-bg text-slate-100 min-h-screen flex flex-col">
+
+<header class="border-b border-slate-800 bg-bg/95 backdrop-blur sticky top-0 z-20">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
+        <a href="/" class="flex items-center gap-3 group">
+            <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center text-xl">
+                🏠
+            </div>
+            <div>
+                <h1 class="text-lg font-semibold tracking-tight group-hover:text-accent transition">
+                    Home Services
+                </h1>
+                <p class="text-xs text-slate-400">Self-hosted dashboard</p>
+            </div>
+        </a>
+        <span class="text-slate-700 text-lg">/</span>
+        <div class="flex items-center gap-2">
+            <div class="h-9 w-9 rounded-xl bg-slate-900/80 border border-slate-700 flex items-center justify-center text-xl">🐳</div>
+            <span class="text-sm font-medium text-slate-300">Portainer Apps</span>
+        </div>
+    </div>
+</header>
+
+<div class="max-w-6xl mx-auto px-4 py-8 space-y-8 flex-1">
+
+    <div class="flex items-center gap-4">
+        <a href="/" class="text-sm text-slate-400 hover:text-accent transition">← Back</a>
+        <h2 class="text-2xl font-semibold tracking-tight">Containers</h2>
+    </div>
+
+    <section class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+
+        <!-- TorrServer -->
+        <div class="relative overflow-hidden group rounded-2xl border border-slate-800 bg-card/80 hover:border-accent/70 hover:bg-card-soft/90 transition p-5 shadow-md">
+            <div class="space-y-4 transition duration-200 group-hover:blur-sm group-hover:opacity-40 pointer-events-none select-none">
+                <div class="flex items-start gap-3">
+                    <div class="h-12 w-12 rounded-xl bg-slate-900/80 border border-slate-700 flex justify-center items-center text-2xl">🎬</div>
+                    <div>
+                        <h3 class="font-semibold">TorrServer</h3>
+                        <p class="text-xs text-slate-400">BitTorrent streaming</p>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400">Stream torrents directly via HTTP. Supports DLNA and multicast.</p>
+                <div class="text-[11px] text-slate-400">192.168.1.7:5665</div>
+            </div>
+            <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition duration-200">
+                <a href="http://192.168.1.7:5665/" target="_blank"
+                   class="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-medium transition">Open ↗</a>
+            </div>
+        </div>
+
+        <!-- qBittorrent -->
+        <div class="relative overflow-hidden group rounded-2xl border border-slate-800 bg-card/80 hover:border-accent/70 hover:bg-card-soft/90 transition p-5 shadow-md">
+            <div class="space-y-4 transition duration-200 group-hover:blur-sm group-hover:opacity-40 pointer-events-none select-none">
+                <div class="flex items-start gap-3">
+                    <div class="h-12 w-12 rounded-xl bg-slate-900/80 border border-slate-700 flex justify-center items-center text-2xl">⬇️</div>
+                    <div>
+                        <h3 class="font-semibold">qBittorrent</h3>
+                        <p class="text-xs text-slate-400">BitTorrent client</p>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400">Download and manage torrents. Files saved to /mnt/data/downloads.</p>
+                <div class="text-[11px] text-slate-400">192.168.1.7:8080</div>
+            </div>
+            <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition duration-200">
+                <a href="http://192.168.1.7:8080/" target="_blank"
+                   class="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-medium transition">Open ↗</a>
+            </div>
+        </div>
+
+    </section>
+</div>
+
+<footer class="border-t border-slate-900 bg-bg/90">
+    <div class="max-w-6xl mx-auto px-4 py-4 text-[11px] text-slate-500 text-center">
+        Self-hosted dashboard.
+    </div>
+</footer>
+
+</body>
+</html>

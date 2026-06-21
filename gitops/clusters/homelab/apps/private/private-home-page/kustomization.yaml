@@ -12,3 +12,4 @@ configMapGenerator:
   - name: private-home-page-html
     files:
       - index.html
+      - portainer.html
