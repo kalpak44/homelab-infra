@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  torrserver:
+    image: ghcr.io/yourok/torrserver:latest
+    container_name: torrserver
+    network_mode: host   # needed for DLNA/multicast
+    restart: unless-stopped
+    environment:
+      TS_PORT: "5665"
+      TS_DONTKILL: "1"
+      TS_HTTPAUTH: "0"
+      TS_PATH: /opt/torrserver/config
+      TS_LOGPATHDIR: /opt/torrserver/log
+      TS_LOGFILE: ts.log
+      TS_WEBLOGFILE: tsweb.log
+      TS_TORRENTSDIR: /opt/torrserver/torrents
+    volumes:
+      - /home/kalpak44/torrserver/config:/opt/torrserver/config
+      - /home/kalpak44/torrserver/log:/opt/torrserver/log
+      - /home/kalpak44/torrserver/torrents:/opt/torrserver/torrents
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Europe/Berlin
+      WEBUI_PORT: "8080"
+    ports:
+      - "8080:8080"       # Web UI
+      - "6881:6881"       # BitTorrent TCP
+      - "6881:6881/udp"   # BitTorrent UDP
+    volumes:
+      - /mnt/data/qbittorrent/config:/config
+      - /mnt/data/downloads:/downloads
