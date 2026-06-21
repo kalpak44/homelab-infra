@@ -46,3 +46,18 @@ services:
     volumes:
       - /mnt/data/downloads:/srv
       - /mnt/data/filebrowser/database.db:/database.db
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Europe/Sofia
+    ports:
+      - "8096:8096"
+    volumes:
+      - /mnt/data/jellyfin/config:/config
+      - /mnt/data/jellyfin/cache:/cache
+      - /mnt/data/downloads:/media:ro
