@@ -45,7 +45,8 @@ services:
       - "8888:80"
     volumes:
       - /mnt/data/downloads:/srv
-      - /mnt/data/filebrowser/database.db:/database.db
+      - /mnt/data/filebrowser:/config
+    command: --database /config/database.db
 
   jellyfin:
     image: jellyfin/jellyfin:latest
