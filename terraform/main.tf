@@ -77,11 +77,12 @@ module "portainer" {
   template_vm_id  = proxmox_virtual_environment_vm.ubuntu_template.vm_id
   ssh_public_keys = [var.ssh_public_key]
 
-  vm_id        = 302
-  ip_address   = "192.168.1.7"
-  cpu_cores    = 2
-  memory_mb    = 2048
-  disk_size_gb = 20
+  vm_id             = 302
+  ip_address        = "192.168.1.7"
+  cpu_cores         = 2
+  memory_mb         = 2048
+  disk_size_gb      = 20  # OS disk
+  data_disk_size_gb = 100 # Docker volumes disk mounted at /mnt/data
 }
 
 # HAProxy — external load balancer for the k3s cluster

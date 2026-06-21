@@ -9,9 +9,10 @@ module "vm" {
   ip_address = "${var.ip_address}/24"
   gateway    = var.gateway
 
-  cpu_cores    = var.cpu_cores
-  memory_mb    = var.memory_mb
-  disk_size_gb = var.disk_size_gb
+  cpu_cores         = var.cpu_cores
+  memory_mb         = var.memory_mb
+  disk_size_gb      = var.disk_size_gb
+  data_disk_size_gb = var.data_disk_size_gb
 
   ssh_public_keys = var.ssh_public_keys
 }

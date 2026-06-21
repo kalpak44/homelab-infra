@@ -1,4 +1,18 @@
 ---
+- name: Format data disk
+  community.general.filesystem:
+    fstype: ext4
+    dev: "{{ portainer_data_disk }}"
+    state: present
+
+- name: Mount data disk
+  ansible.builtin.mount:
+    path: /mnt/data
+    src: "{{ portainer_data_disk }}"
+    fstype: ext4
+    opts: defaults
+    state: mounted
+
 - name: Install Docker dependencies
   ansible.builtin.apt:
     name: [ca-certificates, curl, gnupg]

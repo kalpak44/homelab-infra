@@ -49,3 +49,9 @@ variable "disk_size_gb" {
   type        = number
   default     = 10
 }
+
+variable "data_disk_size_gb" {
+  description = "Data disk size in GiB, mounted at /mnt/data (0 = no data disk)"
+  type        = number
+  default     = 100
+}
