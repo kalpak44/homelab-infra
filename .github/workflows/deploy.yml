@@ -41,7 +41,7 @@ jobs:
     name: Deploy / ${{ inputs.service }}
     runs-on: self-hosted
     permissions:
-      contents: write
+      contents: read
 
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -52,6 +52,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify actor is repository owner
+        run: |
+          [ "${{ github.actor }}" = "${{ github.repository_owner }}" ] || \
+            { echo "Unauthorized actor: ${{ github.actor }}"; exit 1; }
 
       - name: Terraform Init
         if: inputs.service != 'k3s/flux'
@@ -243,5 +248,5 @@ jobs:
           case "${{ inputs.service }}" in
             all)      for pb in adguard vault postgres redis portainer haproxy nfs k3s; do run_playbook $pb; done ;;
             k3s/flux) run_playbook flux ;;
-            *)        run_playbook ${{ inputs.service }} ;;
+            *)        run_playbook "${{ inputs.service }}" ;;
           esac

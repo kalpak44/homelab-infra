@@ -25,6 +25,8 @@ jobs:
   destroy:
     name: Destroy / ${{ inputs.service }}
     runs-on: self-hosted
+    permissions:
+      contents: read
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -33,6 +35,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify actor is repository owner
+        run: |
+          [ "${{ github.actor }}" = "${{ github.repository_owner }}" ] || \
+            { echo "Unauthorized actor: ${{ github.actor }}"; exit 1; }
 
       - name: Resolve targets
         id: ctx
