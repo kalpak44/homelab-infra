@@ -43,7 +43,9 @@
 
 - name: Install PostgreSQL {{ postgresql_version }}
   ansible.builtin.apt:
-    name: "postgresql-{{ postgresql_version }}"
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-{{ postgresql_version }}-pgvector"
     state: present
     update_cache: true
 
@@ -156,3 +158,17 @@
     - postgresql_db != ""
     - postgresql_user != ""
     - db_check.stdout != "1"
+
+# --- Extensions ----------------------------------------------------------
+
+- name: Enable extensions in application database
+  ansible.builtin.command:
+    cmd: >
+      psql -d "{{ postgresql_db }}"
+      -c "CREATE EXTENSION IF NOT EXISTS {{ item }};"
+  become_user: postgres
+  loop: "{{ postgresql_extensions }}"
+  changed_when: true
+  when:
+    - postgresql_db != ""
+    - postgresql_extensions | length > 0
