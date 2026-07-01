@@ -16,7 +16,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: google-assistant-mcp
-          image: ghcr.io/kalpak44/mcp-google:b56d99f
+          image: ghcr.io/kalpak44/mcp-google:2a5734b
           imagePullPolicy: Always
           ports:
             - containerPort: 3100
