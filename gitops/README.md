@@ -22,7 +22,8 @@ gitops/clusters/homelab/
     │   ├── mite-assistant-mcp/    # Mite time-tracking MCP server
     │   ├── capacity-planner/      # Capacity planner tool (Sablier scale-on-demand)
     │   ├── shopify-gpt-assistant/ # Shopify GPT assistant
-    │   └── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
+    │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
+    │   └── google-assistant-mcp/  # Google MCP server
     └── private/
         ├── private-home-page/     # Internal services dashboard
         ├── headlamp/              # Kubernetes dashboard

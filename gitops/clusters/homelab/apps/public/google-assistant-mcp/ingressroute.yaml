@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: google-assistant-mcp
+  namespace: public
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`google-assistant.pavel-usanli.online`)
+      kind: Rule
+      services:
+        - name: google-assistant-mcp
+          port: 80
+  tls:
+    certResolver: cloudflare

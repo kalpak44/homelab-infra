@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: google-assistant-mcp
+  namespace: public
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: google-assistant-mcp
+  template:
+    metadata:
+      labels:
+        app: google-assistant-mcp
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: google-assistant-mcp
+          image: ghcr.io/kalpak44/mcp-google:b56d99f
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3100
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 100Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+              ephemeral-storage: 500Mi
