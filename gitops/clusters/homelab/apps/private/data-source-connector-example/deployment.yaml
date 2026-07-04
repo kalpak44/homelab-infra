@@ -13,6 +13,7 @@ spec:
       labels:
         app: data-source-connector-example
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: data-source-connector-example
           image: ghcr.io/kalpak44/data-source-connector-template:a5419a8
@@ -28,6 +29,8 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
+              ephemeral-storage: 64Mi
             limits:
               cpu: 200m
               memory: 128Mi
+              ephemeral-storage: 256Mi
