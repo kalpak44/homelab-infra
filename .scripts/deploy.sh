@@ -53,6 +53,7 @@
 #   k3s/flux/shopify-gpt-assistant
 #   k3s/flux/bunker-game-app
 #   k3s/flux/google-assistant-mcp
+#   k3s/flux/data-source-connector-example
 #   cloudflare-email
 
 set -euo pipefail
@@ -275,6 +276,12 @@ case "$SERVICE" in
     check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.google_assistant
+    ;;
+
+  k3s/flux/data-source-connector-example)
+    check_vars "${CORE_TF_VARS[@]}"
+    tf_init
+    tf_apply -target=cloudflare_record.data_source_connector_example
     ;;
 
   cloudflare-email)

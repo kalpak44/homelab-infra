@@ -25,9 +25,10 @@ gitops/clusters/homelab/
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
     │   └── google-assistant-mcp/  # Google MCP server
     └── private/
-        ├── private-home-page/     # Internal services dashboard
-        ├── headlamp/              # Kubernetes dashboard
-        └── crowdsec-web-ui/       # CrowdSec web UI (private access)
+        ├── private-home-page/               # Internal services dashboard
+        ├── headlamp/                        # Kubernetes dashboard
+        ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
+        └── data-source-connector-example/   # Data source connector test API
 ```
 
 ## Required secrets in Vault

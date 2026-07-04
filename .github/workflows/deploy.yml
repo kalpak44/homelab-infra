@@ -35,6 +35,7 @@ on:
           - k3s/flux/shopify-gpt-assistant
           - k3s/flux/bunker-game-app
           - k3s/flux/google-assistant-mcp
+          - k3s/flux/data-source-connector-example
           - cloudflare-email
 
 jobs:
@@ -65,7 +66,7 @@ jobs:
         run: terraform init -backend-config="bucket=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Terraform Apply
-        if: inputs.service != 'k3s/flux' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui' && inputs.service != 'k3s/flux/traefik' && inputs.service != 'k3s/flux/headlamp' && inputs.service != 'k3s/flux/capacity-planner' && inputs.service != 'k3s/flux/shopify-gpt-assistant' && inputs.service != 'k3s/flux/bunker-game-app' && inputs.service != 'k3s/flux/google-assistant-mcp' && inputs.service != 'cloudflare-email'
+        if: inputs.service != 'k3s/flux' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui' && inputs.service != 'k3s/flux/traefik' && inputs.service != 'k3s/flux/headlamp' && inputs.service != 'k3s/flux/capacity-planner' && inputs.service != 'k3s/flux/shopify-gpt-assistant' && inputs.service != 'k3s/flux/bunker-game-app' && inputs.service != 'k3s/flux/google-assistant-mcp' && inputs.service != 'k3s/flux/data-source-connector-example' && inputs.service != 'cloudflare-email'
         working-directory: terraform
         run: |
           terraform apply -auto-approve $TF_REFRESH_FLAG \
@@ -203,6 +204,18 @@ jobs:
             -var cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
             -var haproxy_public_ip="${{ secrets.HAPROXY_PUBLIC_IP }}"
 
+      - name: Terraform Apply (data-source-connector-example DNS)
+        if: inputs.service == 'k3s/flux/data-source-connector-example'
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve $TF_REFRESH_FLAG \
+            -target=cloudflare_record.data_source_connector_example \
+            -var proxmox_endpoint="${{ secrets.PROXMOX_ENDPOINT }}" \
+            -var proxmox_username="${{ secrets.PROXMOX_USERNAME }}" \
+            -var proxmox_password="${{ secrets.PROXMOX_PASSWORD }}" \
+            -var ssh_public_key="${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+
       - name: Terraform Apply (cloudflare-email)
         if: inputs.service == 'cloudflare-email'
         working-directory: terraform
@@ -228,7 +241,7 @@ jobs:
         run: sudo apt-get install -y python3-passlib
 
       - name: Run Ansible
-        if: inputs.service != 'proxmox-dns' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui' && inputs.service != 'k3s/flux/traefik' && inputs.service != 'k3s/flux/headlamp' && inputs.service != 'k3s/flux/capacity-planner' && inputs.service != 'k3s/flux/shopify-gpt-assistant' && inputs.service != 'k3s/flux/bunker-game-app' && inputs.service != 'k3s/flux/google-assistant-mcp' && inputs.service != 'cloudflare-email'
+        if: inputs.service != 'proxmox-dns' && inputs.service != 'k3s/flux/personal-web-page' && inputs.service != 'k3s/flux/private-home-page' && inputs.service != 'k3s/flux/mite-assistant-mcp' && inputs.service != 'k3s/flux/crowdsec-web-ui' && inputs.service != 'k3s/flux/traefik' && inputs.service != 'k3s/flux/headlamp' && inputs.service != 'k3s/flux/capacity-planner' && inputs.service != 'k3s/flux/shopify-gpt-assistant' && inputs.service != 'k3s/flux/bunker-game-app' && inputs.service != 'k3s/flux/google-assistant-mcp' && inputs.service != 'k3s/flux/data-source-connector-example' && inputs.service != 'cloudflare-email'
         working-directory: ansible
         run: |
           run_playbook() {

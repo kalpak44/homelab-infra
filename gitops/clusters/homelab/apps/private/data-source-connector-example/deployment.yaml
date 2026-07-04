@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-source-connector-example
+  namespace: private
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-source-connector-example
+  template:
+    metadata:
+      labels:
+        app: data-source-connector-example
+    spec:
+      containers:
+        - name: data-source-connector-example
+          image: ghcr.io/kalpak44/data-source-connector-template:a5419a8
+          ports:
+            - containerPort: 3200
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3200
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
