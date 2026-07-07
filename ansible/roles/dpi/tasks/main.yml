@@ -104,6 +104,11 @@
     enabled: true
     state: started
 
+- name: Install gpg
+  ansible.builtin.apt:
+    name: gpg
+    state: present
+
 - name: Add ntopng GPG key
   ansible.builtin.shell:
     cmd: >
