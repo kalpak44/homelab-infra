@@ -208,8 +208,6 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `REDIS_PASSWORD`          | Redis auth password                                                           |
 | `REDIS_COMMANDER_USER`    | Redis Commander web UI username                                               |
 | `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
-| `PORTAINER_ADMIN_USERNAME`| Portainer admin username — suggested: `admin`                                 |
-| `PORTAINER_ADMIN_PASSWORD`| Portainer admin password — **minimum 12 characters** (Portainer requirement)  |
 | `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
 | `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
 | `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |
@@ -364,13 +362,15 @@ RabbitMQ AMQP listens on `192.168.1.8:5672` (also reachable as `rabbitmq.interna
 
 Docker management UI running in a VM (`common` env, `192.168.1.7`).
 
-**Secrets required:** `PORTAINER_ADMIN_USERNAME`, `PORTAINER_ADMIN_PASSWORD`
+**Secrets required:** none
 
 **Deploy:** Run **Deploy** → `portainer`
 
 Portainer CE runs as a Docker container inside the VM. nginx listens on port 80 and 443 — HTTP requests are force-redirected to HTTPS. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
 
-Portainer is available at `https://portainer.internal.pavel-usanli.online` (or `http://192.168.1.7` before TLS is provisioned). The admin account is initialised automatically on first deploy. SSH is enabled on port 22 with key-only auth.
+Portainer is available at `https://portainer.internal.pavel-usanli.online` (or `http://192.168.1.7` before TLS is provisioned). On first visit, Portainer presents a setup wizard — create the admin account there. SSH is enabled on port 22 with key-only auth.
+
+> If the setup wizard shows a timeout message, SSH into the VM and run `sudo docker restart portainer`, then visit the UI within 5 minutes.
 
 ### HAProxy (prod load balancer)
 
