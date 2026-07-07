@@ -16,9 +16,9 @@ services:
       TS_WEBLOGFILE: tsweb.log
       TS_TORRENTSDIR: /opt/torrserver/torrents
     volumes:
-      - /home/kalpak44/torrserver/config:/opt/torrserver/config
-      - /home/kalpak44/torrserver/log:/opt/torrserver/log
-      - /home/kalpak44/torrserver/torrents:/opt/torrserver/torrents
+      - /mnt/data/torrserver/config:/opt/torrserver/config
+      - /mnt/data/torrserver/log:/opt/torrserver/log
+      - /mnt/data/torrents:/opt/torrserver/torrents
 
   qbittorrent:
     image: linuxserver/qbittorrent:latest
