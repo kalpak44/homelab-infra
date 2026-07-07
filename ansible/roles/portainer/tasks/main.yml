@@ -11,10 +11,10 @@
     state: started
     enabled: true
 
-- name: Check if data disk is already mounted
+- name: Check if data disk already has a filesystem
   ansible.builtin.command:
-    cmd: mountpoint -q /mnt/data
-  register: data_disk_mounted
+    cmd: blkid {{ portainer_data_disk }}
+  register: disk_blkid
   changed_when: false
   failed_when: false
 
@@ -23,7 +23,7 @@
     fstype: ext4
     dev: "{{ portainer_data_disk }}"
     state: present
-  when: data_disk_mounted.rc != 0
+  when: disk_blkid.rc != 0
 
 - name: Mount data disk
   ansible.builtin.mount:
