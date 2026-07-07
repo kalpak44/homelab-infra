@@ -171,6 +171,13 @@
   retries: 18
   delay: 5
 
+- name: Validate Portainer admin password length
+  ansible.builtin.assert:
+    that: portainer_admin_password | length >= 12
+    fail_msg: "portainer_admin_password must be at least 12 characters (Portainer minimum requirement)"
+  when: portainer_admin_password != ""
+  no_log: true
+
 - name: Initialize Portainer admin user
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ portainer_internal_port }}/api/users/admin/init"
