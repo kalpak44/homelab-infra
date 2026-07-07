@@ -18,7 +18,7 @@ services:
     volumes:
       - /mnt/data/torrserver/config:/opt/torrserver/config
       - /mnt/data/torrserver/log:/opt/torrserver/log
-      - /mnt/data/torrents:/opt/torrserver/torrents
+      - /mnt/data/torrserver:/opt/torrserver/torrents
 
   qbittorrent:
     image: linuxserver/qbittorrent:latest
