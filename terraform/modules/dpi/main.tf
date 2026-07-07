@@ -53,7 +53,7 @@ resource "proxmox_virtual_environment_container" "this" {
   }
 
   lifecycle {
-    ignore_changes = [unprivileged]
+    ignore_changes = [unprivileged, features, started]
   }
 }
 
