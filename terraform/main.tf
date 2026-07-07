@@ -10,7 +10,7 @@ module "adguard" {
   container_id = 200
   ip_address   = "192.168.1.2"
   cpu_cores    = 1
-  memory_mb    = 256
+  memory_mb    = 512
   disk_size_gb = 4
 }
 
