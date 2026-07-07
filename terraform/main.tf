@@ -82,7 +82,7 @@ module "portainer" {
   cpu_cores         = 2
   memory_mb         = 4096
   disk_size_gb      = 20  # OS disk
-  data_disk_size_gb = 100 # Docker volumes disk mounted at /mnt/data
+  data_disk_size_gb = 512 # Docker volumes disk mounted at /mnt/data
 }
 
 # HAProxy — external load balancer for the k3s cluster
