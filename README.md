@@ -257,6 +257,38 @@ Add a required reviewer to `prod` to require manual approval before running prod
 
 ## Services
 
+### DPI Monitor (WiFi AP + ntopng)
+
+WiFi access point + deep packet inspection running in a privileged LXC container (`common` env, `192.168.1.115`).
+
+**Secrets required:** `AP_SSID`, `AP_PASSWORD`
+
+**Deploy:** See prerequisites below, then run **Deploy** → `dpi`
+
+**Prerequisites (one-time manual step):** Create the `vmbr2` bridge on the Proxmox host before running the deploy pipeline:
+- Proxmox UI → **proxmox** node → **System** → **Network** → **Create** → **Linux Bridge**
+- Name: `vmbr2`, no bridge ports, no IP address
+
+**What gets deployed:**
+- **Proxmox host:** `wlap0` virtual AP interface (from `wlp3s0`/`phy0`) + `hostapd` WiFi access point
+- **LXC container:** `dnsmasq` DHCP server, `ntopng` DPI web UI, `iptables` NAT for WiFi clients
+
+**Network layout:**
+```
+WiFi devices (10.10.10.10–200)
+    ↓ connect to AP (SSID from AP_SSID secret)
+wlap0 on Proxmox host (10.10.10.1)
+    ↓ proxy ARP + routing
+LXC dpi eth1 (10.10.10.2) — ntopng monitors here
+LXC dpi eth0 (192.168.1.115) — NAT to internet
+```
+
+ntopng web UI is available at `http://ntopng.internal.pavel-usanli.online:3000` (or `http://192.168.1.115:3000`). Default login: `admin` / `admin` — change on first login.
+
+**Secrets required:** `AP_SSID`, `AP_PASSWORD` — add to GitHub repo secrets before deploying.
+
+---
+
 ### AdGuard Home
 
 DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).

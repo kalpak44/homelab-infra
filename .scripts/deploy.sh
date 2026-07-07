@@ -54,6 +54,7 @@
 #   k3s/flux/bunker-game-app
 #   k3s/flux/google-assistant-mcp
 #   k3s/flux/data-source-connector-example
+#   dpi
 #   cloudflare-email
 
 set -euo pipefail
@@ -93,6 +94,7 @@ ANSIBLE_VARS=(
   PORTAINER_ADMIN_USERNAME PORTAINER_ADMIN_PASSWORD
   HAPROXY_STATS_USER HAPROXY_STATS_PASSWORD HAPROXY_PUBLIC_IP
   FLUX_GITHUB_TOKEN
+  AP_SSID AP_PASSWORD
 )
 
 # ── Args ──────────────────────────────────────────────────────────────────────
@@ -177,7 +179,9 @@ run_playbook() {
     -e haproxy_stats_user="$HAPROXY_STATS_USER" \
     -e haproxy_stats_password="$HAPROXY_STATS_PASSWORD" \
     -e flux_github_token="$FLUX_GITHUB_TOKEN" \
-    -e cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
+    -e cloudflare_api_token="$CLOUDFLARE_API_TOKEN" \
+    -e ap_ssid="$AP_SSID" \
+    -e ap_password="$AP_PASSWORD"
 }
 
 # ── Main dispatch ─────────────────────────────────────────────────────────────
@@ -189,7 +193,7 @@ case "$SERVICE" in
     tf_apply -target=cloudflare_record.proxmox
     ;;
 
-  adguard|vault|postgres|redis|rabbitmq|portainer|haproxy|nfs|k3s)
+  adguard|vault|postgres|redis|rabbitmq|portainer|haproxy|nfs|k3s|dpi)
     check_vars "${CORE_TF_VARS[@]}" "${ANSIBLE_VARS[@]}"
     tf_init
     tf_apply
@@ -204,7 +208,7 @@ case "$SERVICE" in
     tf_apply
     write_ssh_key
     install_collections
-    for pb in adguard vault postgres redis rabbitmq portainer haproxy nfs k3s; do
+    for pb in adguard vault postgres redis rabbitmq portainer haproxy nfs k3s dpi; do
       run_playbook "$pb"
     done
     ;;

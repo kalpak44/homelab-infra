@@ -19,6 +19,7 @@ on:
           - haproxy
           - nfs
           - k3s
+          - dpi
           - cloudflare-email
 
 jobs:
@@ -55,6 +56,7 @@ jobs:
             haproxy)     echo "targets=-target=module.haproxy"   >> $GITHUB_OUTPUT ;;
             nfs)         echo "targets=-target=module.nfs"      >> $GITHUB_OUTPUT ;;
             k3s)              echo "targets=-target=module.k3s"              >> $GITHUB_OUTPUT ;;
+            dpi)              echo "targets=-target=module.dpi"              >> $GITHUB_OUTPUT ;;
             cloudflare-email) echo "targets=-target=module.cloudflare_email" >> $GITHUB_OUTPUT ;;
             all)              echo "targets=" >> $GITHUB_OUTPUT ;;
           esac

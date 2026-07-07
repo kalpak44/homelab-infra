@@ -1,0 +1,8 @@
+---
+ap_phy: phy0
+ap_interface: wlap0
+ap_ip: 10.10.10.1
+ap_hw_mode: g
+ap_channel: 6
+ap_ssid: HomeMonitor
+ap_password: ""

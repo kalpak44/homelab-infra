@@ -1,0 +1,7 @@
+---
+dpi_ap_ip: 10.10.10.2
+dpi_ap_subnet: 10.10.10.0/24
+dpi_dhcp_range_start: 10.10.10.10
+dpi_dhcp_range_end: 10.10.10.200
+dpi_dhcp_lease: 12h
+dpi_ntopng_port: 3000

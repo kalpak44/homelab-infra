@@ -20,7 +20,7 @@
 # <service> options:
 #   all
 #   proxmox-dns
-#   adguard | vault | postgres | redis | rabbitmq | portainer | haproxy | nfs | k3s
+#   adguard | vault | postgres | redis | rabbitmq | portainer | haproxy | nfs | k3s | dpi
 #   cloudflare-email
 
 set -euo pipefail
@@ -77,6 +77,7 @@ case "$SERVICE" in
   haproxy)     TARGETS="-target=module.haproxy"   ;;
   nfs)         TARGETS="-target=module.nfs"       ;;
   k3s)              TARGETS="-target=module.k3s"              ;;
+  dpi)              TARGETS="-target=module.dpi"              ;;
   cloudflare-email) TARGETS="-target=module.cloudflare_email" ;;
   all)              TARGETS=""                                ;;
   *)

@@ -1,0 +1,145 @@
+---
+- name: Configure eth1 static IP via netplan
+  ansible.builtin.copy:
+    dest: /etc/netplan/60-eth1.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth1:
+            addresses:
+              - {{ dpi_ap_ip }}/24
+    mode: "0600"
+  notify: Apply netplan
+
+- name: Apply netplan now
+  ansible.builtin.command: netplan apply
+  changed_when: false
+
+- name: Enable IP forwarding
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-ip-forward.conf
+    content: "net.ipv4.ip_forward = 1\n"
+    mode: "0644"
+
+- name: Apply IP forwarding now
+  ansible.builtin.command: sysctl -w net.ipv4.ip_forward=1
+  changed_when: false
+
+- name: Install iptables-persistent
+  ansible.builtin.apt:
+    name: [iptables, iptables-persistent, netfilter-persistent]
+    state: present
+    update_cache: true
+
+- name: Set MASQUERADE for AP subnet
+  ansible.builtin.command: >
+    iptables -t nat -C POSTROUTING -s {{ dpi_ap_subnet }} -o eth0 -j MASQUERADE
+  register: masq_check
+  changed_when: false
+  failed_when: false
+
+- name: Add MASQUERADE rule
+  ansible.builtin.command: >
+    iptables -t nat -A POSTROUTING -s {{ dpi_ap_subnet }} -o eth0 -j MASQUERADE
+  when: masq_check.rc != 0
+  notify: Save iptables
+
+- name: Check FORWARD rule eth1→eth0
+  ansible.builtin.command: >
+    iptables -C FORWARD -i eth1 -o eth0 -j ACCEPT
+  register: fwd_check
+  changed_when: false
+  failed_when: false
+
+- name: Add FORWARD rule eth1→eth0
+  ansible.builtin.command: >
+    iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
+  when: fwd_check.rc != 0
+  notify: Save iptables
+
+- name: Check FORWARD rule eth0→eth1 established
+  ansible.builtin.command: >
+    iptables -C FORWARD -i eth0 -o eth1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  register: fwd_est_check
+  changed_when: false
+  failed_when: false
+
+- name: Add FORWARD rule eth0→eth1 established
+  ansible.builtin.command: >
+    iptables -A FORWARD -i eth0 -o eth1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  when: fwd_est_check.rc != 0
+  notify: Save iptables
+
+- name: Persist iptables rules
+  ansible.builtin.command: netfilter-persistent save
+  changed_when: false
+
+- name: Install dnsmasq
+  ansible.builtin.apt:
+    name: dnsmasq
+    state: present
+
+- name: Configure dnsmasq for AP subnet
+  ansible.builtin.template:
+    src: dnsmasq-ap.conf.j2
+    dest: /etc/dnsmasq.d/ap.conf
+    mode: "0644"
+  notify: Restart dnsmasq
+
+- name: Enable and start dnsmasq
+  ansible.builtin.systemd:
+    name: dnsmasq
+    enabled: true
+    state: started
+
+- name: Install redis-server
+  ansible.builtin.apt:
+    name: redis-server
+    state: present
+
+- name: Enable and start redis
+  ansible.builtin.systemd:
+    name: redis-server
+    enabled: true
+    state: started
+
+- name: Add ntopng GPG key
+  ansible.builtin.shell:
+    cmd: >
+      wget -qO - https://packages.ntop.org/apt-stable/ntopng.key |
+      gpg --dearmor -o /usr/share/keyrings/ntopng-archive-keyring.gpg
+    creates: /usr/share/keyrings/ntopng-archive-keyring.gpg
+
+- name: Add ntopng apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/usr/share/keyrings/ntopng-archive-keyring.gpg]
+      https://packages.ntop.org/apt-stable/{{ ansible_distribution_version }}/ x86_64/
+    filename: ntopng
+    state: present
+
+- name: Install ntopng
+  ansible.builtin.apt:
+    name: ntopng
+    state: present
+    update_cache: true
+
+- name: Ensure ntopng config directory exists
+  ansible.builtin.file:
+    path: /etc/ntopng
+    state: directory
+    mode: "0755"
+
+- name: Configure ntopng
+  ansible.builtin.template:
+    src: ntopng.conf.j2
+    dest: /etc/ntopng/ntopng.conf
+    mode: "0644"
+  notify: Restart ntopng
+
+- name: Enable and start ntopng
+  ansible.builtin.systemd:
+    name: ntopng
+    enabled: true
+    state: started

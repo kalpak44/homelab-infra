@@ -1,0 +1,20 @@
+---
+# Phase 1 — configure WiFi AP on the Proxmox host
+# Creates wlap0 virtual AP interface, vmbr2 bridge, and hostapd
+- name: Configure Proxmox WiFi AP
+  hosts: proxmox
+  become: true
+  gather_facts: true
+
+  roles:
+    - proxmox-ap
+
+# Phase 2 — configure DPI container
+# Sets up routing, dnsmasq DHCP, and ntopng
+- name: Configure DPI container
+  hosts: dpi
+  become: true
+  gather_facts: true
+
+  roles:
+    - dpi

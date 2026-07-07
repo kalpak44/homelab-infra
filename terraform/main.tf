@@ -127,6 +127,20 @@ module "cloudflare_email" {
   destination_email = "pavel.usanli@gmail.com"
 }
 
+# DPI monitor — WiFi AP + ntopng traffic inspection
+module "dpi" {
+  source           = "./modules/dpi"
+  zone_id          = data.cloudflare_zone.this.id
+  template_file_id = proxmox_download_file.ubuntu_lxc.id
+  ssh_public_keys  = [var.ssh_public_key]
+
+  container_id = 210
+  ip_address   = "192.168.1.115"
+  cpu_cores    = 2
+  memory_mb    = 1024
+  disk_size_gb = 8
+}
+
 # ─── VMs ─────────────────────────────────────────────────────────────────────
 
 # k3s cluster — two-node control-plane + worker, managed by Flux CD

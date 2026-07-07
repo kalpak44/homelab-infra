@@ -1,0 +1,16 @@
+[Unit]
+Description=Create {{ ap_interface }} virtual AP interface on {{ ap_phy }}
+After=network.target
+Before=hostapd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'ip link show {{ ap_interface }} 2>/dev/null || /sbin/iw phy {{ ap_phy }} interface add {{ ap_interface }} type __ap'
+ExecStartPost=/sbin/ip addr replace {{ ap_ip }}/24 dev {{ ap_interface }}
+ExecStartPost=/sbin/ip link set {{ ap_interface }} up
+ExecStartPost=/bin/sh -c 'echo 1 > /proc/sys/net/ipv4/conf/{{ ap_interface }}/proxy_arp'
+ExecStop=/sbin/iw dev {{ ap_interface }} del
+
+[Install]
+WantedBy=multi-user.target
