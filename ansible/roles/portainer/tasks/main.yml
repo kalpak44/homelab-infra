@@ -212,5 +212,3 @@
       Password: "{{ portainer_admin_password }}"
     status_code: [200]
   when: portainer_admin_password != "" and portainer_admin_check.status != 204
-  no_log: true
-  no_log: true
