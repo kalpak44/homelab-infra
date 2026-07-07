@@ -143,10 +143,10 @@
     mode: "0755"
   when: portainer_tls_enabled
 
-- name: Ensure nginx is running and reload config
+- name: Ensure nginx is running
   ansible.builtin.systemd:
     name: nginx
-    state: reloaded
+    state: started
     enabled: true
 
 - name: Check if Portainer container exists
@@ -176,3 +176,4 @@
   until: portainer_status.status == 200
   retries: 18
   delay: 5
+  when: portainer_inspect.rc != 0
