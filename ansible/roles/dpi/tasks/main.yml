@@ -104,24 +104,15 @@
     enabled: true
     state: started
 
-- name: Install gpg
+- name: Download ntop stable repository package
+  ansible.builtin.get_url:
+    url: "https://packages.ntop.org/apt-stable/{{ ansible_distribution_version }}/all/apt-ntop-stable.deb"
+    dest: /tmp/apt-ntop-stable.deb
+    mode: "0644"
+
+- name: Install ntop repository package
   ansible.builtin.apt:
-    name: gpg
-    state: present
-
-- name: Add ntopng GPG key
-  ansible.builtin.shell:
-    cmd: >
-      wget -qO - https://packages.ntop.org/apt-stable/ntopng.key |
-      gpg --dearmor -o /usr/share/keyrings/ntopng-archive-keyring.gpg
-    creates: /usr/share/keyrings/ntopng-archive-keyring.gpg
-
-- name: Add ntopng apt repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch=amd64 signed-by=/usr/share/keyrings/ntopng-archive-keyring.gpg]
-      https://packages.ntop.org/apt-stable/{{ ansible_distribution_version }}/ x86_64/
-    filename: ntopng
+    deb: /tmp/apt-ntop-stable.deb
     state: present
 
 - name: Install ntopng
