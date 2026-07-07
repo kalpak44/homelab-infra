@@ -31,8 +31,6 @@
 #   export REDIS_COMMANDER_PASSWORD=...
 #   export RABBITMQ_USER=...
 #   export RABBITMQ_PASSWORD=...
-#   export PORTAINER_ADMIN_USERNAME=...
-#   export PORTAINER_ADMIN_PASSWORD=...
 #   export FLUX_GITHUB_TOKEN=...
 #
 # Usage:
@@ -91,7 +89,6 @@ ANSIBLE_VARS=(
   PGADMIN_EMAIL PGADMIN_PASSWORD
   REDIS_PASSWORD REDIS_COMMANDER_USER REDIS_COMMANDER_PASSWORD
   RABBITMQ_USER RABBITMQ_PASSWORD
-  PORTAINER_ADMIN_USERNAME PORTAINER_ADMIN_PASSWORD
   HAPROXY_STATS_USER HAPROXY_STATS_PASSWORD HAPROXY_PUBLIC_IP
   FLUX_GITHUB_TOKEN
   AP_SSID AP_PASSWORD
@@ -174,8 +171,6 @@ run_playbook() {
     -e redis_commander_password="$REDIS_COMMANDER_PASSWORD" \
     -e rabbitmq_user="$RABBITMQ_USER" \
     -e rabbitmq_password="$RABBITMQ_PASSWORD" \
-    -e portainer_admin_username="$PORTAINER_ADMIN_USERNAME" \
-    -e portainer_admin_password="$PORTAINER_ADMIN_PASSWORD" \
     -e haproxy_stats_user="$HAPROXY_STATS_USER" \
     -e haproxy_stats_password="$HAPROXY_STATS_PASSWORD" \
     -e flux_github_token="$FLUX_GITHUB_TOKEN" \
