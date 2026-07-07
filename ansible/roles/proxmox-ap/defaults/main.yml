@@ -6,3 +6,4 @@ ap_hw_mode: g
 ap_channel: 6
 ap_ssid: HomeMonitor
 ap_password: ""
+ap_dhcp_server: 10.10.10.2

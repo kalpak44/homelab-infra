@@ -1,9 +1,11 @@
 ---
-- name: Install hostapd and iw
+- name: Install hostapd, iw, and dhcp relay
   ansible.builtin.apt:
-    name: [hostapd, iw]
+    name: [hostapd, iw, isc-dhcp-relay]
     state: present
     update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
 - name: Add vmbr2 bridge to /etc/network/interfaces
   ansible.builtin.blockinfile:
@@ -69,5 +71,21 @@
 - name: Enable and start hostapd
   ansible.builtin.systemd:
     name: hostapd
+    enabled: true
+    state: started
+
+- name: Configure DHCP relay
+  ansible.builtin.copy:
+    dest: /etc/default/isc-dhcp-relay
+    content: |
+      SERVERS="{{ ap_dhcp_server }}"
+      INTERFACES="{{ ap_interface }}"
+      OPTIONS=""
+    mode: "0644"
+  notify: Restart dhcp-relay
+
+- name: Enable and start DHCP relay
+  ansible.builtin.systemd:
+    name: isc-dhcp-relay
     enabled: true
     state: started

@@ -7,3 +7,8 @@
   ansible.builtin.systemd:
     name: hostapd
     state: restarted
+
+- name: Restart dhcp-relay
+  ansible.builtin.systemd:
+    name: isc-dhcp-relay
+    state: restarted
