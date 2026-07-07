@@ -41,6 +41,12 @@
     state: mounted
   when: data_mountpoint.rc != 0
 
+- name: Ensure /mnt/data is writable by all
+  ansible.builtin.file:
+    path: /mnt/data
+    mode: "0777"
+    state: directory
+
 - name: Install Docker dependencies
   ansible.builtin.apt:
     name: [ca-certificates, curl, gnupg]
