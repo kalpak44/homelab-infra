@@ -80,7 +80,7 @@ module "portainer" {
   vm_id             = 302
   ip_address        = "192.168.1.7"
   cpu_cores         = 2
-  memory_mb         = 2048
+  memory_mb         = 4096
   disk_size_gb      = 20  # OS disk
   data_disk_size_gb = 100 # Docker volumes disk mounted at /mnt/data
 }
