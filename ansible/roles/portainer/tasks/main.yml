@@ -41,10 +41,11 @@
     state: mounted
   when: data_mountpoint.rc != 0
 
-- name: Ensure /mnt/data is writable by all
+- name: Ensure /mnt/data is writable by all recursively
   ansible.builtin.file:
     path: /mnt/data
     mode: "0777"
+    recurse: true
     state: directory
 
 - name: Install Docker dependencies
