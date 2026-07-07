@@ -9,7 +9,31 @@
   roles:
     - proxmox-ap
 
-# Phase 2 — configure DPI container
+# Phase 2 — prepare and start the DPI container
+# Enables nesting (requires root/pam, can't be set via Terraform) and boots it
+- name: Start DPI container
+  hosts: proxmox
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Enable nesting on DPI container
+      ansible.builtin.command: pct set 210 -features nesting=1
+      changed_when: true
+
+    - name: Start DPI container
+      ansible.builtin.command: pct start 210
+      register: pct_start
+      changed_when: pct_start.rc == 0
+      failed_when: pct_start.rc != 0 and 'already running' not in pct_start.stderr
+
+    - name: Wait for DPI container SSH to be ready
+      ansible.builtin.wait_for:
+        host: 192.168.1.115
+        port: 22
+        timeout: 60
+
+# Phase 3 — configure DPI container
 # Sets up routing, dnsmasq DHCP, and ntopng
 - name: Configure DPI container
   hosts: dpi

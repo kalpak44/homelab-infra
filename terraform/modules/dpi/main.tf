@@ -2,7 +2,7 @@ resource "proxmox_virtual_environment_container" "this" {
   node_name     = "proxmox"
   vm_id         = var.container_id
   unprivileged  = false
-  started       = true
+  started       = false
   start_on_boot = true
 
   initialization {
