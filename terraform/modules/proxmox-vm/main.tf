@@ -64,7 +64,6 @@ resource "proxmox_virtual_environment_vm" "this" {
   }
 
   lifecycle {
-    ignore_changes  = [initialization]
-    prevent_destroy = true
+    ignore_changes = [initialization]
   }
 }
