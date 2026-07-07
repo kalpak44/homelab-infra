@@ -25,6 +25,13 @@
     state: present
   when: disk_blkid.rc != 0
 
+- name: Check if /mnt/data is already mounted
+  ansible.builtin.command:
+    cmd: mountpoint -q /mnt/data
+  register: data_mountpoint
+  changed_when: false
+  failed_when: false
+
 - name: Mount data disk
   ansible.builtin.mount:
     path: /mnt/data
@@ -32,6 +39,7 @@
     fstype: ext4
     opts: defaults
     state: mounted
+  when: data_mountpoint.rc != 0
 
 - name: Install Docker dependencies
   ansible.builtin.apt:
