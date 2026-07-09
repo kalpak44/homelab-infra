@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - public-web-secure
   routes:
-    - match: Host(`nocobase.pavel-usanli.online`)
+    - match: Host(`nocobase.pavel-usanli.online`) || Host(`crmnoco-fwafz.deepcraftstudio.com`)
       kind: Rule
       services:
         - name: nocobase
