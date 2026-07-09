@@ -14,3 +14,7 @@ spec:
           port: 80
   tls:
     certResolver: cloudflare
+    domains:
+      - main: nocobase.pavel-usanli.online
+        sans:
+          - crmnoco-fwafz.deepcraftstudio.com
