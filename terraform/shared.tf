@@ -50,6 +50,14 @@ resource "cloudflare_record" "data_source_connector_example" {
   proxied = false
 }
 
+resource "cloudflare_record" "nocobase" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "nocobase"
+  content = var.haproxy_public_ip
+  type    = "A"
+  proxied = true
+}
+
 resource "cloudflare_record" "mite_assistant" {
   zone_id = data.cloudflare_zone.this.id
   name    = "mite-assistant"

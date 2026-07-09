@@ -52,6 +52,7 @@
 #   k3s/flux/bunker-game-app
 #   k3s/flux/google-assistant-mcp
 #   k3s/flux/data-source-connector-example
+#   k3s/flux/nocobase
 #   dpi
 #   cloudflare-email
 
@@ -281,6 +282,12 @@ case "$SERVICE" in
     check_vars "${CORE_TF_VARS[@]}"
     tf_init
     tf_apply -target=cloudflare_record.data_source_connector_example
+    ;;
+
+  k3s/flux/nocobase)
+    check_vars "${CORE_TF_VARS[@]}"
+    tf_init
+    tf_apply -target=cloudflare_record.nocobase
     ;;
 
   cloudflare-email)

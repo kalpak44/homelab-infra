@@ -23,7 +23,8 @@ gitops/clusters/homelab/
     │   ├── capacity-planner/      # Capacity planner tool (Sablier scale-on-demand)
     │   ├── shopify-gpt-assistant/ # Shopify GPT assistant
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
-    │   └── google-assistant-mcp/  # Google MCP server
+    │   ├── google-assistant-mcp/  # Google MCP server
+    │   └── nocobase/              # NocoBase no-code platform
     └── private/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard
@@ -80,6 +81,21 @@ echo "https://<account>.mite.de"
 
 vault kv put secret/mite-assistant-mcp-secrets \
   mite-url="https://<account>.mite.de"
+```
+
+### `secret/nocobase-secrets`
+
+| Property | Description |
+|---|---|
+| `db-user` | PostgreSQL username |
+| `db-password` | PostgreSQL password |
+| `app-key` | Secret key used to encrypt user tokens (generate once, never rotate) |
+
+```bash
+vault kv put secret/nocobase-secrets \
+  db-user="<db-user>" \
+  db-password="<db-password>" \
+  app-key="$(openssl rand -hex 32)"
 ```
 
 ### `secret/shopify-gpt-assistant-secrets`

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nocobase
+  namespace: public
+spec:
+  selector:
+    app: nocobase
+  ports:
+    - port: 80
+      targetPort: 13000

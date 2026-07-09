@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nocobase
+  namespace: public
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nocobase
+  template:
+    metadata:
+      labels:
+        app: nocobase
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: nocobase
+          image: nocobase/nocobase:latest-full
+          ports:
+            - containerPort: 13000
+          env:
+            - name: DB_DIALECT
+              value: postgres
+            - name: DB_HOST
+              value: postgres.internal.pavel-usanli.online
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_DATABASE
+              value: nocobase
+            - name: TZ
+              value: Europe/Sofia
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: nocobase-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nocobase-secrets
+                  key: DB_PASSWORD
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nocobase-secrets
+                  key: APP_KEY
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+              ephemeral-storage: 2Gi
+          volumeMounts:
+            - name: storage
+              mountPath: /app/nocobase/storage
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: nocobase-storage
