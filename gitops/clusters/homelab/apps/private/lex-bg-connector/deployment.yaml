@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lex-bg-connector
+  namespace: private
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lex-bg-connector
+  template:
+    metadata:
+      labels:
+        app: lex-bg-connector
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: lex-bg-connector
+          image: ghcr.io/kalpak44/lex-bg-connector:96d8e15
+          ports:
+            - containerPort: 3200
+          env:
+            - name: PRELOAD
+              value: "true"
+            - name: PRELOAD_PATH
+              value: /data
+          volumeMounts:
+            - name: preload-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+              ephemeral-storage: 256Mi
+      volumes:
+        - name: preload-data
+          persistentVolumeClaim:
+            claimName: lex-bg-connector-data

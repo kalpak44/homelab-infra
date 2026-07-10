@@ -4,4 +4,4 @@ resources:
   - private-home-page
   - crowdsec-web-ui
   - headlamp
-  - data-source-connector-example
+  - lex-bg-connector

@@ -1,7 +1,7 @@
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: data-source-connector-example
+  name: lex-bg-connector
   namespace: private
 spec:
   entryPoints:
@@ -10,7 +10,7 @@ spec:
     - match: Host(`data-source-example.internal.pavel-usanli.online`)
       kind: Rule
       services:
-        - name: data-source-connector-example
+        - name: lex-bg-connector
           port: 80
   tls:
     certResolver: cloudflare

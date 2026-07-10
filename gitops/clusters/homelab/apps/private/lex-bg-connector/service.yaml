@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: data-source-connector-example
+  name: lex-bg-connector
   namespace: private
 spec:
   selector:
-    app: data-source-connector-example
+    app: lex-bg-connector
   ports:
     - port: 80
       targetPort: 3200
