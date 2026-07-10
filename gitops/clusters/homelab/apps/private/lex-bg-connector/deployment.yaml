@@ -35,12 +35,12 @@ spec:
               mountPath: /data
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 512Mi
               ephemeral-storage: 64Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 500m
+              memory: 2Gi
               ephemeral-storage: 256Mi
       volumes:
         - name: preload-data
