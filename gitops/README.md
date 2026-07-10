@@ -29,7 +29,7 @@ gitops/clusters/homelab/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard
         ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
-        └── data-source-connector-example/   # Data source connector test API
+        └── lex-bg-connector/                # Lex background connector (data preloader)
 ```
 
 ## Required secrets in Vault
