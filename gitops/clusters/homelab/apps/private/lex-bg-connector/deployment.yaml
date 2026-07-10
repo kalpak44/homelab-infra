@@ -16,7 +16,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: lex-bg-connector
-          image: ghcr.io/kalpak44/lex-bg-connector:96d8e15
+          image: ghcr.io/kalpak44/lex-bg-connector:640e6a7
           ports:
             - containerPort: 3200
           env:
@@ -24,6 +24,12 @@ spec:
               value: "true"
             - name: PRELOAD_PATH
               value: /data
+            - name: DELAY_MS
+              value: "1500"
+            - name: PRELOAD_CRON
+              value: "0 0 1 1 *"
+            - name: PRELOAD_MAX_AGE_DAYS
+              value: "1500"
           volumeMounts:
             - name: preload-data
               mountPath: /data
