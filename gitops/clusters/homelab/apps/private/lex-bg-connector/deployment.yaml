@@ -16,7 +16,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: lex-bg-connector
-          image: ghcr.io/kalpak44/lex-bg-connector:db8a9db
+          image: ghcr.io/kalpak44/lex-bg-connector:ed7a325
           ports:
             - containerPort: 3200
           env:
