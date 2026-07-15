@@ -15,7 +15,7 @@ services:
       # Persistent image storage
       - /mnt/data/registry:/var/lib/registry
     networks:
-      - registry
+      - registry-network
 
   registry-ui:
     image: joxit/docker-registry-ui:latest
@@ -53,4 +53,8 @@ services:
     depends_on:
       - registry
     networks:
-      - registry
+      - registry-network
+
+networks:
+  registry-network:
+    driver: bridge
