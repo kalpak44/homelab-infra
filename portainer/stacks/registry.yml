@@ -1,0 +1,56 @@
+services:
+  registry:
+    image: registry:3
+    container_name: registry
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # Allow deleting image manifests
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+
+      # Disable OpenTelemetry to reduce noise in logs
+      OTEL_TRACES_EXPORTER: "none"
+    volumes:
+      # Persistent image storage
+      - /mnt/data/registry:/var/lib/registry
+    networks:
+      - registry
+
+  registry-ui:
+    image: joxit/docker-registry-ui:latest
+    container_name: registry-ui
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      # Single registry instance
+      SINGLE_REGISTRY: "true"
+
+      # UI title
+      REGISTRY_TITLE: "Home Docker Registry"
+
+      # Enable image deletion from the UI
+      DELETE_IMAGES: "true"
+
+      # Display image digest
+      SHOW_CONTENT_DIGEST: "true"
+
+      # Show number of tags per repository
+      SHOW_CATALOG_NB_TAGS: "true"
+
+      # Repository list limit
+      CATALOG_ELEMENTS_LIMIT: "1000"
+
+      # Number of tags displayed per page
+      TAGLIST_PAGE_SIZE: "100"
+
+      # Proxy requests through the UI container to avoid CORS issues
+      NGINX_PROXY_PASS_URL: "http://registry:5000"
+
+      # Docker embedded DNS resolver
+      NGINX_RESOLVER: "127.0.0.11"
+    depends_on:
+      - registry
+    networks:
+      - registry
