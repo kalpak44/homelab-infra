@@ -177,11 +177,13 @@
             </div>
             <div class="space-y-2">
                 <p class="text-slate-500 uppercase tracking-wider text-[10px]">1 — Allow insecure registry (once per Docker host)</p>
-                <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto"># /etc/docker/daemon.json
+                <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto"># macOS: ~/.docker/daemon.json
+# Linux: /etc/docker/daemon.json
 {
   "insecure-registries": ["192.168.1.7:5000"]
 }
-# then: sudo systemctl restart docker</pre>
+# macOS: restart Docker Desktop
+# Linux: sudo systemctl restart docker</pre>
             </div>
             <div class="space-y-2">
                 <p class="text-slate-500 uppercase tracking-wider text-[10px]">2 — Tag your image</p>
