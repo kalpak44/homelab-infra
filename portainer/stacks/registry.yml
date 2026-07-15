@@ -22,7 +22,7 @@ services:
     container_name: registry-ui
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8282:80"
     environment:
       # Single registry instance
       SINGLE_REGISTRY: "true"
