@@ -5,7 +5,7 @@ data "cloudflare_zone" "this" {
 resource "cloudflare_record" "shopify_gpt_assistant" {
   zone_id = data.cloudflare_zone.this.id
   name    = "shopify-gpt-assistant"
-  content = var.haproxy_public_ip
+  content = var.public_wan_ip
   type    = "A"
   proxied = true
 }

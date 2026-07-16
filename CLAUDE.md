@@ -69,7 +69,7 @@ homelab-infra/
 │   │   ├── dns/public/<name>/      # 7 dirs, one per public record set
 │   │   └── shared/<name>/          # non-DNS Cloudflare (email routing)
 │   ├── proxmox/
-│   │   └── <service>/              # 9 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
+│   │   └── <service>/              # 8 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
 │   ├── README.md

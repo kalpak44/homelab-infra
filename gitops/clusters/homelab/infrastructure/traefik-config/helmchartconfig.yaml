@@ -55,9 +55,6 @@ spec:
           default: true
           private: false
         exposedPort: 443
-        proxyProtocol:
-          trustedIPs:
-            - 192.168.0.0/16
         forwardedHeaders:
           trustedIPs:
             - 103.21.244.0/22

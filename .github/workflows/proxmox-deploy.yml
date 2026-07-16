@@ -13,7 +13,6 @@ on:
           - postgres-lxc
           - redis-lxc
           - rabbitmq-lxc
-          - haproxy-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster
@@ -25,15 +24,15 @@ jobs:
       run:
         working-directory: terraform
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-      TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
-      TF_VAR_proxmox_username: ${{ secrets.PROXMOX_USERNAME }}
-      TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
-      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-      TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
+      PROXMOX_USERNAME: ${{ secrets.PROXMOX_USERNAME }}
+      PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2

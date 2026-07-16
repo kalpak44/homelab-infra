@@ -21,7 +21,6 @@ terraform/
     ├── postgres-lxc/
     ├── redis-lxc/
     ├── rabbitmq-lxc/
-    ├── haproxy-lxc/
     ├── nfs-vm/
     ├── portainer-vm/
     └── k3s-cluster/         # two VMs (k3s-1, k3s-2)
@@ -65,7 +64,7 @@ Cloudflare layer:
 | Var                           | Where used                     |
 |-------------------------------|--------------------------------|
 | `TF_VAR_cloudflare_api_token` | every cloudflare/ dir          |
-| `TF_VAR_haproxy_public_ip`    | `cloudflare/dns/public/*` only |
+| `TF_VAR_public_wan_ip`        | `cloudflare/dns/public/*` only |
 
 Proxmox layer:
 

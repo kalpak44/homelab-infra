@@ -49,18 +49,18 @@ flags which error):
 
 | Workflow                      | Env vars                                                                                                                                                                                                                                                                               |
 |-------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`, `TF_VAR_haproxy_public_ip`                                                                                                                                                                                        |
+| `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`, `TF_VAR_public_wan_ip`                                                                                                                                                                                            |
 | `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`                                                                                                                                                                 |
-| `ansible-configure`           | `SSH_PRIVATE_KEY` + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `RABBITMQ_*`, `HAPROXY_STATS_*`, `FLUX_GITHUB_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
+| `ansible-configure`           | `SSH_PRIVATE_KEY` + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `RABBITMQ_*`, `FLUX_GITHUB_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns
 
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
-- `cloudflare-*.yml`: 22 entries (14 private DNS + 7 public DNS + 1 shared).
-- `proxmox-*.yml`: 9 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`, `haproxy-lxc`,
+- `cloudflare-*.yml`: 21 entries (13 private DNS + 7 public DNS + 1 shared).
+- `proxmox-*.yml`: 8 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`,
   `nfs-vm`, `portainer-vm`, `k3s-cluster`).
-- `ansible-configure.yml`: 10 entries (the 9 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
+- `ansible-configure.yml`: 9 entries (the 8 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
   the Justfile).
 
 Adding or removing a resource means updating the dropdown in **every** relevant workflow **and** the matching `list`

@@ -1,7 +1,0 @@
----
-haproxy_traefik_ip: "192.168.1.120"
-haproxy_http_port: 80
-haproxy_https_port: 443
-haproxy_stats_port: 8404
-haproxy_stats_user: ""
-haproxy_stats_password: ""

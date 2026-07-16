@@ -4,7 +4,7 @@ variable "cloudflare_api_token" {
   sensitive   = true
 }
 
-variable "haproxy_public_ip" {
-  description = "Public IP address of the HAProxy load balancer"
+variable "public_wan_ip" {
+  description = "Public WAN IP address for internet-facing DNS records"
   type        = string
 }

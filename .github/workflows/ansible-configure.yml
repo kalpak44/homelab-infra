@@ -13,7 +13,6 @@ on:
           - postgres-lxc
           - redis-lxc
           - rabbitmq-lxc
-          - haproxy-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster
@@ -43,8 +42,6 @@ jobs:
       REDIS_COMMANDER_PASSWORD: ${{ secrets.REDIS_COMMANDER_PASSWORD }}
       RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
       RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
-      HAPROXY_STATS_USER: ${{ secrets.HAPROXY_STATS_USER }}
-      HAPROXY_STATS_PASSWORD: ${{ secrets.HAPROXY_STATS_PASSWORD }}
       FLUX_GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4

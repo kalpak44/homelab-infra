@@ -5,14 +5,14 @@ Public services are internet-facing and served through Cloudflare's CDN/WAF.
 ## Traffic path
 
 ```
-Internet → Cloudflare CDN/WAF (proxied) → HAProxy (192.168.1.109) → Traefik (k3s ingress) → Pod
+Internet → Cloudflare CDN/WAF (proxied) → Traefik (k3s ingress, 192.168.1.120) → Pod
 ```
 
 ## DNS pattern
 
 - **Hostname:** `<service>.pavel-usanli.online`
 - **Cloudflare record:** A record, `proxied = true`
-- **Target IP:** `var.haproxy_public_ip` (from `HAPROXY_PUBLIC_IP` secret / env var)
+- **Target IP:** `var.public_wan_ip` (from `PUBLIC_WAN_IP` secret / env var)
 - **Managed in:** its own dir at `terraform/cloudflare/dns/public/<name>/`
 - **State key:** `homelab/cloudflare/dns/public/<name>.tfstate` on R2
 
@@ -28,7 +28,7 @@ data "cloudflare_zone" "this" {
 resource "cloudflare_record" "<name>" {
   zone_id = data.cloudflare_zone.this.id
   name    = "<name>"
-  content = var.haproxy_public_ip
+  content = var.public_wan_ip
   type    = "A"
   proxied = true
 }

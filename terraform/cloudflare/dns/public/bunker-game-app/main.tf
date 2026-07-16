@@ -5,7 +5,7 @@ data "cloudflare_zone" "this" {
 resource "cloudflare_record" "bunker_game_app" {
   zone_id = data.cloudflare_zone.this.id
   name    = "bunker"
-  content = var.haproxy_public_ip
+  content = var.public_wan_ip
   type    = "A"
   proxied = true
 }

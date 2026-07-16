@@ -7,12 +7,14 @@
 # Layers: cloudflare | proxmox
 # Resource: subdir under the layer (see `just list`)
 #
-# Env vars (must be set - the workflow injects them, locally they come from your shell):
-#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL_S3, R2_BUCKET_NAME
-#   TF_VAR_cloudflare_api_token, TF_VAR_haproxy_public_ip     (cloudflare layer)
-#   TF_VAR_proxmox_endpoint, TF_VAR_proxmox_username,
-#   TF_VAR_proxmox_password, TF_VAR_ssh_public_key,
-#   TF_VAR_ssh_private_key                                    (proxmox layer)
+# Env vars (must be set - the workflow injects them, locally they come from your shell).
+# Names match the GitHub secrets 1:1; this Justfile maps them to what terraform + the
+# AWS-compatible S3 SDK expect (AWS_*, TF_VAR_*) right before terraform runs.
+#
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_NAME     (both layers)
+#   CLOUDFLARE_API_TOKEN, PUBLIC_WAN_IP                                     (cloudflare layer)
+#   PROXMOX_ENDPOINT, PROXMOX_USERNAME, PROXMOX_PASSWORD,
+#   SSH_PUBLIC_KEY, SSH_PRIVATE_KEY                                         (proxmox layer)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
@@ -21,15 +23,39 @@ _help:
 
 # Terraform init + apply
 deploy layer resource:
-    cd {{layer}}/{{resource}} && \
-      terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false && \
-      terraform apply -auto-approve -input=false
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+    export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+    export AWS_ENDPOINT_URL_S3="${R2_ENDPOINT:-}"
+    export TF_VAR_cloudflare_api_token="${CLOUDFLARE_API_TOKEN:-}"
+    export TF_VAR_public_wan_ip="${PUBLIC_WAN_IP:-}"
+    export TF_VAR_proxmox_endpoint="${PROXMOX_ENDPOINT:-}"
+    export TF_VAR_proxmox_username="${PROXMOX_USERNAME:-}"
+    export TF_VAR_proxmox_password="${PROXMOX_PASSWORD:-}"
+    export TF_VAR_ssh_public_key="${SSH_PUBLIC_KEY:-}"
+    export TF_VAR_ssh_private_key="${SSH_PRIVATE_KEY:-}"
+    cd {{layer}}/{{resource}}
+    terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
+    terraform apply -auto-approve -input=false
 
 # Terraform init + destroy
 destroy layer resource:
-    cd {{layer}}/{{resource}} && \
-      terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false && \
-      terraform destroy -auto-approve -input=false
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+    export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+    export AWS_ENDPOINT_URL_S3="${R2_ENDPOINT:-}"
+    export TF_VAR_cloudflare_api_token="${CLOUDFLARE_API_TOKEN:-}"
+    export TF_VAR_public_wan_ip="${PUBLIC_WAN_IP:-}"
+    export TF_VAR_proxmox_endpoint="${PROXMOX_ENDPOINT:-}"
+    export TF_VAR_proxmox_username="${PROXMOX_USERNAME:-}"
+    export TF_VAR_proxmox_password="${PROXMOX_PASSWORD:-}"
+    export TF_VAR_ssh_public_key="${SSH_PUBLIC_KEY:-}"
+    export TF_VAR_ssh_private_key="${SSH_PRIVATE_KEY:-}"
+    cd {{layer}}/{{resource}}
+    terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
+    terraform destroy -auto-approve -input=false
 
 # List every deployable resource with a short description
 list:
@@ -42,7 +68,6 @@ list:
     @printf "    %-40s %s\n" "dns/private/rabbitmq"                    "rabbitmq.internal → 192.168.1.8 (RabbitMQ mgmt UI)"
     @printf "    %-40s %s\n" "dns/private/portainer"                   "portainer.internal → 192.168.1.7 (Portainer UI)"
     @printf "    %-40s %s\n" "dns/private/nfs"                         "nfs.internal → 192.168.1.108 (NFS server)"
-    @printf "    %-40s %s\n" "dns/private/haproxy"                     "haproxy.internal → 192.168.1.109 (HAProxy stats)"
     @printf "    %-40s %s\n" "dns/private/proxmox"                     "proxmox.internal → 192.168.1.50 (Proxmox web UI)"
     @printf "    %-40s %s\n" "dns/private/traefik"                     "traefik.internal → 192.168.1.121 (Traefik, in-cluster)"
     @printf "    %-40s %s\n" "dns/private/headlamp"                    "headlamp.internal → 192.168.1.121 (K8s dashboard)"
@@ -66,7 +91,6 @@ list:
     @printf "  %-14s %s\n" "postgres-lxc"   "LXC 202 · 192.168.1.4   · PostgreSQL + pgAdmin"
     @printf "  %-14s %s\n" "redis-lxc"      "LXC 204 · 192.168.1.6   · Redis + Redis Commander"
     @printf "  %-14s %s\n" "rabbitmq-lxc"   "LXC 205 · 192.168.1.8   · RabbitMQ"
-    @printf "  %-14s %s\n" "haproxy-lxc"    "LXC 300 · 192.168.1.109 · HAProxy (public ingress LB)"
     @printf "  %-14s %s\n" "nfs-vm"         "VM  301 · 192.168.1.108 · NFS server (k3s PVs)"
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"

@@ -154,7 +154,7 @@ sudo ./svc.sh start
 | `PROXMOX_PASSWORD` | Proxmox API token secret from 2a |
 | `SSH_PUBLIC_KEY` | Contents of `~/.ssh/id_ed25519.pub` on Proxmox |
 | `SSH_PRIVATE_KEY` | Contents of `~/.ssh/id_ed25519` on Proxmox (Ansible SSH auth) |
-| `HAPROXY_PUBLIC_IP` | Your WAN IP - used for public Cloudflare A records |
+| `PUBLIC_WAN_IP` | Your WAN IP - used for public Cloudflare A records |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below) |
 | `LETSENCRYPT_EMAIL` | Email for Let's Encrypt registration |
 | `ADGUARD_USERNAME`, `ADGUARD_PASSWORD` | AdGuard admin creds |
@@ -163,7 +163,6 @@ sudo ./svc.sh start
 | `PGADMIN_EMAIL`, `PGADMIN_PASSWORD` | pgAdmin admin creds |
 | `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | Redis + Commander UI creds |
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | RabbitMQ admin creds |
-| `HAPROXY_STATS_USER`, `HAPROXY_STATS_PASSWORD` | HAProxy stats page creds |
 | `FLUX_GITHUB_TOKEN` | GitHub PAT with `repo` scope - Flux CD bootstrap |
 
 ### 4. Cloudflare API token - required scopes
@@ -215,7 +214,6 @@ All services live behind `*.internal.pavel-usanli.online` (LAN only, unproxied) 
 | Portainer | VM | 192.168.1.7 | `proxmox/portainer-vm` | `proxmox/portainer-vm` |
 | RabbitMQ | LXC | 192.168.1.8 | `proxmox/rabbitmq-lxc` | `proxmox/rabbitmq-lxc` |
 | NFS server (k3s PVs) | VM | 192.168.1.108 | `proxmox/nfs-vm` | `proxmox/nfs-vm` |
-| HAProxy (public ingress) | LXC | 192.168.1.109 | `proxmox/haproxy-lxc` | `proxmox/haproxy-lxc` |
 | k3s control plane | VM | 192.168.1.110 | `proxmox/k3s-cluster` | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
 | k3s worker | VM | 192.168.1.111 | `proxmox/k3s-cluster` | (same) |
 | Flux CD bootstrap | - | (on k3s) | - | `proxmox/k3s-cluster` (`flux-install.yml`) |
@@ -234,8 +232,6 @@ All services live behind `*.internal.pavel-usanli.online` (LAN only, unproxied) 
 **RabbitMQ** - AMQP on `192.168.1.8:5672`. Management UI at `https://rabbitmq.internal.pavel-usanli.online`.
 
 **Portainer** - Docker + nginx + certbot inside the VM. UI at `https://portainer.internal.pavel-usanli.online`. First visit shows a setup wizard - create the admin there within 5 minutes of the first launch (`sudo docker restart portainer` to re-open if it times out).
-
-**HAProxy** - Public traffic front-door for k3s. Stats at `http://192.168.1.109:8404/stats`. Traffic flow: `:80 → Traefik :80 at 192.168.1.120`; `:443 → TCP passthrough to Traefik at 192.168.1.120:443`.
 
 **k3s cluster** - Two-node cluster (control plane + worker). `just configure k3s-cluster` runs the 3-phase bootstrap (prep nodes → install server on k3s-1 → join k3s-2). Then `just configure k3s-cluster/flux` installs Flux CD, which reconciles everything under `gitops/clusters/homelab/`.
 
@@ -280,11 +276,11 @@ Five workflows, all `workflow_dispatch` (manual), all running on the self-hosted
 
 | Workflow | Picks | Runs |
 |---|---|---|
-| `cloudflare-deploy.yml` | 22 cloudflare/ dirs | `just deploy cloudflare <resource>` |
-| `cloudflare-destroy.yml` | 22 cloudflare/ dirs | `just destroy cloudflare <resource>` |
-| `proxmox-deploy.yml` | 9 proxmox/ services | `just deploy proxmox <resource>` |
-| `proxmox-destroy.yml` | 9 proxmox/ services | `just destroy proxmox <resource>` |
-| `ansible-configure.yml` | 9 services + `k3s-cluster/flux` | `just configure <resource>` |
+| `cloudflare-deploy.yml` | 21 cloudflare/ dirs | `just deploy cloudflare <resource>` |
+| `cloudflare-destroy.yml` | 21 cloudflare/ dirs | `just destroy cloudflare <resource>` |
+| `proxmox-deploy.yml` | 8 proxmox/ services | `just deploy proxmox <resource>` |
+| `proxmox-destroy.yml` | 8 proxmox/ services | `just destroy proxmox <resource>` |
+| `ansible-configure.yml` | 8 services + `k3s-cluster/flux` | `just configure <resource>` |
 
 Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [`terraform/README.md`](terraform/README.md) and [`ansible/README.md`](ansible/README.md).
 

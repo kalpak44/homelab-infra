@@ -11,7 +11,7 @@
 #   ADGUARD_USERNAME/PASSWORD, VAULT_USERNAME/PASSWORD,
 #   POSTGRESQL_USER/PASSWORD/DB, PGADMIN_EMAIL/PASSWORD,
 #   REDIS_PASSWORD, REDIS_COMMANDER_USER/PASSWORD,
-#   RABBITMQ_USER/PASSWORD, HAPROXY_STATS_USER/PASSWORD,
+#   RABBITMQ_USER/PASSWORD,
 #   FLUX_GITHUB_TOKEN
 #   SSH_PRIVATE_KEY (CI only - writes ~/.ssh/id_ed25519 for host access)
 
@@ -61,8 +61,6 @@ configure resource: setup
       -e "redis_commander_password=${REDIS_COMMANDER_PASSWORD:-}" \
       -e "rabbitmq_user=${RABBITMQ_USER:-}" \
       -e "rabbitmq_password=${RABBITMQ_PASSWORD:-}" \
-      -e "haproxy_stats_user=${HAPROXY_STATS_USER:-}" \
-      -e "haproxy_stats_password=${HAPROXY_STATS_PASSWORD:-}" \
       -e "flux_github_token=${FLUX_GITHUB_TOKEN:-}"
 
 # Bootstrap a fresh Proxmox node (SSH key auth) - see bootstrap/README.md
@@ -95,7 +93,6 @@ list:
     @printf "  %-24s %s\n" "postgres-lxc"     "PostgreSQL + pgAdmin - database and web UI"
     @printf "  %-24s %s\n" "redis-lxc"        "Redis + Redis Commander - cache and web UI"
     @printf "  %-24s %s\n" "rabbitmq-lxc"     "RabbitMQ - message broker"
-    @printf "  %-24s %s\n" "haproxy-lxc"      "HAProxy - public ingress load balancer for k3s"
     @printf "  %-24s %s\n" "nfs-vm"           "NFS server - persistent volumes for k3s"
     @printf "  %-24s %s\n" "portainer-vm"     "Portainer - Docker container management UI"
     @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
