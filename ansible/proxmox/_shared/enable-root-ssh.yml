@@ -36,6 +36,12 @@
     mode: "0600"
   when: _ubuntu_authkeys.stat.exists
 
+- name: Remove cloud-init sshd drop-in that disables password auth (VMs)
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+    state: absent
+  register: _ssh_cloudinit_dropin
+
 - name: Ensure PermitRootLogin is yes
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
@@ -55,5 +61,5 @@
 - name: Ensure SSH is running and restart if config changed
   ansible.builtin.systemd:
     name: ssh
-    state: "{{ 'restarted' if (_ssh_config_root.changed or _ssh_config_pw.changed) else 'started' }}"
+    state: "{{ 'restarted' if (_ssh_cloudinit_dropin.changed or _ssh_config_root.changed or _ssh_config_pw.changed) else 'started' }}"
     enabled: true
