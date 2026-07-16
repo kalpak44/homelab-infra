@@ -18,7 +18,7 @@
 - name: Create admin user
   command: rabbitmqctl add_user {{ rabbitmq_user }} {{ rabbitmq_password }}
   register: create_user
-  failed_when: create_user.rc != 0 and 'already_exists' not in create_user.stderr
+  failed_when: create_user.rc != 0 and (create_user.stderr is not search('already[ _]exists'))
   changed_when: create_user.rc == 0
   no_log: true
 
@@ -33,7 +33,7 @@
 - name: Delete guest user
   command: rabbitmqctl delete_user guest
   register: delete_guest
-  failed_when: delete_guest.rc != 0 and 'no_such_user' not in delete_guest.stderr
+  failed_when: delete_guest.rc != 0 and (delete_guest.stderr is not search('no[ _]such[ _]user|Could not find user'))
   changed_when: delete_guest.rc == 0
 
 - name: Install certbot, Cloudflare plugin, and nginx
