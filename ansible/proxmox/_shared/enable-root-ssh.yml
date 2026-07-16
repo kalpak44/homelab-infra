@@ -1,8 +1,14 @@
 ---
 # Shared task file — imported early by every service playbook.
 # Ensures openssh-server is present, root's password matches HOST_PASSWORD,
-# and sshd accepts root logins with a password. Self-contained (no external
-# handlers needed).
+# and sshd accepts root logins with a password.
+#
+# On Ubuntu cloud images, cloud-init drops
+# /etc/ssh/sshd_config.d/60-cloudimg-settings.conf with `PasswordAuthentication no`
+# and can regenerate it on boot. sshd_config drop-ins are read in filename order
+# and *first match wins per keyword*, so we drop our own file with a name that
+# sorts before any cloud-init one (`00-homelab.conf`) — cloud-init can regenerate
+# its file all it wants; ours still wins.
 
 - name: Install openssh-server
   ansible.builtin.apt:
@@ -19,8 +25,8 @@
 
 # Cloud-init on Ubuntu VMs plants a `command="echo 'Please login as ubuntu'…"`
 # restriction in /root/.ssh/authorized_keys. Overwrite it with ubuntu's clean
-# keys so root can be reached both by key and by password. LXCs don't have an
-# ubuntu user — this step just no-ops for them.
+# keys so the root can be reached both by a key and by password. LXCs don't have a user — this step is
+#  just no-ops for them.
 - name: Check if ubuntu authorized_keys exists (VMs only)
   ansible.builtin.stat:
     path: /home/ubuntu/.ssh/authorized_keys
@@ -36,33 +42,30 @@
     mode: "0600"
   when: _ubuntu_authkeys.stat.exists
 
-- name: Remove cloud-init sshd drop-ins that disable password auth (VMs)
+- name: Ensure sshd_config.d directory exists
   ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /etc/ssh/sshd_config.d/50-cloud-init.conf
-    - /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
-  register: _ssh_cloudinit_dropin
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
-- name: Ensure PermitRootLogin is yes
-  ansible.builtin.lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^#?PermitRootLogin'
-    line: 'PermitRootLogin yes'
-    state: present
-  register: _ssh_config_root
+- name: Drop homelab sshd override (first-wins over cloud-init drop-ins)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/00-homelab.conf
+    content: |
+      # Managed by ansible/proxmox/_shared/enable-root-ssh.yml
+      # sshd applies first match per keyword; this file sorts before any 5X/6X drop-ins
+      # (cloud-init's 60-cloudimg-settings.conf regenerates on boot — we win regardless).
+      PermitRootLogin yes
+      PasswordAuthentication yes
+    owner: root
+    group: root
+    mode: "0644"
+  register: _ssh_config_dropin
 
-- name: Ensure PasswordAuthentication is yes
-  ansible.builtin.lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^#?PasswordAuthentication'
-    line: 'PasswordAuthentication yes'
-    state: present
-  register: _ssh_config_pw
-
-- name: Ensure SSH is running and restart if config changed
+- name: Ensure SSH is running and restart if drop-in changed
   ansible.builtin.systemd:
     name: ssh
-    state: "{{ 'restarted' if (_ssh_cloudinit_dropin.changed or _ssh_config_root.changed or _ssh_config_pw.changed) else 'started' }}"
+    state: "{{ 'restarted' if _ssh_config_dropin.changed else 'started' }}"
     enabled: true
