@@ -1,0 +1,50 @@
+name: Cloudflare - Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource:
+        description: Which resource under terraform/cloudflare/ to destroy
+        required: true
+        type: choice
+        options:
+          - dns/private/adguard
+          - dns/private/crowdsec-web-ui
+          - dns/private/data-source-connector-example
+          - dns/private/haproxy
+          - dns/private/headlamp
+          - dns/private/nfs
+          - dns/private/portainer
+          - dns/private/postgres
+          - dns/private/private-home-page
+          - dns/private/proxmox
+          - dns/private/rabbitmq
+          - dns/private/redis
+          - dns/private/traefik
+          - dns/private/vault
+          - dns/public/bunker-game-app
+          - dns/public/capacity-planner
+          - dns/public/google-assistant-mcp
+          - dns/public/mite-assistant-mcp
+          - dns/public/nocobase
+          - dns/public/personal-web-page
+          - dns/public/shopify-gpt-assistant
+          - shared/cloudflare-email
+
+jobs:
+  destroy:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_haproxy_public_ip: ${{ secrets.HAPROXY_PUBLIC_IP }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just destroy cloudflare "${{ inputs.resource }}"

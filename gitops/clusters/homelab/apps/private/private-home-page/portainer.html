@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8"/>
-    <title>Portainer Apps — Home Services</title>
+    <title>Portainer Apps - Home Services</title>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -166,7 +166,7 @@
         <div class="flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <span class="text-xl">📦</span>
-                <h3 class="text-base font-semibold">Docker Registry — Publish Image</h3>
+                <h3 class="text-base font-semibold">Docker Registry - Publish Image</h3>
             </div>
             <button onclick="closeModal('registry')" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
         </div>
@@ -176,7 +176,7 @@
                 <span class="text-slate-500">UI</span><span class="font-mono">192.168.1.7:8282</span>
             </div>
             <div class="space-y-2">
-                <p class="text-slate-500 uppercase tracking-wider text-[10px]">1 — Allow insecure registry (once per Docker host)</p>
+                <p class="text-slate-500 uppercase tracking-wider text-[10px]">1 - Allow insecure registry (once per Docker host)</p>
                 <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto"># macOS: ~/.docker/daemon.json
 # Linux: /etc/docker/daemon.json
 {
@@ -186,11 +186,11 @@
 # Linux: sudo systemctl restart docker</pre>
             </div>
             <div class="space-y-2">
-                <p class="text-slate-500 uppercase tracking-wider text-[10px]">2 — Tag your image</p>
+                <p class="text-slate-500 uppercase tracking-wider text-[10px]">2 - Tag your image</p>
                 <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto">docker tag &lt;image&gt;[:tag] 192.168.1.7:5000/&lt;name&gt;[:tag]</pre>
             </div>
             <div class="space-y-2">
-                <p class="text-slate-500 uppercase tracking-wider text-[10px]">3 — Push</p>
+                <p class="text-slate-500 uppercase tracking-wider text-[10px]">3 - Push</p>
                 <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto">docker push 192.168.1.7:5000/&lt;name&gt;[:tag]</pre>
             </div>
             <div class="space-y-2">

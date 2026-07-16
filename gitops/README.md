@@ -1,4 +1,4 @@
-# GitOps — homelab cluster
+# GitOps - homelab cluster
 
 Flux CD watches this directory and reconciles the k3s cluster state continuously.
 
@@ -47,16 +47,16 @@ External Secrets Operator syncs them into k8s secrets automatically.
 | `enrollment-key` | Enrollment key from [app.crowdsec.net](https://app.crowdsec.net) → Security Engines → Enroll |
 
 ```bash
-# bouncer-api-key — random 32-byte hex string
+# bouncer-api-key - random 32-byte hex string
 openssl rand -hex 32
 
-# webui-machine-id — pick any short alphanumeric name, e.g.:
+# webui-machine-id - pick any short alphanumeric name, e.g.:
 echo "homelab"
 
-# webui-password — random password
+# webui-password - random password
 openssl rand -base64 24
 
-# enrollment-key — copy from app.crowdsec.net → Security Engines → + Add → Enroll command
+# enrollment-key - copy from app.crowdsec.net → Security Engines → + Add → Enroll command
 # looks like: cscli console enroll <key>  ← the <key> part
 ```
 
@@ -76,7 +76,7 @@ vault kv put secret/crowdsec-secrets \
 | `mite-url` | Mite API base URL |
 
 ```bash
-# mite-url — your Mite account URL, e.g.:
+# mite-url - your Mite account URL, e.g.:
 echo "https://<account>.mite.de"
 
 vault kv put secret/mite-assistant-mcp-secrets \
@@ -113,7 +113,7 @@ vault kv put secret/shopify-gpt-assistant-secrets \
   database-url="<database-url>"
 ```
 
-### Manual k8s secret — `cloudflare-api-token` (namespace: `kube-system`)
+### Manual k8s secret - `cloudflare-api-token` (namespace: `kube-system`)
 
 Used by Traefik for Cloudflare DNS-01 Let's Encrypt challenges. Created by the k3s Ansible playbook.
 

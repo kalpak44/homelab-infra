@@ -1,0 +1,73 @@
+---
+# Phase 1 - prerequisites on all nodes
+- name: Prepare k3s nodes
+  hosts: k3s
+  become: true
+  roles:
+    - k3s
+
+# Phase 2 - install k3s server on primary
+- name: Install k3s server
+  hosts: k3s-1
+  become: true
+
+  tasks:
+    - name: Check if k3s is installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_bin
+
+    - name: Install k3s server
+      ansible.builtin.shell:
+        cmd: >-
+          curl -sfL https://get.k3s.io |
+          INSTALL_K3S_VERSION="{{ k3s_version }}"
+          INSTALL_K3S_EXEC="--disable servicelb --node-ip={{ k3s_server_ip }} --tls-san={{ k3s_server_ip }} --write-kubeconfig-mode=644"
+          sh -
+      when: not k3s_bin.stat.exists
+
+    - name: Wait for node to be ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node/k3s-1 --timeout=120s
+      changed_when: false
+      retries: 5
+      delay: 10
+
+    - name: Read node token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_token_raw
+
+    - name: Set token fact
+      ansible.builtin.set_fact:
+        k3s_node_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+
+# Phase 3 - join secondary node
+- name: Join k3s-2 to cluster
+  hosts: k3s-2
+  become: true
+
+  tasks:
+    - name: Check if k3s is installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_bin
+
+    - name: Install k3s agent
+      ansible.builtin.shell:
+        cmd: >-
+          curl -sfL https://get.k3s.io |
+          INSTALL_K3S_VERSION="{{ k3s_version }}"
+          K3S_URL="https://{{ k3s_server_ip }}:6443"
+          K3S_TOKEN="{{ hostvars['k3s-1']['k3s_node_token'] }}"
+          sh -
+      when: not k3s_bin.stat.exists
+
+    - name: Wait for k3s-2 to join
+      ansible.builtin.command: k3s kubectl get node k3s-2
+      delegate_to: k3s-1
+      become: true
+      changed_when: false
+      register: node_check
+      until: "'Ready' in node_check.stdout"
+      retries: 12
+      delay: 10

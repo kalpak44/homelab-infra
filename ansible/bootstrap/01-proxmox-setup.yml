@@ -1,0 +1,63 @@
+---
+# Phase 1 - create Terraform role/user/token + enable snippet storage on the local datastore.
+# Idempotent: re-running skips resources that already exist.
+
+- name: Bootstrap - Proxmox Terraform user, role, token, storage
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Create Terraform role
+      ansible.builtin.command:
+        cmd: >-
+          pveum role add Terraform
+          --privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.GuestAgent.Audit,VM.Migrate,VM.PowerMgmt,SDN.Use"
+      register: role_create
+      changed_when: role_create.rc == 0
+      failed_when:
+        - role_create.rc != 0
+        - "'already exists' not in role_create.stderr"
+
+    - name: Create terraform@pve user
+      ansible.builtin.command:
+        cmd: pveum user add terraform@pve --comment "Terraform automation"
+      register: user_create
+      changed_when: user_create.rc == 0
+      failed_when:
+        - user_create.rc != 0
+        - "'already exists' not in user_create.stderr"
+
+    - name: Grant Terraform role at root path
+      ansible.builtin.command:
+        cmd: pveum aclmod / --user terraform@pve --role Terraform
+      changed_when: true
+
+    - name: Grant Terraform role on /storage/local
+      ansible.builtin.command:
+        cmd: pveum aclmod /storage/local --user terraform@pve --role Terraform
+      changed_when: true
+
+    - name: Create API token (privsep=0)
+      ansible.builtin.command:
+        cmd: pveum user token add terraform@pve terraform --privsep 0
+      register: token_create
+      changed_when: token_create.rc == 0
+      failed_when:
+        - token_create.rc != 0
+        - "'already exists' not in token_create.stderr"
+
+    - name: Show API token (SAVE THIS - shown once only)
+      ansible.builtin.debug:
+        msg: |
+          ================================================================
+          Terraform API token created. Copy the 'value' field below and
+          save it as GitHub secret PROXMOX_PASSWORD and locally as
+          $PROXMOX_PASSWORD.
+
+          {{ token_create.stdout }}
+          ================================================================
+      when: token_create.changed
+
+    - name: Enable snippet storage on 'local' datastore
+      ansible.builtin.command:
+        cmd: pvesm set local --content images,rootdir,vztmpl,backup,snippets,iso
+      changed_when: true

@@ -1,0 +1,69 @@
+---
+# Phase 4 - replace Proxmox web-UI self-signed cert with a Let's Encrypt cert
+# obtained via the Cloudflare DNS-01 challenge.
+#
+# Requires the following extra vars (workflow / Justfile inject them):
+#   letsencrypt_email - LE account email
+#   cloudflare_api_token - Zone:DNS:Edit for the target zone
+#   proxmox_domain - FQDN that resolves to this node (must already exist as a DNS A record)
+
+- name: Bootstrap - Proxmox Let's Encrypt cert
+  hosts: all
+  gather_facts: false
+  vars:
+    acme_account: default
+    acme_directory: https://acme-v02.api.letsencrypt.org/directory
+  tasks:
+    - name: Ensure required vars are set
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_email | default('') | length > 0
+          - cloudflare_api_token | default('') | length > 0
+          - proxmox_domain | default('') | length > 0
+        fail_msg: "letsencrypt_email, cloudflare_api_token, and proxmox_domain must all be set."
+
+    - name: Check for existing ACME account
+      ansible.builtin.command: "pvenode acme account list"
+      register: acme_accounts
+      changed_when: false
+
+    - name: Register ACME account '{{ acme_account }}'
+      ansible.builtin.command:
+        cmd: >-
+          pvenode acme account register {{ acme_account }} {{ letsencrypt_email }}
+          --directory {{ acme_directory }}
+      when: acme_account not in acme_accounts.stdout
+
+    - name: Write Cloudflare token to /tmp/cf.env
+      ansible.builtin.copy:
+        content: "CF_Token={{ cloudflare_api_token }}\n"
+        dest: /tmp/cf.env
+        mode: "0600"
+      no_log: true
+
+    - name: Check for existing Cloudflare ACME plugin
+      ansible.builtin.command: pvenode acme plugin list
+      register: acme_plugins
+      changed_when: false
+
+    - name: Add Cloudflare DNS plugin
+      ansible.builtin.command:
+        cmd: pvenode acme plugin add dns cloudflare --api cf --data /tmp/cf.env
+      when: "'cloudflare' not in acme_plugins.stdout"
+
+    - name: Remove /tmp/cf.env
+      ansible.builtin.file:
+        path: /tmp/cf.env
+        state: absent
+
+    - name: Bind ACME domain to this node
+      ansible.builtin.command:
+        cmd: >-
+          pvenode config set
+          --acme account={{ acme_account }}
+          --acmedomain0 domain={{ proxmox_domain }},plugin=cloudflare
+      changed_when: true
+
+    - name: Order Let's Encrypt certificate (this takes ~30s)
+      ansible.builtin.command: pvenode acme cert order
+      changed_when: true

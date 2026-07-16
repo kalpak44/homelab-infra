@@ -1,54 +1,57 @@
 # homelab-infra
 
-Homelab infrastructure repository — a full-stack self-hosted environment built on Proxmox, managed with Terraform + Ansible + Flux CD GitOps, with Cloudflare as the DNS and TLS authority.
+Homelab infrastructure repository – a full-stack self-hosted environment built on Proxmox, managed with Terraform +
+Ansible + Flux CD GitOps, with Cloudflare as the DNS and TLS authority.
 
 ---
 
 ## Overview
-The repo is split into **two distinct layers**:
 
-### Part 1 — General Infrastructure (Terraform + Cloudflare DNS)
+The repo has **three layers**, each with its own state model and lifecycle:
 
-Located in `terraform/` and deployed via GitHub Actions (`deploy.yml`).
+### 1. Terraform - infrastructure provisioning
 
-Provisions all underlying compute and DNS:
+Located in `terraform/`. Provisions Proxmox LXCs / VMs and Cloudflare records. **One state file per resource** on
+Cloudflare R2 (S3-compatible backend). No monolithic root.
 
-- **Proxmox** hypervisor hosts LXC containers and VMs declared as Terraform modules (`proxmox-lxc/`, `proxmox-vm/`).
-- **Cloudflare DNS** records for every service are managed in `terraform/shared.tf`.
-- **Terraform state** is stored remotely in Cloudflare R2 (S3-compatible backend).
-- Ansible playbooks in `ansible/` run post-provisioning to configure each service.
+- `terraform/cloudflare/` - all Cloudflare records and email routing
+    - `dns/private/<name>/` - LAN-only `*.internal` A records (unproxied)
+    - `dns/public/<name>/` - internet-facing records (Cloudflare-proxied)
+    - `shared/<name>/` - non-DNS Cloudflare (email routing)
+- `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
+- `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
+- `terraform/Justfile` - `deploy <layer> <resource>`, `destroy <layer> <resource>`, `list`
 
-→ See `README.md` for the current list of provisioned services and their IPs.
+### 2. Ansible - post-provisioning configuration
+
+Located in `ansible/`. Structure mirrors `terraform/proxmox/` 1:1. Every service dir owns its playbook + colocated
+`roles/`.
+
+- `ansible/proxmox/<name>/playbook.yml` + `roles/<name>/`
+- `ansible/proxmox/k3s-cluster/` has two playbooks (`cluster-setup.yml`, `flux-install.yml`)
+- `ansible/inventories/hosts.yml` - single flat inventory
+- `ansible/bootstrap/` - one-time fresh-Proxmox setup (Terraform user, base template artifacts, runner VM, TLS cert)
+- `ansible/Justfile` - `configure <resource>`, `bootstrap <ip>`, `list`
+
+### 3. GitOps on k3s (Flux CD)
+
+Located in `gitops/` - reconciled automatically by Flux CD once the k3s cluster is up.
+
+- Flux CD (bootstrapped by `ansible/proxmox/k3s-cluster/flux-install.yml`) watches this repo and applies manifests.
+- Traefik ingress; cert-manager issues Let's Encrypt certs via Cloudflare DNS-01.
+- External Secrets Operator syncs from Vault into k8s secrets.
+- CrowdSec provides IDS/IPS + AppSec middleware.
+
+See `gitops/README.md` for the in-cluster service list.
 
 ---
 
-### Part 2 — GitOps on k3s (Flux CD + Cloudflare DNS)
+## Local Rules
 
-Located in `gitops/` and reconciled automatically by Flux CD (polls GitHub every 1 minute).
-
-Manages all workloads running inside the k3s cluster:
-
-- **Flux CD** (bootstrapped by the `ansible/playbooks/flux.yml` playbook) watches this repo and applies manifests.
-- **Traefik** is the ingress controller; it obtains TLS certificates via cert-manager using Cloudflare DNS-01 challenges.
-- **External Secrets Operator** syncs secrets from Vault into Kubernetes.
-- **CrowdSec** provides IDS/IPS and AppSec middleware on all public ingress routes.
-
-→ See `gitops/README.md` for the current list of public and private in-cluster services.
-
----
-
-## Local Rules — DNS Patterns
-
-@.claude/rules/public-services.md
-@.claude/rules/private-services.md
-
-## Local Rules — GitHub Workflows
-
-@.claude/rules/github-workflows.md
-
-## Local Rules — Git
-
-@.claude/rules/git.md
+@.claude/rules/dns-public.md
+@.claude/rules/dns-private.md
+@.claude/rules/workflows.md
+@.claude/rules/commits.md
 
 ---
 
@@ -56,52 +59,77 @@ Manages all workloads running inside the k3s cluster:
 
 ```
 homelab-infra/
-├── README.md            # Source of truth — all provisioned services + IPs
-├── terraform/           # Part 1 — Proxmox VMs/LXCs + Cloudflare DNS records
-│   ├── shared.tf        # All Cloudflare DNS records
-│   ├── main.tf          # Module instantiations
-│   ├── providers.tf     # Proxmox + Cloudflare provider config
-│   ├── backend.tf       # Remote state on Cloudflare R2
-│   └── modules/         # proxmox-lxc, proxmox-vm, adguard, vault, postgres …
-├── ansible/             # Post-provisioning configuration
-│   ├── inventories/     # Homelab host groups + vars
-│   ├── playbooks/       # One playbook per service
-│   └── roles/           # Role logic (install, configure, TLS, etc.)
-├── gitops/              # Part 2 — Flux CD manifests
-│   ├── README.md        # Source of truth — all in-cluster public + private services
+├── README.md                       # Setup + service catalog (source of truth for infra services)
+├── CLAUDE.md                       # This file
+├── terraform/
+│   ├── README.md
+│   ├── Justfile                    # just deploy | destroy | list
+│   ├── cloudflare/
+│   │   ├── dns/private/<name>/     # 14 dirs, one per LAN record set
+│   │   ├── dns/public/<name>/      # 7 dirs, one per public record set
+│   │   └── shared/<name>/          # non-DNS Cloudflare (email routing)
+│   ├── proxmox/
+│   │   └── <service>/              # 9 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
+│   └── modules/{proxmox-lxc,proxmox-vm}/
+├── ansible/
+│   ├── README.md
+│   ├── ansible.cfg
+│   ├── Justfile                    # just configure | bootstrap | bootstrap-pw | list
+│   ├── inventories/hosts.yml
+│   ├── bootstrap/                  # one-time fresh-Proxmox setup (4 phase playbooks)
+│   └── proxmox/
+│       └── <service>/              # mirrors terraform/proxmox/
+│           ├── playbook.yml
+│           └── roles/<role>/
+├── gitops/
+│   ├── README.md
 │   └── clusters/homelab/
-│       ├── flux-system/ # Flux core (auto-generated)
-│       ├── infrastructure/  # MetalLB, Traefik, NFS provisioner, External Secrets, CrowdSec
-│       └── apps/
-│           ├── public/  # Internet-facing workloads
-│           └── private/ # Internal-only workloads
-├── .scripts/
-│   ├── deploy.sh        # Local equivalent of deploy.yml — reads secrets from system env vars
-│   └── destroy.sh       # Local equivalent of destroy.yml — reads secrets from system env vars
+│       ├── flux-system/
+│       ├── infrastructure/         # MetalLB, Traefik, cert-manager, NFS, External Secrets, CrowdSec
+│       └── apps/{public,private}/
 └── .github/workflows/
-    ├── deploy.yml       # Terraform apply + Ansible (manual trigger, self-hosted runner)
-    └── destroy.yml      # Terraform destroy (target module)
+    ├── cloudflare-deploy.yml       # just deploy cloudflare <resource>
+    ├── cloudflare-destroy.yml      # just destroy cloudflare <resource>
+    ├── proxmox-deploy.yml          # just deploy proxmox <resource>
+    ├── proxmox-destroy.yml         # just destroy proxmox <resource>
+    └── ansible-configure.yml       # just configure <resource>
 ```
 
 ---
 
 ## Key Conventions
 
-- All Terraform DNS records are in `terraform/shared.tf` — add new records there.
-- Public apps go in `gitops/clusters/homelab/apps/public/<name>/`; private apps in `.../apps/private/<name>/`.
-- TLS for in-cluster services is handled by Traefik + cert-manager (Cloudflare DNS-01). TLS for standalone VMs/LXCs is handled by certbot with the Cloudflare DNS plugin (via Ansible roles).
-- Secrets flow: Vault → External Secrets Operator → Kubernetes Secret → app.
-- The self-hosted GitHub Actions runner lives at VM 101 on the Proxmox node.
+- **Per-resource Terraform state** – every leaf dir under `terraform/cloudflare/` and `terraform/proxmox/` has its own
+  `backend.tf` with a unique R2 key. No cross-state refs; services reference shared Proxmox artifacts (VM 9000 template,
+  LXC template file) by static string ID.
+- **DNS records live under `terraform/cloudflare/dns/{private,public}/<name>/`** - not in a shared file.
+- **Ansible dirs mirror Terraform dirs 1:1** – the Proxmox service that runs a workload has both a
+  `terraform/proxmox/<name>/` and an `ansible/proxmox/<name>/` dir with the same name.
+- **`just` is the single entry point** – CI workflows and local shells call the same `just <recipe>` commands.
+- **TF_VAR_ / env-var flow** - workflows expose secrets as job-level env vars; `just` recipes and Terraform pick them
+  up. Undeclared TF_VAR_/ansible extra vars are silently ignored, so one workflow can pass a union of vars safely.
+- **Public apps** go in `gitops/clusters/homelab/apps/public/<name>/`; private apps in `.../apps/private/<name>/`.
+- **TLS**: in-cluster via Traefik + cert-manager (DNS-01); standalone VMs/LXCs via certbot with Cloudflare DNS plugin (
+  Ansible roles).
+- **Secrets flow**: Vault → External Secrets Operator → Kubernetes Secret → app.
+- **Self-hosted runner** lives at VM 101 on the Proxmox node.
+- **VM 9000 (ubuntu-2404-template) and the Ubuntu LXC template are unmanaged by Terraform** - created manually or by
+  `ansible/bootstrap/`. Deleting a proxmox/ state won't touch them.
 
-## Keep these four things in sync on every service change
+## Adding or removing a service – what stays in sync
 
-When adding **or** removing any service, all of the following must be updated together — never update one without the others:
+There is one dropdown entry, one dir, one description per resource. When adding **or** removing a service, update **all
+** of these together:
 
-| What | Why |
-|---|---|
-| `README.md` | Source of truth for infrastructure-layer services (VMs/LXCs, IPs, DNS) |
-| `gitops/README.md` | Source of truth for in-cluster services (public + private k3s workloads) |
-| `.github/workflows/deploy.yml` + `destroy.yml` | CI/CD must know about the service |
-| `.scripts/deploy.sh` + `destroy.sh` | Local scripts must mirror the workflows exactly |
+| What                       | For                            | Which files                                                                                                                    |
+|----------------------------|--------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| Terraform dir              | Provisioning                   | `terraform/cloudflare/<layer>/<name>/` or `terraform/proxmox/<name>/` (with `backend.tf` key `homelab/<layer>/<path>.tfstate`) |
+| Ansible dir                | Config (Proxmox services only) | `ansible/proxmox/<name>/playbook.yml` + `roles/<name>/`                                                                        |
+| Workflow dropdown          | CI                             | Choice list in the matching `.github/workflows/<layer>-{deploy,destroy}.yml` (and `ansible-configure.yml` when relevant)       |
+| `just list` recipe         | Local UX                       | Description line in `terraform/Justfile` and/or `ansible/Justfile`                                                             |
+| Root README services table | Source of truth                | `README.md`                                                                                                                    |
+| Inventory                  | Ansible connection             | Host entry in `ansible/inventories/hosts.yml` (Proxmox services only)                                                          |
+| GitOps README              | In-cluster only                | `gitops/README.md` (only for services deployed by Flux)                                                                        |
 
-See `.claude/rules/github-workflows.md` for the full per-service checklists.
+See `.claude/rules/workflows.md` for the workflow-specific checklist and
+`.claude/rules/dns-{public,private}.md` for the DNS record patterns.

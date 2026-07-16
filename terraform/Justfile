@@ -1,0 +1,72 @@
+# Homelab Terraform
+#
+# Usage:
+#   just deploy  <layer> <resource>   # e.g. just deploy cloudflare dns/private/adguard
+#   just destroy <layer> <resource>   # e.g. just destroy proxmox adguard-lxc
+#
+# Layers: cloudflare | proxmox
+# Resource: subdir under the layer (see `just list`)
+#
+# Env vars (must be set - the workflow injects them, locally they come from your shell):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL_S3, R2_BUCKET_NAME
+#   TF_VAR_cloudflare_api_token, TF_VAR_haproxy_public_ip     (cloudflare layer)
+#   TF_VAR_proxmox_endpoint, TF_VAR_proxmox_username,
+#   TF_VAR_proxmox_password, TF_VAR_ssh_public_key,
+#   TF_VAR_ssh_private_key                                    (proxmox layer)
+
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+_help:
+    @just --list
+
+# Terraform init + apply
+deploy layer resource:
+    cd {{layer}}/{{resource}} && \
+      terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false && \
+      terraform apply -auto-approve -input=false
+
+# Terraform init + destroy
+destroy layer resource:
+    cd {{layer}}/{{resource}} && \
+      terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false && \
+      terraform destroy -auto-approve -input=false
+
+# List every deployable resource with a short description
+list:
+    @echo "Cloudflare - DNS + shared (just deploy cloudflare <resource>):"
+    @echo "  private (LAN-only, *.internal, unproxied)"
+    @printf "    %-40s %s\n" "dns/private/adguard"                     "adguard.internal → 192.168.1.2 (AdGuard Home)"
+    @printf "    %-40s %s\n" "dns/private/vault"                       "vault.internal → 192.168.1.3 (HashiCorp Vault)"
+    @printf "    %-40s %s\n" "dns/private/postgres"                    "postgres.internal + pgadmin.internal → 192.168.1.4"
+    @printf "    %-40s %s\n" "dns/private/redis"                       "redis.internal → 192.168.1.6 (Redis + Commander)"
+    @printf "    %-40s %s\n" "dns/private/rabbitmq"                    "rabbitmq.internal → 192.168.1.8 (RabbitMQ mgmt UI)"
+    @printf "    %-40s %s\n" "dns/private/portainer"                   "portainer.internal → 192.168.1.7 (Portainer UI)"
+    @printf "    %-40s %s\n" "dns/private/nfs"                         "nfs.internal → 192.168.1.108 (NFS server)"
+    @printf "    %-40s %s\n" "dns/private/haproxy"                     "haproxy.internal → 192.168.1.109 (HAProxy stats)"
+    @printf "    %-40s %s\n" "dns/private/proxmox"                     "proxmox.internal → 192.168.1.50 (Proxmox web UI)"
+    @printf "    %-40s %s\n" "dns/private/traefik"                     "traefik.internal → 192.168.1.121 (Traefik, in-cluster)"
+    @printf "    %-40s %s\n" "dns/private/headlamp"                    "headlamp.internal → 192.168.1.121 (K8s dashboard)"
+    @printf "    %-40s %s\n" "dns/private/crowdsec-web-ui"             "crowdsec.internal → 192.168.1.121 (CrowdSec UI)"
+    @printf "    %-40s %s\n" "dns/private/private-home-page"           "home.internal → 192.168.1.121 (internal home page)"
+    @printf "    %-40s %s\n" "dns/private/data-source-connector-example" "data-source-example.internal → 192.168.1.121"
+    @echo "  public (internet-facing, Cloudflare-proxied)"
+    @printf "    %-40s %s\n" "dns/public/personal-web-page"            "apex + www.pavel-usanli.online (personal site)"
+    @printf "    %-40s %s\n" "dns/public/nocobase"                     "nocobase.pavel-usanli.online (NocoBase)"
+    @printf "    %-40s %s\n" "dns/public/capacity-planner"             "planner.pavel-usanli.online (capacity planner)"
+    @printf "    %-40s %s\n" "dns/public/bunker-game-app"              "bunker.pavel-usanli.online (bunker game)"
+    @printf "    %-40s %s\n" "dns/public/mite-assistant-mcp"           "mite-assistant.pavel-usanli.online (MCP)"
+    @printf "    %-40s %s\n" "dns/public/google-assistant-mcp"         "google-assistant.pavel-usanli.online (MCP)"
+    @printf "    %-40s %s\n" "dns/public/shopify-gpt-assistant"        "shopify-gpt-assistant.pavel-usanli.online (MCP)"
+    @echo "  shared (non-DNS Cloudflare resources)"
+    @printf "    %-40s %s\n" "shared/cloudflare-email"                 "contact@pavel-usanli.online → Gmail forwarding"
+    @echo
+    @echo "Proxmox - LXCs + VMs (just deploy proxmox <resource>):"
+    @printf "  %-14s %s\n" "adguard-lxc"    "LXC 200 · 192.168.1.2   · AdGuard Home"
+    @printf "  %-14s %s\n" "vault-lxc"      "LXC 201 · 192.168.1.3   · HashiCorp Vault"
+    @printf "  %-14s %s\n" "postgres-lxc"   "LXC 202 · 192.168.1.4   · PostgreSQL + pgAdmin"
+    @printf "  %-14s %s\n" "redis-lxc"      "LXC 204 · 192.168.1.6   · Redis + Redis Commander"
+    @printf "  %-14s %s\n" "rabbitmq-lxc"   "LXC 205 · 192.168.1.8   · RabbitMQ"
+    @printf "  %-14s %s\n" "haproxy-lxc"    "LXC 300 · 192.168.1.109 · HAProxy (public ingress LB)"
+    @printf "  %-14s %s\n" "nfs-vm"         "VM  301 · 192.168.1.108 · NFS server (k3s PVs)"
+    @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
+    @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"

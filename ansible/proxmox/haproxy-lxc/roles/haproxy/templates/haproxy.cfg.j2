@@ -1,0 +1,50 @@
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    maxconn 4096
+    daemon
+
+defaults
+    log     global
+    option  dontlognull
+    retries 3
+    timeout connect 5s
+    timeout client  30s
+    timeout server  30s
+
+# ── HTTP ─────────────────────────────────────────────────────────────────────
+
+frontend http
+    bind *:{{ haproxy_http_port }}
+    mode http
+    option forwardfor
+    default_backend traefik_http
+
+backend traefik_http
+    mode http
+    balance roundrobin
+    server traefik {{ haproxy_traefik_ip }}:{{ haproxy_http_port }} check
+
+# ── HTTPS (TCP passthrough - TLS terminated by Traefik) ──────────────────────
+
+frontend https
+    bind *:{{ haproxy_https_port }}
+    mode tcp
+    default_backend traefik_https
+
+backend traefik_https
+    mode tcp
+    balance roundrobin
+    server traefik {{ haproxy_traefik_ip }}:{{ haproxy_https_port }} check send-proxy-v2
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+
+frontend stats
+    bind *:{{ haproxy_stats_port }}
+    mode http
+    stats enable
+    stats uri /stats
+    stats refresh 30s
+    stats auth {{ haproxy_stats_user }}:{{ haproxy_stats_password }}
+    stats show-legends
+    stats admin if TRUE

@@ -1,0 +1,52 @@
+name: Ansible - Configure
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource:
+        description: Which ansible/proxmox/<resource> playbook to run
+        required: true
+        type: choice
+        options:
+          - adguard-lxc
+          - vault-lxc
+          - postgres-lxc
+          - redis-lxc
+          - rabbitmq-lxc
+          - haproxy-lxc
+          - nfs-vm
+          - portainer-vm
+          - k3s-cluster
+          - k3s-cluster/flux
+
+jobs:
+  configure:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: ansible
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+      ADGUARD_USERNAME: ${{ secrets.ADGUARD_USERNAME }}
+      ADGUARD_PASSWORD: ${{ secrets.ADGUARD_PASSWORD }}
+      VAULT_USERNAME: ${{ secrets.VAULT_USERNAME }}
+      VAULT_PASSWORD: ${{ secrets.VAULT_PASSWORD }}
+      POSTGRESQL_USER: ${{ secrets.POSTGRESQL_USER }}
+      POSTGRESQL_PASSWORD: ${{ secrets.POSTGRESQL_PASSWORD }}
+      POSTGRESQL_DB: ${{ secrets.POSTGRESQL_DB }}
+      PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL }}
+      PGADMIN_PASSWORD: ${{ secrets.PGADMIN_PASSWORD }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      REDIS_COMMANDER_USER: ${{ secrets.REDIS_COMMANDER_USER }}
+      REDIS_COMMANDER_PASSWORD: ${{ secrets.REDIS_COMMANDER_PASSWORD }}
+      RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
+      RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+      HAPROXY_STATS_USER: ${{ secrets.HAPROXY_STATS_USER }}
+      HAPROXY_STATS_PASSWORD: ${{ secrets.HAPROXY_STATS_PASSWORD }}
+      FLUX_GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just configure "${{ inputs.resource }}"

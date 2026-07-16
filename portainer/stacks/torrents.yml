@@ -1,64 +1,271 @@
+# ==============================================================================
+# Portainer Stack: Torrenting and Media Infrastructure
+# ==============================================================================
+#
+# Purpose
+# -------
+# This stack provides a small self-hosted torrenting and media environment:
+#
+#   1. TorrServer
+#      Streams torrent content directly and can expose media through DLNA.
+#
+#   2. qBittorrent
+#      Downloads and manages torrent files through a browser-based interface.
+#
+#   3. File Browser
+#      Provides browser-based access to downloaded files.
+#
+#   4. Jellyfin
+#      Indexes and streams downloaded media to TVs, browsers, phones, and apps.
+#
+# Data flow
+# ---------
+#
+#   qBittorrent downloads files into:
+#       /mnt/data/downloads
+#
+#   File Browser exposes the same directory for file management.
+#
+#   Jellyfin mounts the same directory read-only as its media library.
+#
+#   TorrServer uses its own configuration, logs, and torrent metadata directories.
+#
+# Portainer deployment
+# --------------------
+#
+#   1. In Portainer, open "Stacks".
+#   2. Select "Add stack".
+#   3. Paste or upload this file.
+#   4. Review all host paths, user IDs, ports, and authentication settings.
+#   5. Deploy the stack.
+#
+# Host directory preparation
+# --------------------------
+#
+# Create the required directories before deployment:
+#
+#   mkdir -p /mnt/data/torrserver/config
+#   mkdir -p /mnt/data/torrserver/log
+#   mkdir -p /mnt/data/torrserver/torrents
+#   mkdir -p /mnt/data/qbittorrent/config
+#   mkdir -p /mnt/data/downloads
+#   mkdir -p /mnt/data/filebrowser
+#   mkdir -p /mnt/data/jellyfin/config
+#   mkdir -p /mnt/data/jellyfin/cache
+#
+# Ensure UID 1000 and GID 1000 can read and write the relevant directories:
+#
+#   chown -R 1000:1000 /mnt/data/qbittorrent
+#   chown -R 1000:1000 /mnt/data/downloads
+#   chown -R 1000:1000 /mnt/data/jellyfin
+#
+# Security notes
+# --------------
+#
+# - TorrServer HTTP authentication is disabled by TS_HTTPAUTH=0.
+# - qBittorrent, File Browser, Jellyfin, and TorrServer should not be exposed
+#   directly to the public internet without authentication, TLS, and firewalling.
+# - Consider placing browser-based services behind a reverse proxy such as
+#   Traefik, Caddy, or Nginx Proxy Manager.
+# - TorrServer uses host networking for DLNA and multicast discovery. This gives
+#   the container direct access to the host network namespace and should be used
+#   only on a trusted host.
+# - Jellyfin mounts the downloads directory as read-only to prevent accidental
+#   modification or deletion of media files.
+#
+# Image versioning
+# ----------------
+#
+# The stack currently uses "latest" image tags. This provides automatic access
+# to new releases but may introduce unexpected changes during redeployment.
+# For production use, pin each image to a tested version.
+#
+# ==============================================================================
+
 version: "3.8"
 
 services:
+  # ============================================================================
+  # TorrServer
+  # ============================================================================
+  #
+  # TorrServer can stream media directly from torrent sources without requiring
+  # the entire file to finish downloading first. It can also advertise content
+  # through DLNA, which relies on multicast and local-network discovery.
+  #
   torrserver:
     image: ghcr.io/yourok/torrserver:latest
     container_name: torrserver
-    network_mode: host   # needed for DLNA/multicast
-    restart: unless-stopped
-    environment:
-      TS_PORT: "5665"
-      TS_DONTKILL: "1"
-      TS_HTTPAUTH: "0"
-      TS_PATH: /opt/torrserver/config
-      TS_LOGPATHDIR: /opt/torrserver/log
-      TS_LOGFILE: ts.log
-      TS_WEBLOGFILE: tsweb.log
-      TS_TORRENTSDIR: /opt/torrserver/torrents
-    volumes:
-      - /mnt/data/torrserver/config:/opt/torrserver/config
-      - /mnt/data/torrserver/log:/opt/torrserver/log
-      - /mnt/data/torrserver:/opt/torrserver/torrents
 
+    # Host networking is required here for reliable DLNA and multicast discovery.
+    #
+    # Because host networking bypasses Docker port publishing, TorrServer listens
+    # directly on the host's network interfaces using TS_PORT.
+    network_mode: host
+
+    # Restart after host reboots and unexpected failures, but remain stopped when
+    # manually stopped by an administrator.
+    restart: unless-stopped
+
+    environment:
+      # TCP port used by the TorrServer web interface and API.
+      # With host networking, access it through:
+      #   http://<docker-host-ip>:5665
+      TS_PORT: "5665"
+
+      # Prevent TorrServer from terminating itself automatically.
+      TS_DONTKILL: "1"
+
+      # Disable built-in HTTP authentication.
+      #
+      # SECURITY WARNING:
+      # Anyone who can reach port 5665 may be able to access TorrServer.
+      TS_HTTPAUTH: "0"
+
+      # Location of persistent TorrServer configuration inside the container.
+      TS_PATH: "/opt/torrserver/config"
+
+      # Directory where TorrServer writes log files.
+      TS_LOGPATHDIR: "/opt/torrserver/log"
+
+      # Main application log filename.
+      TS_LOGFILE: "ts.log"
+
+      # Web-request log filename.
+      TS_WEBLOGFILE: "tsweb.log"
+
+      # Directory used for torrent metadata and related TorrServer data.
+      TS_TORRENTSDIR: "/opt/torrserver/torrents"
+
+    volumes:
+      # Persistent application configuration.
+      - /mnt/data/torrserver/config:/opt/torrserver/config
+
+      # Persistent application and web logs.
+      - /mnt/data/torrserver/log:/opt/torrserver/log
+
+      # Persistent torrent metadata managed by TorrServer.
+      #
+      # The original stack mounted /mnt/data/torrserver here. This documented
+      # version uses the dedicated torrents subdirectory prepared above to keep
+      # configuration, logs, and torrent data clearly separated.
+      - /mnt/data/torrserver/torrents:/opt/torrserver/torrents
+
+  # ============================================================================
+  # qBittorrent
+  # ============================================================================
+  #
+  # qBittorrent handles conventional torrent downloads and provides a web UI for
+  # adding torrents, monitoring progress, setting limits, and managing files.
+  #
   qbittorrent:
     image: linuxserver/qbittorrent:latest
     container_name: qbittorrent
     restart: unless-stopped
+
     environment:
+      # Run container processes using this host user and group.
+      # Adjust these values to match the owner of the mounted directories.
       PUID: "1000"
       PGID: "1000"
-      TZ: Europe/Sofia
+
+      # Time zone used for logs and scheduled activity.
+      TZ: "Europe/Sofia"
+
+      # Internal port used by the qBittorrent web interface.
       WEBUI_PORT: "8080"
+
     ports:
-      - "8080:8080"       # Web UI
-      - "6881:6881"       # BitTorrent TCP
-      - "6881:6881/udp"   # BitTorrent UDP
+      # qBittorrent browser-based administration interface:
+      #   http://<docker-host-ip>:8080
+      - "8080:8080"
+
+      # Incoming BitTorrent peer traffic over TCP.
+      - "6881:6881"
+
+      # Incoming BitTorrent peer traffic over UDP, including DHT-related traffic.
+      - "6881:6881/udp"
+
     volumes:
+      # Persistent qBittorrent settings, state, and application data.
       - /mnt/data/qbittorrent/config:/config
+
+      # Shared download directory.
+      #
+      # This directory is also exposed through File Browser and mounted read-only
+      # by Jellyfin.
       - /mnt/data/downloads:/downloads
 
+  # ============================================================================
+  # File Browser
+  # ============================================================================
+  #
+  # File Browser provides a simple web interface for browsing, uploading,
+  # downloading, renaming, moving, and deleting files in the shared downloads
+  # directory.
+  #
   filebrowser:
     image: filebrowser/filebrowser:latest
     container_name: filebrowser
     restart: unless-stopped
-    ports:
-      - "8888:80"
-    volumes:
-      - /mnt/data/downloads:/srv
-      - /mnt/data/filebrowser:/config
-    command: --database /config/database.db
 
+    ports:
+      # File Browser web interface:
+      #   http://<docker-host-ip>:8888
+      - "8888:80"
+
+    volumes:
+      # Expose downloaded files as File Browser's root directory.
+      #
+      # This mount is read-write, so authenticated File Browser users can modify
+      # or delete downloaded files.
+      - /mnt/data/downloads:/srv
+
+      # Persistent location for the File Browser database.
+      - /mnt/data/filebrowser:/config
+
+    # Store the File Browser user database and settings on the persistent mount.
+    command:
+      - "--database"
+      - "/config/database.db"
+
+  # ============================================================================
+  # Jellyfin
+  # ============================================================================
+  #
+  # Jellyfin scans and organizes media files, retrieves metadata, and streams
+  # content to supported browsers, mobile devices, smart TVs, and media clients.
+  #
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
     restart: unless-stopped
+
     environment:
+      # Retained from the original stack.
+      #
+      # Note that behavior of PUID and PGID depends on the selected image. Verify
+      # directory permissions if Jellyfin cannot access configuration or media.
       PUID: "1000"
       PGID: "1000"
-      TZ: Europe/Sofia
+
+      # Time zone used for logs, schedules, and displayed timestamps.
+      TZ: "Europe/Sofia"
+
     ports:
+      # Jellyfin web interface and HTTP streaming:
+      #   http://<docker-host-ip>:8096
       - "8096:8096"
+
     volumes:
+      # Persistent Jellyfin configuration, users, libraries, and metadata.
       - /mnt/data/jellyfin/config:/config
+
+      # Persistent transcoding and cache data.
       - /mnt/data/jellyfin/cache:/cache
+
+      # Shared media library.
+      #
+      # The read-only flag protects downloaded files from accidental modification
+      # or deletion by Jellyfin.
       - /mnt/data/downloads:/media:ro

@@ -1,0 +1,67 @@
+---
+# Phase 2 - download the Ubuntu 24.04 LXC template + cloud image, then create
+# the Proxmox VM 9000 template used as the clone source for every VM service.
+# Idempotent: each step is a no-op if the artifact already exists.
+
+- name: Bootstrap - Proxmox base artifacts
+  hosts: all
+  gather_facts: false
+  vars:
+    lxc_template: ubuntu-24.04-standard_24.04-2_amd64.tar.zst
+    cloud_image_url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+    cloud_image_dest: /var/lib/vz/template/iso/noble-server-cloudimg-amd64.img
+    template_vm_id: 9000
+    template_vm_name: ubuntu-2404-template
+    template_storage: local-lvm
+  tasks:
+    - name: Refresh pveam catalog
+      ansible.builtin.command: pveam update
+      changed_when: false
+
+    - name: Download Ubuntu 24.04 LXC template
+      ansible.builtin.command:
+        cmd: "pveam download local {{ lxc_template }}"
+      args:
+        creates: "/var/lib/vz/template/cache/{{ lxc_template }}"
+
+    - name: Download Ubuntu cloud image
+      ansible.builtin.get_url:
+        url: "{{ cloud_image_url }}"
+        dest: "{{ cloud_image_dest }}"
+        mode: "0644"
+
+    - name: Check if template VM {{ template_vm_id }} already exists
+      ansible.builtin.command: "qm status {{ template_vm_id }}"
+      register: template_vm_status
+      changed_when: false
+      failed_when: false
+
+    - name: Create template VM {{ template_vm_id }}
+      when: template_vm_status.rc != 0
+      block:
+        - name: qm create
+          ansible.builtin.command:
+            cmd: >-
+              qm create {{ template_vm_id }}
+              --name {{ template_vm_name }}
+              --memory 2048 --cores 2
+              --net0 virtio,bridge=vmbr0
+              --ostype l26
+
+        - name: qm importdisk (from cloud image)
+          ansible.builtin.command:
+            cmd: "qm importdisk {{ template_vm_id }} {{ cloud_image_dest }} {{ template_storage }}"
+
+        - name: qm set (disk + cloudinit + boot + serial console)
+          ansible.builtin.command:
+            cmd: >-
+              qm set {{ template_vm_id }}
+              --scsihw virtio-scsi-pci
+              --scsi0 {{ template_storage }}:vm-{{ template_vm_id }}-disk-0
+              --ide2 {{ template_storage }}:cloudinit
+              --boot order=scsi0
+              --serial0 socket --vga serial0
+
+        - name: Convert to template
+          ansible.builtin.command:
+            cmd: "qm template {{ template_vm_id }}"

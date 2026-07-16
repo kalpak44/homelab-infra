@@ -106,7 +106,7 @@ spec:
           # Only count HTTP events that have a status code and are not 2xx (e.g. 404, 403, 500)
           filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
 
-          # Group events by source IP — each IP gets its own bucket
+          # Group events by source IP - each IP gets its own bucket
           groupby: evt.Meta.source_ip
 
           # capacity 4 + 1 overflow event = 5 non-2xx responses trigger a ban

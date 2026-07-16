@@ -1,30 +1,46 @@
 # homelab-infra
 
-Terraform (state in Cloudflare R2) + Ansible for a Proxmox homelab.
-CI runs on a self-hosted runner on the Proxmox node — all deploys and destroys are triggered manually via GitHub Actions.
+Terraform (state on Cloudflare R2) + Ansible + Flux CD GitOps for a Proxmox homelab. All deploy/destroy runs are triggered manually from GitHub Actions on a self-hosted runner, or locally via `just` recipes.
+
+## Repository layout
+
+```
+homelab-infra/
+├── terraform/     # Proxmox LXCs/VMs + Cloudflare records  →  see terraform/README.md
+├── ansible/       # Post-provisioning for Proxmox services →  see ansible/README.md
+├── gitops/        # Flux CD manifests (k3s workloads)      →  see gitops/README.md
+└── .github/workflows/
+    ├── cloudflare-deploy.yml    | Cloudflare - Deploy
+    ├── cloudflare-destroy.yml   | Cloudflare - Destroy
+    ├── proxmox-deploy.yml       | Proxmox    - Deploy
+    ├── proxmox-destroy.yml      | Proxmox    - Destroy
+    └── ansible-configure.yml    | Ansible    - Configure
+```
+
+Each Terraform resource has its own directory and its own R2 state file. Every service under `terraform/proxmox/` has a matching config recipe under `ansible/proxmox/`. Both layers expose a `just` interface (`just deploy`, `just destroy`, `just configure`) - the same command the workflows run.
+
+Detailed usage lives in the sub-READMEs. This document covers **one-time setup** and the **service catalog**.
 
 ---
 
 ## Setup
 
-### 1. Cloudflare R2 — create bucket and API token
+### 1. Cloudflare R2 - create bucket and API token
 
-1. In the Cloudflare dashboard → **R2** → **Create bucket**, name it (e.g. `homelab-terraform-state`)
-2. Still in **R2**, click **Manage R2 API Tokens → Create Account API Token** (recommended — tied to the account, stays active permanently)
+1. Cloudflare dashboard → **R2** → **Create bucket** (e.g. `homelab-terraform-state`)
+2. **R2 → Manage R2 API Tokens → Create Account API Token**
    - Permissions: **Object Read & Write**
    - Scope: the bucket you just created
-3. After creation Cloudflare shows four values. You need only these two:
+3. Save the shown credentials:
 
    | Shown on screen       | Save as                |
    |-----------------------|------------------------|
    | **Access Key ID**     | `R2_ACCESS_KEY_ID`     |
    | **Secret Access Key** | `R2_SECRET_ACCESS_KEY` |
 
-   > Ignore **Token value** (Cloudflare API, not S3) and jurisdiction-specific endpoints unless your bucket is in a specific jurisdiction.
+4. Copy the **S3 API** URL from the token page (`https://<account-id>.r2.cloudflarestorage.com`) → save as `R2_ENDPOINT`.
 
-4. Copy the **S3 API** URL from the token page — looks like `https://<account-id>.r2.cloudflarestorage.com`. Save it as `R2_ENDPOINT`.
-
-### 2. Proxmox — initial node setup
+### 2. Proxmox - initial node setup
 
 SSH into the node as root and run all commands below.
 
@@ -42,7 +58,7 @@ pveum aclmod / --user terraform@pve --role Terraform
 # Grant role on local storage (required for LXC template management)
 pveum aclmod /storage/local --user terraform@pve --role Terraform
 
-# Prints the token secret — copy it, shown only once
+# Prints the token secret - copy it, shown only once
 pveum user token add terraform@pve terraform --privsep 0
 ```
 
@@ -54,27 +70,21 @@ The username for Terraform is `terraform@pve!terraform`.
 pvesm set local --content images,rootdir,vztmpl,backup,snippets,iso
 ```
 
-#### 2c. Create a runner VM and install the GitHub Actions agent
+#### 2c. Base Proxmox artifacts (unmanaged by Terraform)
 
-This VM is created **manually, once** — it lives on the LAN and has direct access to the Proxmox API, so port 8006 never needs to be exposed to the internet. All future Terraform runs happen through it.
+Because Terraform state is per-service and no dir "owns" the shared base template, these must exist on Proxmox before the first `just deploy proxmox <name>`:
 
-First make sure you have an SSH public key on the Proxmox node to inject into the VM. If you don't have one yet:
+1. Download the Ubuntu LXC template into `local:vztmpl/` (Proxmox UI → node → **local** → **CT Templates** → download `ubuntu-24.04-standard`).
+2. Download the Ubuntu cloud image into `local:iso/` (`noble-server-cloudimg-amd64.img`).
+3. Create VM **9000** (`ubuntu-2404-template`, template mode, 2 CPU / 2 GB / 20 GB disk from the cloud image, one vmbr0 NIC). This is the clone source for every proxmox-vm module usage.
 
-```bash
-# Check for existing keys
-ls ~/.ssh/
+Once these exist, service dirs adopt them by static ID - nothing else references them.
 
-# Generate one if needed
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
-```
+#### 2d. Runner VM and GitHub Actions agent
 
-Or copy your local machine's public key to the node:
+This VM runs the self-hosted runner and lives on the LAN so port 8006 is never exposed to the internet.
 
-```bash
-# Run this on your local machine
-ssh-copy-id root@<proxmox-ip>
-# Then on Proxmox the key will be in ~/.ssh/authorized_keys
-```
+Ensure an SSH key exists on the Proxmox node (`ls ~/.ssh/`; `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""` if not).
 
 Create the runner VM directly from the Ubuntu cloud image:
 
@@ -103,500 +113,190 @@ qm set $RUNNER_ID \
   --ciuser ubuntu
 qm resize $RUNNER_ID scsi0 +10G
 qm start $RUNNER_ID
+qm set 101 --onboot 1     # start automatically after Proxmox reboots
 ```
 
-SSH into the VM once it boots, then install the required tooling:
+SSH in and install tooling:
 
 ```bash
 ssh ubuntu@192.168.1.101
 
-# Install deps first
-sudo apt-get update && sudo apt-get install -y ansible python3-pip git curl unzip
+sudo apt-get update && sudo apt-get install -y ansible python3-pip git curl unzip python3-passlib
 
 # Terraform
 wget -q -O /tmp/tf.zip https://releases.hashicorp.com/terraform/1.15.4/terraform_1.15.4_linux_amd64.zip
 unzip /tmp/tf.zip terraform -d /tmp
 sudo mv /tmp/terraform /usr/local/bin/terraform
+
+# just (installed on-demand by the workflows via extractions/setup-just, but preinstalling is fine)
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | sudo bash -s -- --to /usr/local/bin
 ```
 
-Register the GitHub Actions runner. Go to the repo → **Settings → Actions → Runners → New self-hosted runner**, select **Linux x64**, and copy the token GitHub shows. Then on the VM:
-
-```bash
-mkdir actions-runner && cd actions-runner
-
-# Download
-curl -o actions-runner-linux-x64-2.334.0.tar.gz -L \
-  https://github.com/actions/runner/releases/download/v2.334.0/actions-runner-linux-x64-2.334.0.tar.gz
-
-# Validate
-echo "048024cd2c848eb6f14d5646d56c13a4def2ae7ee3ad12122bee960c56f3d271  actions-runner-linux-x64-2.334.0.tar.gz" | shasum -a 256 -c
-
-# Extract
-tar xzf ./actions-runner-linux-x64-2.334.0.tar.gz
-
-# Configure — paste your token from GitHub
-./config.sh --url https://github.com/<owner>/homelab-infra --token <TOKEN>
-
-# Test it runs (foreground, Ctrl+C to stop)
-./run.sh
-```
-
-Once confirmed working, install as a systemd service so it survives reboots:
+Register the runner: repo → **Settings → Actions → Runners → New self-hosted runner** → Linux x64. Follow the shown steps on the VM, then install as a systemd service:
 
 ```bash
 sudo ./svc.sh install
 sudo ./svc.sh start
-sudo ./svc.sh status
 ```
 
-Enable the VM to start automatically when the Proxmox host reboots (run on the Proxmox node):
+### 3. GitHub - repository secrets
+
+**Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Where to get it |
+|---|---|
+| `R2_ENDPOINT` | R2 S3 API URL, e.g. `https://<id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET_NAME` | Bucket name you created |
+| `R2_ACCESS_KEY_ID` | From R2 token page |
+| `R2_SECRET_ACCESS_KEY` | From R2 token page |
+| `PROXMOX_ENDPOINT` | `https://<proxmox-ip>:8006` |
+| `PROXMOX_USERNAME` | `terraform@pve!terraform` |
+| `PROXMOX_PASSWORD` | Proxmox API token secret from 2a |
+| `SSH_PUBLIC_KEY` | Contents of `~/.ssh/id_ed25519.pub` on Proxmox |
+| `SSH_PRIVATE_KEY` | Contents of `~/.ssh/id_ed25519` on Proxmox (Ansible SSH auth) |
+| `HAPROXY_PUBLIC_IP` | Your WAN IP - used for public Cloudflare A records |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below) |
+| `LETSENCRYPT_EMAIL` | Email for Let's Encrypt registration |
+| `ADGUARD_USERNAME`, `ADGUARD_PASSWORD` | AdGuard admin creds |
+| `VAULT_USERNAME`, `VAULT_PASSWORD` | Vault admin creds (alphanumeric) |
+| `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD` | Postgres bootstrap creds |
+| `PGADMIN_EMAIL`, `PGADMIN_PASSWORD` | pgAdmin admin creds |
+| `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | Redis + Commander UI creds |
+| `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | RabbitMQ admin creds |
+| `HAPROXY_STATS_USER`, `HAPROXY_STATS_PASSWORD` | HAProxy stats page creds |
+| `FLUX_GITHUB_TOKEN` | GitHub PAT with `repo` scope - Flux CD bootstrap |
+
+### 4. Cloudflare API token - required scopes
+
+The single `CLOUDFLARE_API_TOKEN` needs:
+
+| Type | Resource | Permission |
+|---|---|---|
+| Zone | DNS | Edit |
+| Account | Email Routing Addresses | Edit + Read |
+| Zone | Email Routing Rules | Edit + Read |
+| Zone | Zone Settings | Edit + Read |
+
+Zone resource is scoped to your domain (e.g. `pavel-usanli.online`).
+
+### 5. Proxmox - Let's Encrypt cert for the web UI
+
+Replace the default self-signed cert with Let's Encrypt via Cloudflare DNS-01:
 
 ```bash
-qm set 101 --onboot 1
-```
-
-#### Updating the runner
-
-The runner agent **auto-updates itself** when GitHub requires a newer version — no action needed for agent updates.
-
-For OS-level updates (security patches):
-
-```bash
-ssh ubuntu@192.168.1.101
-sudo apt update && sudo apt upgrade -y
-```
-
-For a full VM rebuild (e.g. major OS version):
-
-```bash
-ssh ubuntu@192.168.1.101
-cd actions-runner
-
-# Stop and unregister the old runner
-sudo ./svc.sh stop
-sudo ./svc.sh uninstall
-./config.sh remove --token <TOKEN>   # token from Settings → Actions → Runners → remove
-```
-
-Then destroy the VM, create a new one from the runner setup steps above, and re-register with GitHub.
-
-### 3. GitHub — add repository secrets
-
-Go to **Settings → Secrets and variables → Actions → New repository secret** and add:
-
-| Secret                    | Where to get it                                                              |
-|---------------------------|------------------------------------------------------------------------------|
-| `R2_ENDPOINT`             | S3 API URL from the R2 token page, e.g. `https://<id>.r2.cloudflarestorage.com` |
-| `R2_BUCKET_NAME`          | Bucket name you created, e.g. `homelab-terraform-state`                      |
-| `R2_ACCESS_KEY_ID`        | Access Key ID from the R2 token page                                         |
-| `R2_SECRET_ACCESS_KEY`    | Secret Access Key from the R2 token page                                     |
-| `PROXMOX_ENDPOINT`        | `https://<proxmox-ip>:8006`                                                  |
-| `PROXMOX_USERNAME`        | `terraform@pve!terraform`                                                    |
-| `PROXMOX_PASSWORD`        | Proxmox API token secret from step 2a                                        |
-| `SSH_PUBLIC_KEY`          | Contents of `~/.ssh/id_ed25519.pub` on the Proxmox node                      |
-| `SSH_PRIVATE_KEY`         | Contents of `~/.ssh/id_ed25519` on the Proxmox node (used by Ansible)        |
-| `LETSENCRYPT_EMAIL`        | Email address for Let's Encrypt account registration                         |
-| `ADGUARD_USERNAME`        | AdGuard admin username of your choice                                         |
-| `ADGUARD_PASSWORD`        | AdGuard admin password of your choice                                         |
-| `VAULT_USERNAME`          | Vault admin username — alphanumeric only, no `@` or special chars            |
-| `VAULT_PASSWORD`          | Vault admin password of your choice                                           |
-| `POSTGRESQL_DB`           | PostgreSQL database name to create                                            |
-| `POSTGRESQL_USER`         | PostgreSQL application user to create                                         |
-| `POSTGRESQL_PASSWORD`     | PostgreSQL application user password                                          |
-| `PGADMIN_EMAIL`           | pgAdmin admin login email of your choice                                      |
-| `PGADMIN_PASSWORD`        | pgAdmin admin password of your choice                                         |
-| `REDIS_PASSWORD`          | Redis auth password                                                           |
-| `REDIS_COMMANDER_USER`    | Redis Commander web UI username                                               |
-| `REDIS_COMMANDER_PASSWORD`| Redis Commander web UI password                                               |
-| `HAPROXY_STATS_USER`      | HAProxy stats page username of your choice                                    |
-| `HAPROXY_STATS_PASSWORD`  | HAProxy stats page password of your choice                                    |
-| `CLOUDFLARE_API_TOKEN`    | Cloudflare API token with `Zone:DNS:Edit` permission for `pavel-usanli.online` — used by Terraform to manage DNS records and by cert-manager for Let's Encrypt DNS-01 |
-| `FLUX_GITHUB_TOKEN`       | GitHub PAT with `repo` scope — used by Flux CD to read/write this repository during bootstrap |
-| `HAPROXY_PUBLIC_IP`       | Public WAN IP of your router/HAProxy — used by Terraform to register public-facing `A` records in Cloudflare (apex, www, mite-assistant) |
-
-### 4. Proxmox — TLS certificate via Let's Encrypt
-
-The default Proxmox cert is signed by its own internal CA, which browsers don't trust. Replace it with a Let's Encrypt cert using the Cloudflare DNS-01 challenge — no need to expose port 80.
-
-**Get a Cloudflare API token** — My Profile → API Tokens → Create Token → Edit zone DNS → scope to `your-domain.com`. Copy the token.
-
-The Proxmox web UI is available at `https://192.168.1.50:8006` or `https://proxmox.internal.pavel-usanli.online:8006`.
-
-**Run on the Proxmox node:**
-
-```bash
-# Register a Let's Encrypt account (once)
 pvenode acme account register default your@email.com \
   --directory https://acme-v02.api.letsencrypt.org/directory
 
-# Add Cloudflare DNS plugin (--data expects a file, not inline value)
 echo "CF_Token=<cloudflare-api-token>" > /tmp/cf.env
 pvenode acme plugin add dns cloudflare --api cf --data /tmp/cf.env
 rm /tmp/cf.env
 
-# Set the domain on this node
 pvenode config set \
   --acme account=default \
   --acmedomain0 domain=<proxmox-hostname>.<your-domain>,plugin=cloudflare
 
-# Issue the certificate (~30 seconds)
 pvenode acme cert order
 ```
 
-Proxmox renews the certificate automatically via a built-in systemd timer — nothing else is needed.
-
-### 5. GitHub — create environments
-
-Go to **Settings → Environments** and create two environments: `common` and `prod`.
-
-Add a required reviewer to `prod` to require manual approval before running prod deploys.
+Renewal is automatic via a built-in systemd timer.
 
 ---
 
 ## Services
 
-### DPI Monitor (WiFi AP + ntopng)
+All services live behind `*.internal.pavel-usanli.online` (LAN only, unproxied) or `*.pavel-usanli.online` (public, proxied through Cloudflare). Deploy order: Terraform (creates the box + DNS record) → Ansible (configures the service).
 
-WiFi access point + deep packet inspection running in a privileged LXC container (`common` env, `192.168.1.115`).
-
-**Secrets required:** `AP_SSID`, `AP_PASSWORD`
-
-**Deploy:** See prerequisites below, then run **Deploy** → `dpi`
-
-**Prerequisites (one-time manual step):** Create the `vmbr2` bridge on the Proxmox host before running the deploy pipeline:
-- Proxmox UI → **proxmox** node → **System** → **Network** → **Create** → **Linux Bridge**
-- Name: `vmbr2`, no bridge ports, no IP address
-
-**What gets deployed:**
-- **Proxmox host:** `wlap0` virtual AP interface (from `wlp3s0`/`phy0`) + `hostapd` WiFi access point
-- **LXC container:** `dnsmasq` DHCP server, `ntopng` DPI web UI, `iptables` NAT for WiFi clients
-
-**Network layout:**
-```
-WiFi devices (10.10.10.10–200)
-    ↓ connect to AP (SSID from AP_SSID secret)
-wlap0 on Proxmox host (10.10.10.1)
-    ↓ proxy ARP + routing
-LXC dpi eth1 (10.10.10.2) — ntopng monitors here
-LXC dpi eth0 (192.168.1.115) — NAT to internet
-```
-
-ntopng web UI is available at `http://ntopng.internal.pavel-usanli.online:3000` (or `http://192.168.1.115:3000`). Default login: `admin` / `admin` — change on first login.
-
-**Secrets required:** `AP_SSID`, `AP_PASSWORD` — add to GitHub repo secrets before deploying.
-
----
-
-### AdGuard Home
-
-DNS ad-blocker running in an LXC container (`common` env, `192.168.1.2`).
-
-**Secrets required:** `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`
-
-**Deploy:** Run **Deploy** → `adguard`
-
-AdGuard Home is available at `https://adguard.internal.pavel-usanli.online` (or `http://192.168.1.2` before TLS is provisioned). SSH is enabled on port 22 with key-only auth. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
-
-**Point your router's DNS to `192.168.1.2`** (or set it per-device) to start filtering.
-
-**To update AdGuard version** — bump `adguard_version` in `ansible/roles/adguard/defaults/main.yml` and re-run the deploy.
-
-### HashiCorp Vault
-
-Secret manager running in an LXC container (`common` env, `192.168.1.3`).
-
-**Secrets required:** `VAULT_USERNAME`, `VAULT_PASSWORD`
-
-**Deploy:** Run **Deploy** → `vault`
-
-The playbook initialises Vault (if not already done), unseals it, enables userpass auth, and creates the admin user. Vault is available at `http://192.168.1.3:8200` or `http://vault.internal.pavel-usanli.online:8200`.
-
-> The unseal key and root token are saved to `/root/vault-init.json` on the container — back this file up somewhere safe.
-
-**To update Vault version** — bump `vault_version` in `ansible/roles/vault/defaults/main.yml` and re-run the deploy.
-
-### PostgreSQL
-
-Database server running in an LXC container (`common` env, `192.168.1.4`).
-
-**Secrets required:** `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`
-
-**Deploy:** Run **Deploy** → `postgres`
-
-PostgreSQL 16 listens on `192.168.1.4:5432` (also reachable as `postgres.internal.pavel-usanli.online:5432`). The application user and database are created automatically. All hosts on `192.168.1.0/24` can connect using password auth (scram-sha-256).
-
-### pgAdmin
-
-Web-based PostgreSQL management UI running on the same LXC container as PostgreSQL (`common` env, `192.168.1.4`).
-
-**Secrets required:** `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`
-
-**Deploy:** Run **Deploy** → `postgres`
-
-pgAdmin is available at `https://pgadmin.internal.pavel-usanli.online` (or `http://192.168.1.4` before TLS is provisioned — HTTP redirects to HTTPS once deployed). A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge. To connect to PostgreSQL, add a new server in the UI:
-- **Host:** `192.168.1.4`
-- **Port:** `5432`
-- **Username / Password:** the `POSTGRESQL_USER` / `POSTGRESQL_PASSWORD` secrets above
-
-### Redis
-
-Redis + Redis Commander web UI running in a single LXC container (`common` env, `192.168.1.6`).
-
-**Secrets required:** `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD`
-
-**Deploy:** Run **Deploy** → `redis`
-
-Redis listens on `192.168.1.6:6379` or `redis.internal.pavel-usanli.online:6379` (password-protected). Redis Commander is available at `http://192.168.1.6:8081` or `http://redis.internal.pavel-usanli.online:8081`.
-
-### RabbitMQ
-
-Message broker running in an LXC container (`common` env, `192.168.1.8`).
-
-**Secrets required:** `RABBITMQ_USER`, `RABBITMQ_PASSWORD`
-
-**Deploy:** Run **Deploy** → `rabbitmq`
-
-RabbitMQ AMQP listens on `192.168.1.8:5672` (also reachable as `rabbitmq.internal.pavel-usanli.online:5672`). The management UI is available at `https://rabbitmq.internal.pavel-usanli.online` (or `http://192.168.1.8:15672` before TLS is provisioned). A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
-
-### Portainer
-
-Docker management UI running in a VM (`common` env, `192.168.1.7`).
-
-**Secrets required:** none
-
-**Deploy:** Run **Deploy** → `portainer`
-
-Portainer CE runs as a Docker container inside the VM. nginx listens on port 80 and 443 — HTTP requests are force-redirected to HTTPS. A Let's Encrypt certificate is issued automatically via Cloudflare DNS-01 challenge and renewed by certbot's systemd timer.
-
-Portainer is available at `https://portainer.internal.pavel-usanli.online` (or `http://192.168.1.7` before TLS is provisioned). On first visit, Portainer presents a setup wizard — create the admin account there. SSH is enabled on port 22 with key-only auth.
-
-> If the setup wizard shows a timeout message, SSH into the VM and run `sudo docker restart portainer`, then visit the UI within 5 minutes.
-
-### HAProxy (prod load balancer)
-
-External load balancer for the k3s cluster, running in an LXC container (`prod` env, `192.168.1.109`).
-
-**Secrets required:** `HAPROXY_STATS_USER`, `HAPROXY_STATS_PASSWORD`
-
-**Deploy:** Run **Deploy** → `haproxy`
-
-HAProxy stats are available at `http://192.168.1.109:8404/stats`. Traffic flow:
-- `:80` — HTTP forwarded to Traefik at `192.168.1.120:80`
-- `:443` — TCP passthrough to Traefik at `192.168.1.120:443` (TLS terminated by Traefik)
-
-### Kubernetes cluster (prod)
-
-k3s two-node cluster with an external HAProxy load balancer and NFS storage, all in the `prod` env.
-
-| Host | Type | IP | Spec | Role |
+| Service | Where | IP | Terraform dir | Ansible dir |
 |---|---|---|---|---|
-| `k3s-1` | VM | 192.168.1.110 | 4 CPU / 8 GB / 40 GB | k3s control plane |
-| `k3s-2` | VM | 192.168.1.111 | 4 CPU / 8 GB / 40 GB | k3s worker |
-| `haproxy` | LXC | 192.168.1.109 | 1 CPU / 512 MB / 8 GB | HAProxy — external load balancer |
-| `nfs` | VM | 192.168.1.108 | 2 CPU / 2 GB / 20 GB OS + 512 GB data | NFS server — persistent volume storage |
-| MetalLB pool | — | 192.168.1.120–130 | — | Virtual IPs for LoadBalancer services |
+| AdGuard Home | LXC | 192.168.1.2 | `proxmox/adguard-lxc` | `proxmox/adguard-lxc` |
+| Vault | LXC | 192.168.1.3 | `proxmox/vault-lxc` | `proxmox/vault-lxc` |
+| PostgreSQL + pgAdmin | LXC | 192.168.1.4 | `proxmox/postgres-lxc` | `proxmox/postgres-lxc` |
+| Redis + Commander | LXC | 192.168.1.6 | `proxmox/redis-lxc` | `proxmox/redis-lxc` |
+| Portainer | VM | 192.168.1.7 | `proxmox/portainer-vm` | `proxmox/portainer-vm` |
+| RabbitMQ | LXC | 192.168.1.8 | `proxmox/rabbitmq-lxc` | `proxmox/rabbitmq-lxc` |
+| NFS server (k3s PVs) | VM | 192.168.1.108 | `proxmox/nfs-vm` | `proxmox/nfs-vm` |
+| HAProxy (public ingress) | LXC | 192.168.1.109 | `proxmox/haproxy-lxc` | `proxmox/haproxy-lxc` |
+| k3s control plane | VM | 192.168.1.110 | `proxmox/k3s-cluster` | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
+| k3s worker | VM | 192.168.1.111 | `proxmox/k3s-cluster` | (same) |
+| Flux CD bootstrap | - | (on k3s) | - | `proxmox/k3s-cluster` (`flux-install.yml`) |
+| Cloudflare email routing | Cloudflare | - | `cloudflare/shared/cloudflare-email` | - |
 
-**Traffic flow:**
-```
-Internet → HAProxy (192.168.1.109) → MetalLB IP (192.168.1.120) → Traefik → apps
-```
+### Per-service notes
 
-**In-cluster components** (deployed via Flux CD, watching `gitops/clusters/homelab/`):
-- **MetalLB** — assigns IPs from the `192.168.1.120–130` pool to LoadBalancer services
-- **Traefik** — ingress controller at `192.168.1.120`, TLS via Cloudflare DNS-01 Let's Encrypt — [`https://traefik.internal.pavel-usanli.online`](https://traefik.internal.pavel-usanli.online)
-- **NFS provisioner** — StorageClass `nfs` backed by `192.168.1.108:/srv/nfs/k8s`
-- **Flux CD** — GitOps operator
-- **External Secrets Operator** — syncs secrets from Vault (`192.168.1.3`) into k8s secrets
-- **CrowdSec** — intrusion detection + bouncer for Traefik — UI at [`https://crowdsec.internal.pavel-usanli.online`](https://crowdsec.internal.pavel-usanli.online)
+**AdGuard Home** - Point your router's DNS to `192.168.1.2` (or set it per-device). UI at `https://adguard.internal.pavel-usanli.online`. To bump versions edit `ansible/proxmox/adguard-lxc/roles/adguard/defaults/main.yml`.
 
-> **One-time setup:** after first deploy, go to [app.crowdsec.net](https://app.crowdsec.net) → **Security Engines** and accept the enrollment request. The engine enrolls automatically on every deploy using the `CROWDSEC_ENROLLMENT_KEY` stored in Vault under `secret/crowdsec-secrets`. Once accepted, all five console options (including `console_management` for central blocklist sync) are enabled automatically on restart.
+**Vault** - Playbook initialises, unseals, enables userpass auth, and creates the admin. Unseal key and root token are saved to `/root/vault-init.json` inside the container - **back this file up**. UI at `http://vault.internal.pavel-usanli.online:8200`.
 
-**Apps:**
-- **Private home page** — internal dashboard — [`https://home.internal.pavel-usanli.online`](https://home.internal.pavel-usanli.online)
+**PostgreSQL + pgAdmin** - Both roles run in a single `just configure postgres-lxc`. Postgres listens on `192.168.1.4:5432`; pgAdmin at `https://pgadmin.internal.pavel-usanli.online`. All hosts on `192.168.1.0/24` connect with password auth (scram-sha-256).
 
-**Deploy:**
+**Redis** - Redis on `192.168.1.6:6379`, Commander UI at `http://redis.internal.pavel-usanli.online:8081`.
 
-1. Run **Deploy** → `haproxy` (creates LXC + configures HAProxy)
-2. Run **Deploy** → `nfs` (creates VM + configures NFS)
-3. Run **Deploy** → `k3s` (creates VMs + installs k3s)
-4. Run **Deploy** → `k3s/flux` (bootstraps Flux CD + deploys all in-cluster components)
+**RabbitMQ** - AMQP on `192.168.1.8:5672`. Management UI at `https://rabbitmq.internal.pavel-usanli.online`.
 
-**kubectl access from your local machine** (on the `192.168.1.0/24` network):
+**Portainer** - Docker + nginx + certbot inside the VM. UI at `https://portainer.internal.pavel-usanli.online`. First visit shows a setup wizard - create the admin there within 5 minutes of the first launch (`sudo docker restart portainer` to re-open if it times out).
+
+**HAProxy** - Public traffic front-door for k3s. Stats at `http://192.168.1.109:8404/stats`. Traffic flow: `:80 → Traefik :80 at 192.168.1.120`; `:443 → TCP passthrough to Traefik at 192.168.1.120:443`.
+
+**k3s cluster** - Two-node cluster (control plane + worker). `just configure k3s-cluster` runs the 3-phase bootstrap (prep nodes → install server on k3s-1 → join k3s-2). Then `just configure k3s-cluster/flux` installs Flux CD, which reconciles everything under `gitops/clusters/homelab/`.
+
+To use `kubectl` locally on the `192.168.1.0/24` network:
 
 ```bash
-# Copy kubeconfig from the control plane node
 scp ubuntu@192.168.1.110:/etc/rancher/k3s/k3s.yaml ~/.kube/homelab.yaml
-
-# Point it at the node's LAN IP (k3s defaults to 127.0.0.1)
 sed -i '' 's/127.0.0.1/192.168.1.110/' ~/.kube/homelab.yaml
-
-# Use it
 export KUBECONFIG=~/.kube/homelab.yaml
 kubectl get nodes
 ```
 
-### Cloudflare Email Routing
+**Cloudflare email routing** - `contact@pavel-usanli.online` forwards to your Gmail. First deploy triggers a verification email from Cloudflare - click the link in the forwarded message to activate.
 
-Email alias managed entirely in Cloudflare — no server required.
-
-`contact@pavel-usanli.online` forwards to `pavel.usanli@gmail.com`.
-
-**Deploy:** Run **Deploy** → `cloudflare-email`
-
-> After the first deploy, Cloudflare sends a one-time verification email to `pavel.usanli@gmail.com`. Click the link to activate routing. MX records are managed automatically by Cloudflare.
-
-**Required API token permissions** — the shared `CLOUDFLARE_API_TOKEN` must include these in addition to `Zone:DNS:Edit`:
-
-| Type | Resource | Permission |
-|---|---|---|
-| Account | Email Routing Addresses | Edit |
-| Account | Email Routing Addresses | Read |
-| Zone | Email Routing Rules | Edit |
-| Zone | Email Routing Rules | Read |
-| Zone | Zone Settings | Edit |
-| Zone | Zone Settings | Read |
-
-Edit the token in **Cloudflare → My Profile → API Tokens** and add all six rows. The token value stays the same — no GitHub secret update needed.
-
-#### Sending from `contact@pavel-usanli.online` via Gmail
-
-To reply or compose from this address inside Gmail, add it as a "Send as" address backed by Mailjet SMTP.
-
-**Gmail → All Settings → Accounts and Import → Send mail as → Add another email address**
-
-| Field | Value |
-|---|---|
-| Name | Pavel Usanli (or whatever recipients should see) |
-| Email | `contact@pavel-usanli.online` |
-| SMTP Server | `in-v3.mailjet.com` |
-| Port | `587` |
-| Username | Mailjet API Key |
-| Password | Mailjet Secret Key |
-| Connection | TLS |
-
-Gmail will send a verification email to `contact@pavel-usanli.online` — it arrives in your Gmail inbox (forwarded by Cloudflare Email Routing). Click the link to confirm. After that you can select `contact@pavel-usanli.online` as the From address when composing.
-
-#### DMARC — recommended DNS record
-
-Add a TXT record in Cloudflare for `_dmarc.pavel-usanli.online`:
+For sending from `contact@…` via Gmail: **Gmail → Settings → Accounts → Send mail as → Add**, backed by Mailjet SMTP (`in-v3.mailjet.com:587`, TLS). Gmail sends its own verification email; approve via the forwarded link. Optional DMARC record:
 
 ```
-Content: v=DMARC1; p=none; rua=mailto:contact@pavel-usanli.online
+TXT _dmarc.pavel-usanli.online  →  v=DMARC1; p=none; rua=mailto:contact@pavel-usanli.online
 ```
 
-What each part means:
-
-| Field | Value | Meaning |
-|---|---|---|
-| `v=DMARC1` | version | Identifies this as a DMARC record |
-| `p=none` | policy | Monitor only — don't reject or quarantine failing emails; safe starting point |
-| `rua=mailto:...` | reporting URI | Receiving servers send aggregate reports here so you can see who is sending mail on behalf of your domain |
-
-Start with `p=none` to collect data. Once reports confirm all legitimate senders pass SPF/DKIM, tighten to `p=quarantine` (spam-folder) and eventually `p=reject` (drop).
+Start with `p=none` and tighten to `p=quarantine` / `p=reject` after reports confirm all senders pass SPF/DKIM.
 
 ---
 
-## CI behaviour
+## In-cluster services (Flux CD)
 
-| Event           | Workflow       | What it does                                       |
-|-----------------|----------------|----------------------------------------------------|
-| Manual dispatch | `deploy.yml`   | Terraform apply + Ansible for the selected service |
-| Manual dispatch | `destroy.yml`  | Terraform destroy for the selected service         |
+Not managed by Terraform or Ansible - Flux reconciles these from `gitops/clusters/homelab/`. See [`gitops/README.md`](gitops/README.md) for the full list.
 
-### Deploy options
-
-| Option | Terraform | Ansible playbooks |
-|---|---|---|
-| `all` | apply everything | adguard → vault → postgres → redis → portainer → haproxy → nfs → k3s |
-| `proxmox-dns` | apply everything | skipped |
-| `adguard` | apply everything | adguard |
-| `vault` | apply everything | vault |
-| `postgres` | apply everything | postgres |
-| `redis` | apply everything | redis |
-| `portainer` | apply everything | portainer |
-| `haproxy` | apply everything | haproxy |
-| `nfs` | apply everything | nfs |
-| `k3s` | apply everything | k3s |
-| `k3s/flux` | skipped | flux |
-| `k3s/flux/personal-web-page` | `cloudflare_record.personal_web_page_apex` + `www` (requires `HAPROXY_PUBLIC_IP`) | skipped |
-| `k3s/flux/private-home-page` | `cloudflare_record.private_home_page` | skipped |
-| `k3s/flux/mite-assistant-mcp` | `cloudflare_record.mite_assistant` (requires `HAPROXY_PUBLIC_IP`) | skipped |
-| `cloudflare-email` | `module.cloudflare_email` (targeted) | skipped |
-
-> Ansible always uses the single `inventories/homelab.yml` inventory.
-> `k3s/flux/*` options run a targeted Terraform apply for the app's Cloudflare DNS record only — no Ansible step.
-
-### Destroy options
-
-| Option | Terraform targets |
-|---|---|
-| `all` | entire state |
-| `proxmox-dns` | `cloudflare_record.proxmox` |
-| `adguard` | `module.adguard` |
-| `vault` | `module.vault` |
-| `postgres` | `module.postgres` |
-| `redis` | `module.redis` |
-| `portainer` | `module.portainer` |
-| `haproxy` | `module.haproxy` |
-| `nfs` | `module.nfs` |
-| `k3s` | `module.k3s` |
-| `cloudflare-email` | `module.cloudflare_email` |
+Highlights:
+- **MetalLB** - LoadBalancer IP pool `192.168.1.120–130`
+- **Traefik** - ingress at `192.168.1.120`, TLS via Cloudflare DNS-01
+- **cert-manager** - issues Let's Encrypt certs
+- **External Secrets Operator** - syncs Vault → k8s secrets
+- **CrowdSec** - IDS/IPS + AppSec middleware
+- **NFS provisioner** - StorageClass `nfs` backed by `192.168.1.108:/srv/nfs/k8s`
 
 ---
 
-## Local scripts
+## CI
 
-Local equivalents of the GitHub Actions workflows. Secrets are read from system environment variables (`~/.zshrc` or `~/.zshenv`).
+Five workflows, all `workflow_dispatch` (manual), all running on the self-hosted runner:
 
-### deploy
-
-```bash
-.scripts/deploy.sh <service> [--no-refresh]
-```
-
-| `<service>` | Terraform | Ansible |
+| Workflow | Picks | Runs |
 |---|---|---|
-| `all` | full apply | all playbooks in order |
-| `proxmox-dns` | `cloudflare_record.proxmox` | — |
-| `adguard` | `module.adguard` | `adguard.yml` |
-| `vault` | `module.vault` | `vault.yml` |
-| `postgres` | `module.postgres` | `postgres.yml` |
-| `redis` | `module.redis` | `redis.yml` |
-| `portainer` | `module.portainer` | `portainer.yml` |
-| `haproxy` | `module.haproxy` | `haproxy.yml` |
-| `nfs` | `module.nfs` | `nfs.yml` |
-| `k3s` | `module.k3s` | `k3s.yml` |
-| `k3s/flux` | — | `flux.yml` |
-| `k3s/flux/personal-web-page` | DNS record only | — |
-| `k3s/flux/private-home-page` | DNS record only | — |
-| `k3s/flux/mite-assistant-mcp` | DNS record only | — |
-| `k3s/flux/crowdsec-web-ui` | DNS record only | — |
-| `k3s/flux/traefik` | DNS record only | — |
-| `k3s/flux/headlamp` | DNS record only | — |
-| `k3s/flux/capacity-planner` | DNS record only | — |
-| `k3s/flux/shopify-gpt-assistant` | DNS record only | — |
-| `cloudflare-email` | `module.cloudflare_email` (targeted) | — |
+| `cloudflare-deploy.yml` | 22 cloudflare/ dirs | `just deploy cloudflare <resource>` |
+| `cloudflare-destroy.yml` | 22 cloudflare/ dirs | `just destroy cloudflare <resource>` |
+| `proxmox-deploy.yml` | 9 proxmox/ services | `just deploy proxmox <resource>` |
+| `proxmox-destroy.yml` | 9 proxmox/ services | `just destroy proxmox <resource>` |
+| `ansible-configure.yml` | 9 services + `k3s-cluster/flux` | `just configure <resource>` |
 
-`--no-refresh` skips Terraform state refresh before apply.
+Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [`terraform/README.md`](terraform/README.md) and [`ansible/README.md`](ansible/README.md).
 
-### destroy
+## Local development
+
+Same commands the workflows run:
 
 ```bash
-.scripts/destroy.sh <service>
+cd terraform && just list                              # every deployable
+cd terraform && just deploy proxmox adguard-lxc        # provision the LXC
+cd ansible   && just configure adguard-lxc             # then configure it
+cd terraform && just destroy proxmox adguard-lxc       # tear down
 ```
 
-Prompts for confirmation before running. No Ansible step — destroying the Terraform module removes the VM/LXC.
-
-| `<service>` | Terraform target |
-|---|---|
-| `all` | entire state |
-| `proxmox-dns` | `cloudflare_record.proxmox` |
-| `adguard` | `module.adguard` |
-| `vault` | `module.vault` |
-| `postgres` | `module.postgres` |
-| `redis` | `module.redis` |
-| `portainer` | `module.portainer` |
-| `haproxy` | `module.haproxy` |
-| `nfs` | `module.nfs` |
-| `k3s` | `module.k3s` |
-| `cloudflare-email` | `module.cloudflare_email` |
+Locally you need the same env vars listed in the workflow files (`~/.zshrc` or `~/.zshenv` works).

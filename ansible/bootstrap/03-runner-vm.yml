@@ -1,0 +1,154 @@
+---
+# Phase 3 - create VM 101 (github-runner) from the Ubuntu cloud image,
+# install ansible/terraform/just, and print instructions for the (interactive)
+# GitHub Actions runner registration.
+#
+# Idempotent: skips VM creation if 101 already exists; tool installs are
+# idempotent themselves.
+
+- name: Bootstrap - create runner VM on Proxmox
+  hosts: all
+  gather_facts: false
+  vars:
+    runner_id: 101
+    runner_ip: 192.168.1.101
+    runner_gw: 192.168.1.1
+    runner_storage: local-lvm
+    cloud_image_dest: /var/lib/vz/template/iso/noble-server-cloudimg-amd64.img
+    ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
+  tasks:
+    - name: Verify local SSH pubkey exists on controller
+      delegate_to: localhost
+      become: false
+      ansible.builtin.stat:
+        path: "{{ ssh_public_key_file }}"
+      register: local_pubkey_stat
+      failed_when: not local_pubkey_stat.stat.exists
+
+    - name: Read local SSH pubkey
+      delegate_to: localhost
+      become: false
+      ansible.builtin.slurp:
+        src: "{{ ssh_public_key_file }}"
+      register: local_pubkey
+
+    - name: Upload SSH pubkey to Proxmox
+      ansible.builtin.copy:
+        content: "{{ local_pubkey.content | b64decode }}"
+        dest: /tmp/runner-key.pub
+        mode: "0644"
+
+    - name: Check if runner VM {{ runner_id }} already exists
+      ansible.builtin.command: "qm status {{ runner_id }}"
+      register: runner_vm_status
+      changed_when: false
+      failed_when: false
+
+    - name: Create runner VM {{ runner_id }}
+      when: runner_vm_status.rc != 0
+      block:
+        - name: qm create
+          ansible.builtin.command:
+            cmd: >-
+              qm create {{ runner_id }}
+              --name github-runner
+              --memory 2048 --cores 2
+              --net0 virtio,bridge=vmbr0
+              --ostype l26
+
+        - name: qm importdisk
+          ansible.builtin.command:
+            cmd: "qm importdisk {{ runner_id }} {{ cloud_image_dest }} {{ runner_storage }}"
+
+        - name: qm set (disk + cloud-init + IP + SSH key)
+          ansible.builtin.command:
+            cmd: >-
+              qm set {{ runner_id }}
+              --scsihw virtio-scsi-pci
+              --scsi0 {{ runner_storage }}:vm-{{ runner_id }}-disk-0
+              --ide2 {{ runner_storage }}:cloudinit
+              --boot order=scsi0
+              --serial0 socket --vga serial0
+              --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }}
+              --sshkeys /tmp/runner-key.pub
+              --ciuser ubuntu
+              --onboot 1
+
+        - name: qm resize (+10G)
+          ansible.builtin.command:
+            cmd: "qm resize {{ runner_id }} scsi0 +10G"
+
+        - name: qm start
+          ansible.builtin.command:
+            cmd: "qm start {{ runner_id }}"
+
+    - name: Wait for runner VM SSH to come up
+      ansible.builtin.wait_for:
+        host: "{{ runner_ip }}"
+        port: 22
+        timeout: 300
+
+    - name: Register runner in dynamic inventory
+      ansible.builtin.add_host:
+        name: github-runner
+        ansible_host: "{{ runner_ip }}"
+        ansible_user: ubuntu
+
+- name: Bootstrap - install tooling on the runner VM
+  hosts: github-runner
+  gather_facts: true
+  become: true
+  vars:
+    terraform_version: 1.15.4
+  tasks:
+    - name: Install apt packages
+      ansible.builtin.apt:
+        name:
+          - ansible
+          - python3-pip
+          - python3-passlib
+          - git
+          - curl
+          - unzip
+        state: present
+        update_cache: true
+
+    - name: Check for terraform
+      ansible.builtin.stat:
+        path: /usr/local/bin/terraform
+      register: terraform_bin
+
+    - name: Install Terraform {{ terraform_version }}
+      when: not terraform_bin.stat.exists
+      ansible.builtin.unarchive:
+        src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+        dest: /usr/local/bin
+        mode: "0755"
+        remote_src: true
+
+    - name: Install just
+      ansible.builtin.shell:
+        cmd: >-
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh
+          | bash -s -- --to /usr/local/bin
+      args:
+        creates: /usr/local/bin/just
+
+    - name: Print next steps
+      ansible.builtin.debug:
+        msg: |
+          ================================================================
+          Runner VM ready at {{ ansible_host }}. Tooling installed.
+
+          GitHub Actions runner registration (INTERACTIVE, do manually):
+
+            1. Repo → Settings → Actions → Runners → New self-hosted runner
+               Select Linux x64 and copy the token.
+            2. ssh ubuntu@{{ ansible_host }}
+            3. mkdir actions-runner && cd actions-runner
+               curl -o runner.tar.gz -L \
+                 https://github.com/actions/runner/releases/download/v2.334.0/actions-runner-linux-x64-2.334.0.tar.gz
+               tar xzf runner.tar.gz
+               ./config.sh --url https://github.com/<owner>/homelab-infra --token <TOKEN>
+               sudo ./svc.sh install && sudo ./svc.sh start
+          ================================================================

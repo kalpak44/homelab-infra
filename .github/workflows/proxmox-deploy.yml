@@ -1,0 +1,40 @@
+name: Proxmox - Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource:
+        description: Which resource under terraform/proxmox/ to apply
+        required: true
+        type: choice
+        options:
+          - adguard-lxc
+          - vault-lxc
+          - postgres-lxc
+          - redis-lxc
+          - rabbitmq-lxc
+          - haproxy-lxc
+          - nfs-vm
+          - portainer-vm
+          - k3s-cluster
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
+      TF_VAR_proxmox_username: ${{ secrets.PROXMOX_USERNAME }}
+      TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just deploy proxmox "${{ inputs.resource }}"

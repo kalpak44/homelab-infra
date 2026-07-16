@@ -1,0 +1,102 @@
+# Homelab Ansible
+#
+# Usage:
+#   just bootstrap <ip>                # one-time Proxmox setup (see bootstrap/README.md)
+#   just configure <resource>          # per-service config, e.g. just configure adguard-lxc
+#   just configure k3s-cluster/flux    # runs the flux-install.yml variant
+#   just list                          # show all configurable resources
+#
+# Env vars (workflow injects them; locally come from your shell):
+#   CLOUDFLARE_API_TOKEN, LETSENCRYPT_EMAIL, PROXMOX_DOMAIN, SSH_PUBLIC_KEY_FILE   (bootstrap)
+#   ADGUARD_USERNAME/PASSWORD, VAULT_USERNAME/PASSWORD,
+#   POSTGRESQL_USER/PASSWORD/DB, PGADMIN_EMAIL/PASSWORD,
+#   REDIS_PASSWORD, REDIS_COMMANDER_USER/PASSWORD,
+#   RABBITMQ_USER/PASSWORD, HAPROXY_STATS_USER/PASSWORD,
+#   FLUX_GITHUB_TOKEN
+#   SSH_PRIVATE_KEY (CI only - writes ~/.ssh/id_ed25519 for host access)
+
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+_help:
+    @just --list
+
+# Install passlib + write SSH key when CI provided one. Idempotent.
+[private]
+setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+      mkdir -p ~/.ssh
+      printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+    fi
+    if ! python3 -c 'import passlib' 2>/dev/null; then
+      sudo apt-get update -qq
+      sudo apt-get install -y python3-passlib
+    fi
+
+# Run the playbook for a service (or k3s-cluster/flux)
+configure resource: setup
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{resource}}" in
+      k3s-cluster)      playbook="proxmox/k3s-cluster/cluster-setup.yml" ;;
+      k3s-cluster/flux) playbook="proxmox/k3s-cluster/flux-install.yml" ;;
+      *)                playbook="proxmox/{{resource}}/playbook.yml" ;;
+    esac
+    ansible-playbook "$playbook" \
+      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
+      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
+      -e "adguard_username=${ADGUARD_USERNAME:-}" \
+      -e "adguard_password=${ADGUARD_PASSWORD:-}" \
+      -e "vault_username=${VAULT_USERNAME:-}" \
+      -e "vault_password=${VAULT_PASSWORD:-}" \
+      -e "postgresql_user=${POSTGRESQL_USER:-}" \
+      -e "postgresql_password=${POSTGRESQL_PASSWORD:-}" \
+      -e "postgresql_db=${POSTGRESQL_DB:-}" \
+      -e "pgadmin_email=${PGADMIN_EMAIL:-}" \
+      -e "pgadmin_password=${PGADMIN_PASSWORD:-}" \
+      -e "redis_password=${REDIS_PASSWORD:-}" \
+      -e "redis_commander_user=${REDIS_COMMANDER_USER:-}" \
+      -e "redis_commander_password=${REDIS_COMMANDER_PASSWORD:-}" \
+      -e "rabbitmq_user=${RABBITMQ_USER:-}" \
+      -e "rabbitmq_password=${RABBITMQ_PASSWORD:-}" \
+      -e "haproxy_stats_user=${HAPROXY_STATS_USER:-}" \
+      -e "haproxy_stats_password=${HAPROXY_STATS_PASSWORD:-}" \
+      -e "flux_github_token=${FLUX_GITHUB_TOKEN:-}"
+
+# Bootstrap a fresh Proxmox node (SSH key auth) - see bootstrap/README.md
+bootstrap ip user='root':
+    ansible-playbook -i "{{ip}}," -u {{user}} \
+      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
+      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
+      -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
+      -e "ssh_public_key_file=${SSH_PUBLIC_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}" \
+      bootstrap/main.yml
+
+# Bootstrap a fresh Proxmox node (SSH password prompt - fresh node with no keys)
+bootstrap-pw ip user='root':
+    ansible-playbook -i "{{ip}}," -u {{user}} --ask-pass \
+      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
+      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
+      -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
+      -e "ssh_public_key_file=${SSH_PUBLIC_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}" \
+      bootstrap/main.yml
+
+# List every configurable resource
+list:
+    @echo "Bootstrap (one-time, fresh Proxmox node):"
+    @printf "  %-24s %s\n" "bootstrap <ip>"    "Full bootstrap - Terraform user, base artifacts, runner VM, TLS cert"
+    @printf "  %-24s %s\n" "bootstrap-pw <ip>" "Same, but prompts for SSH password (no key access yet)"
+    @echo
+    @echo "Configure (per-service, run after Terraform provisions the host):"
+    @printf "  %-24s %s\n" "adguard-lxc"      "AdGuard Home - network-wide DNS ad-blocker"
+    @printf "  %-24s %s\n" "vault-lxc"        "HashiCorp Vault - secrets manager"
+    @printf "  %-24s %s\n" "postgres-lxc"     "PostgreSQL + pgAdmin - database and web UI"
+    @printf "  %-24s %s\n" "redis-lxc"        "Redis + Redis Commander - cache and web UI"
+    @printf "  %-24s %s\n" "rabbitmq-lxc"     "RabbitMQ - message broker"
+    @printf "  %-24s %s\n" "haproxy-lxc"      "HAProxy - public ingress load balancer for k3s"
+    @printf "  %-24s %s\n" "nfs-vm"           "NFS server - persistent volumes for k3s"
+    @printf "  %-24s %s\n" "portainer-vm"     "Portainer - Docker container management UI"
+    @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
+    @printf "  %-24s %s\n" "k3s-cluster/flux" "Flux CD - GitOps bootstrap on the k3s cluster"

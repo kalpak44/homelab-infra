@@ -1,0 +1,9 @@
+---
+# Full bootstrap of a fresh Proxmox node.
+# Invoked by `just bootstrap <ip>` (see ansible/Justfile).
+# Each phase is standalone and idempotent - safe to re-run.
+
+- import_playbook: 01-proxmox-setup.yml
+- import_playbook: 02-proxmox-artifacts.yml
+- import_playbook: 03-runner-vm.yml
+- import_playbook: 04-proxmox-tls.yml

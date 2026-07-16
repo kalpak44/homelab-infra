@@ -1,60 +1,125 @@
+# -----------------------------------------------------------------------------
+# Private Docker Registry with Web UI
+# -----------------------------------------------------------------------------
+# Purpose:
+#   This Portainer stack deploys:
+#     1. A private Docker Registry for storing container images.
+#     2. A browser-based Registry UI for viewing repositories, tags, digests,
+#        and deleting images.
+#
+# Access:
+#   Registry API: http://<docker-host>:5000
+#   Registry UI:  http://<docker-host>:8282
+#
+# Persistent data:
+#   Registry images are stored on the Docker host under:
+#     /mnt/data/registry
+#
+# Important security note:
+#   This configuration does not enable TLS or authentication. It is suitable
+#   only for trusted private networks unless it is placed behind a secured
+#   reverse proxy with HTTPS and access control.
+# -----------------------------------------------------------------------------
+
 services:
+  # ---------------------------------------------------------------------------
+  # Docker Registry
+  # ---------------------------------------------------------------------------
+  # Provides a private OCI/Docker image registry.
+  #
+  # Example usage:
+  #   docker tag my-image:latest <docker-host>:5000/my-image:latest
+  #   docker push <docker-host>:5000/my-image:latest
+  #   docker pull <docker-host>:5000/my-image:latest
+  # ---------------------------------------------------------------------------
   registry:
     image: registry:3
     container_name: registry
     restart: unless-stopped
+
     ports:
+      # Exposes the Docker Registry HTTP API on the host.
       - "5000:5000"
+
     environment:
-      # Allow deleting image manifests
+      # Allows deletion of image manifests through the Registry API.
+      # This is required for deletion from the Registry UI.
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
 
-      # Disable OpenTelemetry to reduce noise in logs
+      # Disables OpenTelemetry trace exporting to reduce unnecessary log noise.
       OTEL_TRACES_EXPORTER: "none"
+
     volumes:
-      # Persistent image storage
+      # Stores registry blobs and metadata persistently on the Docker host.
+      # Ensure this directory exists and is writable by Docker.
       - /mnt/data/registry:/var/lib/registry
+
     networks:
       - registry-network
 
+  # ---------------------------------------------------------------------------
+  # Docker Registry Web UI
+  # ---------------------------------------------------------------------------
+  # Provides a browser-based interface for browsing repositories and tags,
+  # inspecting image digests, and deleting image manifests.
+  #
+  # The UI proxies Registry API requests internally to the registry service.
+  # This avoids browser CORS issues and keeps container-to-container traffic
+  # inside the Docker network.
+  # ---------------------------------------------------------------------------
   registry-ui:
     image: joxit/docker-registry-ui:latest
     container_name: registry-ui
     restart: unless-stopped
+
     ports:
+      # Exposes the web interface on the Docker host.
       - "8282:80"
+
     environment:
-      # Single registry instance
+      # Configures the UI for one registry endpoint.
       SINGLE_REGISTRY: "true"
 
-      # UI title
+      # Title displayed in the Registry UI header.
       REGISTRY_TITLE: "Home Docker Registry"
 
-      # Enable image deletion from the UI
+      # Enables deletion controls in the UI.
+      # The registry service must also allow manifest deletion.
       DELETE_IMAGES: "true"
 
-      # Display image digest
+      # Displays content digests for image manifests.
       SHOW_CONTENT_DIGEST: "true"
 
-      # Show number of tags per repository
+      # Displays the number of tags available for each repository.
       SHOW_CATALOG_NB_TAGS: "true"
 
-      # Repository list limit
+      # Maximum number of repositories returned in the catalog view.
       CATALOG_ELEMENTS_LIMIT: "1000"
 
-      # Number of tags displayed per page
+      # Number of tags displayed on each UI page.
       TAGLIST_PAGE_SIZE: "100"
 
-      # Proxy requests through the UI container to avoid CORS issues
+      # Proxies UI API requests to the registry container over the internal
+      # Docker network. The service name "registry" is resolved by Docker DNS.
       NGINX_PROXY_PASS_URL: "http://registry:5000"
 
-      # Docker embedded DNS resolver
+      # Uses Docker's embedded DNS resolver for dynamic container resolution.
       NGINX_RESOLVER: "127.0.0.11"
+
     depends_on:
+      # Controls startup order only; it does not guarantee Registry readiness.
       - registry
+
     networks:
       - registry-network
 
+# -----------------------------------------------------------------------------
+# Internal network
+# -----------------------------------------------------------------------------
+# Provides isolated communication between the Registry and Registry UI.
+# Both services can resolve each other using their Compose service names.
+# -----------------------------------------------------------------------------
 networks:
   registry-network:
+    name: registry-network
     driver: bridge
