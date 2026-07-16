@@ -13,6 +13,7 @@ on:
           - postgres-lxc
           - redis-lxc
           - rabbitmq-lxc
+          - traefik-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster
