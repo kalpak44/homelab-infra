@@ -36,10 +36,13 @@
     mode: "0600"
   when: _ubuntu_authkeys.stat.exists
 
-- name: Remove cloud-init sshd drop-in that disables password auth (VMs)
+- name: Remove cloud-init sshd drop-ins that disable password auth (VMs)
   ansible.builtin.file:
-    path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+    path: "{{ item }}"
     state: absent
+  loop:
+    - /etc/ssh/sshd_config.d/50-cloud-init.conf
+    - /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
   register: _ssh_cloudinit_dropin
 
 - name: Ensure PermitRootLogin is yes
