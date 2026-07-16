@@ -152,8 +152,7 @@ sudo ./svc.sh start
 | `PROXMOX_ENDPOINT` | `https://<proxmox-ip>:8006` |
 | `PROXMOX_USERNAME` | `terraform@pve!terraform` |
 | `PROXMOX_PASSWORD` | Proxmox API token secret from 2a |
-| `SSH_PUBLIC_KEY` | Contents of `~/.ssh/id_ed25519.pub` on Proxmox |
-| `SSH_PRIVATE_KEY` | Contents of `~/.ssh/id_ed25519` on Proxmox (Ansible SSH auth fallback) |
+| `SSH_PUBLIC_KEY` | Contents of `~/.ssh/id_ed25519.pub` on Proxmox — injected into new LXCs/VMs at cloud-init time |
 | `HOST_PASSWORD` | Root password for every LXC/VM (SSH + Proxmox console). Terraform bakes it into new hosts; Ansible rotates it on existing ones |
 | `PUBLIC_WAN_IP` | Your WAN IP - used for public Cloudflare A records |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below) |
@@ -305,7 +304,7 @@ Ansible connects with `ansible_user: root` and `ansible_ssh_pass=$HOST_PASSWORD`
 The same password is what you type into the Proxmox web UI console/VNC.
 
 `sshpass` is installed by the ansible `Justfile` on first `just configure` (Linux via apt, macOS via
-homebrew). CI still uses `SSH_PRIVATE_KEY` when set — Ansible prefers key over password when both work.
+homebrew).
 
 **One-time enable for pre-existing VMs (portainer, nfs, k3s-1, k3s-2)**
 

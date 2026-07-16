@@ -53,7 +53,7 @@ list works for every service:
 
 | Var                                                                  | Used by                                                                |
 |----------------------------------------------------------------------|------------------------------------------------------------------------|
-| `SSH_PRIVATE_KEY`                                                    | CI only - written to `~/.ssh/id_ed25519` by the private `setup` recipe |
+| `HOST_PASSWORD`                                                      | Every host — SSH auth (root) + become; enforced by `_shared/enable-root-ssh.yml` |
 | `CLOUDFLARE_API_TOKEN`                                               | certbot DNS-01 (any role with TLS)                                     |
 | `LETSENCRYPT_EMAIL`                                                  | certbot registration                                                   |
 | `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`                               | adguard-lxc                                                            |

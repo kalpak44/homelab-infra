@@ -14,23 +14,17 @@
 #   RABBITMQ_USER/PASSWORD,
 #   FLUX_GITHUB_TOKEN
 #   HOST_PASSWORD (root password for all LXCs/VMs - used for SSH + sudo)
-#   SSH_PRIVATE_KEY (optional - key auth fallback; if unset, password auth is used)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 _help:
     @just --list
 
-# Install passlib + sshpass; write SSH key when CI provided one. Idempotent.
+# Install passlib + sshpass. Idempotent.
 [private]
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-      mkdir -p ~/.ssh
-      printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-      chmod 600 ~/.ssh/id_ed25519
-    fi
     missing=()
     python3 -c 'import passlib' 2>/dev/null || missing+=(python3-passlib)
     command -v sshpass >/dev/null 2>&1 || missing+=(sshpass)
