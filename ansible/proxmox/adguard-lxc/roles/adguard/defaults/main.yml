@@ -2,7 +2,7 @@
 adguard_dns_port: 53
 adguard_web_port: 80
 adguard_install_dir: /opt/AdGuardHome
-adguard_version: "0.107.75"
+adguard_version: "0.107.78"
 adguard_username: admin
 adguard_password: ""
 adguard_tls_enabled: true
@@ -10,3 +10,41 @@ adguard_tls_domain: "adguard.internal.pavel-usanli.online"
 letsencrypt_email: ""
 adguard_cert_path: "/etc/letsencrypt/live/adguard.internal.pavel-usanli.online/fullchain.pem"
 adguard_key_path: "/etc/letsencrypt/live/adguard.internal.pavel-usanli.online/privkey.pem"
+
+adguard_anonymize_client_ip: true
+adguard_fallback_dns:
+  - 8.8.8.8
+  - 1.1.1.1
+adguard_query_log_interval: 7d
+adguard_max_http_size: 256MB
+
+# Blocklist subscriptions from https://adguardteam.github.io/HostlistsRegistry/
+adguard_filters:
+  - id: 1
+    enabled: true
+    name: "AdGuard DNS filter"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt"
+  - id: 2
+    enabled: true
+    name: "AdAway Default Blocklist"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt"
+  - id: 1783429374
+    enabled: true
+    name: "AdGuard DNS Popup Hosts filter"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_59.txt"
+  - id: 1783429375
+    enabled: true
+    name: "AWAvenue Ads Rule"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_53.txt"
+  - id: 1783429376
+    enabled: true
+    name: "Dan Pollock's List"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_4.txt"
+  - id: 1783429377
+    enabled: true
+    name: "HaGeZi's Pro++ Blocklist"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_51.txt"
+  - id: 1783429378
+    enabled: true
+    name: "OISD Blocklist Big"
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_27.txt"
