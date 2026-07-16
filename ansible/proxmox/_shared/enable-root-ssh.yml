@@ -1,0 +1,59 @@
+---
+# Shared task file — imported early by every service playbook.
+# Ensures openssh-server is present, root's password matches HOST_PASSWORD,
+# and sshd accepts root logins with a password. Self-contained (no external
+# handlers needed).
+
+- name: Install openssh-server
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    update_cache: true
+
+- name: Set root password
+  ansible.builtin.user:
+    name: root
+    password: "{{ host_password | password_hash('sha512') }}"
+    update_password: always
+  when: host_password | default('') | length > 0
+
+# Cloud-init on Ubuntu VMs plants a `command="echo 'Please login as ubuntu'…"`
+# restriction in /root/.ssh/authorized_keys. Overwrite it with ubuntu's clean
+# keys so root can be reached both by key and by password. LXCs don't have an
+# ubuntu user — this step just no-ops for them.
+- name: Check if ubuntu authorized_keys exists (VMs only)
+  ansible.builtin.stat:
+    path: /home/ubuntu/.ssh/authorized_keys
+  register: _ubuntu_authkeys
+
+- name: Replace root authorized_keys with ubuntu's (strip cloud-init redirect)
+  ansible.builtin.copy:
+    src: /home/ubuntu/.ssh/authorized_keys
+    dest: /root/.ssh/authorized_keys
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when: _ubuntu_authkeys.stat.exists
+
+- name: Ensure PermitRootLogin is yes
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin yes'
+    state: present
+  register: _ssh_config_root
+
+- name: Ensure PasswordAuthentication is yes
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication yes'
+    state: present
+  register: _ssh_config_pw
+
+- name: Ensure SSH is running and restart if config changed
+  ansible.builtin.systemd:
+    name: ssh
+    state: "{{ 'restarted' if (_ssh_config_root.changed or _ssh_config_pw.changed) else 'started' }}"
+    enabled: true

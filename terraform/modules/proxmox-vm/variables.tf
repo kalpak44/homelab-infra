@@ -69,3 +69,10 @@ variable "ssh_public_keys" {
   type        = list(string)
   default     = []
 }
+
+variable "password" {
+  description = "Password baked in at cloud-init (also used to enable root SSH); runtime rotation handled by Ansible"
+  type        = string
+  default     = "ubuntu"
+  sensitive   = true
+}

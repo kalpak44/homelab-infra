@@ -33,3 +33,10 @@ variable "lxc_template_file_id" {
   type        = string
   default     = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 }
+
+variable "host_password" {
+  description = "Password baked in at LXC/VM init; runtime rotation handled by Ansible"
+  type        = string
+  sensitive   = true
+  default     = "ubuntu"
+}

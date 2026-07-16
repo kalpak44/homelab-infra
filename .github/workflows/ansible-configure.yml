@@ -26,6 +26,7 @@ jobs:
         working-directory: ansible
     env:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
       ADGUARD_USERNAME: ${{ secrets.ADGUARD_USERNAME }}

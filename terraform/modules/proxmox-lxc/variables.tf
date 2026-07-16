@@ -69,3 +69,10 @@ variable "unprivileged" {
   type        = bool
   default     = true
 }
+
+variable "password" {
+  description = "Root password baked in at container init; runtime rotation handled by Ansible"
+  type        = string
+  default     = "ubuntu"
+  sensitive   = true
+}

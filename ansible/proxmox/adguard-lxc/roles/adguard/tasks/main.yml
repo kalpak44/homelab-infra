@@ -1,22 +1,7 @@
 ---
-- name: Install openssh-server
-  ansible.builtin.apt:
-    name: openssh-server
-    state: present
-    update_cache: true
-
-- name: Disable SSH password authentication
-  ansible.builtin.lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: "^#?PasswordAuthentication"
-    line: "PasswordAuthentication no"
-  notify: Restart SSH
-
-- name: Ensure SSH is running
-  ansible.builtin.systemd:
-    name: ssh
-    state: started
-    enabled: true
+# SSH bootstrap (openssh install, root password rotation, PermitRootLogin,
+# PasswordAuthentication) is handled by the shared pre_task
+# ansible/proxmox/_shared/enable-root-ssh.yml — imported from playbook.yml.
 
 - name: Disable systemd-resolved
   ansible.builtin.systemd:

@@ -16,7 +16,7 @@ resource "proxmox_virtual_environment_container" "this" {
     }
 
     user_account {
-      password = "ubuntu"
+      password = var.password
       keys     = var.ssh_public_keys
     }
   }
@@ -50,6 +50,6 @@ resource "proxmox_virtual_environment_container" "this" {
   }
 
   lifecycle {
-    ignore_changes = [unprivileged, features]
+    ignore_changes = [initialization, unprivileged, features]
   }
 }

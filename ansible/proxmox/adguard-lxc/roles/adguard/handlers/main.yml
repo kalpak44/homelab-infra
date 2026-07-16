@@ -3,8 +3,3 @@
   ansible.builtin.systemd:
     name: AdGuardHome
     state: restarted
-
-- name: Restart SSH
-  ansible.builtin.systemd:
-    name: ssh
-    state: restarted

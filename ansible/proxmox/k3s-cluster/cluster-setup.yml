@@ -3,6 +3,11 @@
 - name: Prepare k3s nodes
   hosts: k3s
   become: true
+
+  pre_tasks:
+    - name: Enable root SSH + rotate password
+      ansible.builtin.import_tasks: ../_shared/enable-root-ssh.yml
+
   roles:
     - k3s
 

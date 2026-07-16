@@ -53,7 +53,7 @@ resource "proxmox_virtual_environment_vm" "this" {
 
     user_account {
       username = "ubuntu"
-      password = "ubuntu"
+      password = var.password
       keys     = var.ssh_public_keys
     }
   }

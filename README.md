@@ -153,7 +153,8 @@ sudo ./svc.sh start
 | `PROXMOX_USERNAME` | `terraform@pve!terraform` |
 | `PROXMOX_PASSWORD` | Proxmox API token secret from 2a |
 | `SSH_PUBLIC_KEY` | Contents of `~/.ssh/id_ed25519.pub` on Proxmox |
-| `SSH_PRIVATE_KEY` | Contents of `~/.ssh/id_ed25519` on Proxmox (Ansible SSH auth) |
+| `SSH_PRIVATE_KEY` | Contents of `~/.ssh/id_ed25519` on Proxmox (Ansible SSH auth fallback) |
+| `HOST_PASSWORD` | Root password for every LXC/VM (SSH + Proxmox console). Terraform bakes it into new hosts; Ansible rotates it on existing ones |
 | `PUBLIC_WAN_IP` | Your WAN IP - used for public Cloudflare A records |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below) |
 | `LETSENCRYPT_EMAIL` | Email for Let's Encrypt registration |
@@ -296,3 +297,29 @@ cd terraform && just destroy proxmox adguard-lxc       # tear down
 ```
 
 Locally you need the same env vars listed in the workflow files (`~/.zshrc` or `~/.zshenv` works).
+
+### Host SSH — unified root + password auth
+
+All LXCs and VMs share a single OS-level identity: **user `root`** with the password in `HOST_PASSWORD`.
+Ansible connects with `ansible_user: root` and `ansible_ssh_pass=$HOST_PASSWORD` (via `hosts.yml`).
+The same password is what you type into the Proxmox web UI console/VNC.
+
+`sshpass` is installed by the ansible `Justfile` on first `just configure` (Linux via apt, macOS via
+homebrew). CI still uses `SSH_PRIVATE_KEY` when set — Ansible prefers key over password when both work.
+
+**One-time enable for pre-existing VMs (portainer, nfs, k3s-1, k3s-2)**
+
+VMs were provisioned with `ubuntu` as the cloud-init user, so before the first unified `just configure`
+you need to enable root SSH once (per VM):
+
+```bash
+ssh ubuntu@<vm-ip> "sudo bash -c '
+  echo root:$HOST_PASSWORD | chpasswd &&
+  sed -i s/^#?PermitRootLogin.*/PermitRootLogin\ yes/ /etc/ssh/sshd_config &&
+  sed -i s/^#?PasswordAuthentication.*/PasswordAuthentication\ yes/ /etc/ssh/sshd_config &&
+  systemctl restart ssh
+'"
+```
+
+After that, `just configure` uses `root@<vm-ip>` like every other host. New VMs pick up the unified
+identity from the Ansible `pre_tasks` in each playbook.

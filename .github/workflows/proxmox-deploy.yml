@@ -33,6 +33,7 @@ jobs:
       PROXMOX_PASSWORD: ${{ secrets.PROXMOX_PASSWORD }}
       SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2

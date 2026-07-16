@@ -15,4 +15,6 @@ module "vm" {
   data_disk_size_gb = 512
 
   ssh_public_keys = [var.ssh_public_key]
+
+  password = var.host_password
 }

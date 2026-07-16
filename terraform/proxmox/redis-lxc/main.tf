@@ -14,4 +14,6 @@ module "lxc" {
   disk_size_gb = 4
 
   ssh_public_keys = [var.ssh_public_key]
+
+  password = var.host_password
 }

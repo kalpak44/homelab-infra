@@ -13,14 +13,15 @@
 #   REDIS_PASSWORD, REDIS_COMMANDER_USER/PASSWORD,
 #   RABBITMQ_USER/PASSWORD,
 #   FLUX_GITHUB_TOKEN
-#   SSH_PRIVATE_KEY (CI only - writes ~/.ssh/id_ed25519 for host access)
+#   HOST_PASSWORD (root password for all LXCs/VMs - used for SSH + sudo)
+#   SSH_PRIVATE_KEY (optional - key auth fallback; if unset, password auth is used)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 _help:
     @just --list
 
-# Install passlib + write SSH key when CI provided one. Idempotent.
+# Install passlib + sshpass; write SSH key when CI provided one. Idempotent.
 [private]
 setup:
     #!/usr/bin/env bash
@@ -30,9 +31,19 @@ setup:
       printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
       chmod 600 ~/.ssh/id_ed25519
     fi
-    if ! python3 -c 'import passlib' 2>/dev/null; then
-      sudo apt-get update -qq
-      sudo apt-get install -y python3-passlib
+    missing=()
+    python3 -c 'import passlib' 2>/dev/null || missing+=(python3-passlib)
+    command -v sshpass >/dev/null 2>&1 || missing+=(sshpass)
+    if [[ ${#missing[@]} -gt 0 ]]; then
+      if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq
+        sudo apt-get install -y "${missing[@]}"
+      elif command -v brew >/dev/null 2>&1; then
+        brew install hudochenkov/sshpass/sshpass python-passlib 2>/dev/null || true
+      else
+        echo "install manually: ${missing[*]}" >&2
+        exit 1
+      fi
     fi
 
 # Run the playbook for a service (or k3s-cluster/flux)
@@ -45,6 +56,7 @@ configure resource: setup
       *)                playbook="proxmox/{{resource}}/playbook.yml" ;;
     esac
     ansible-playbook "$playbook" \
+      -e "host_password=${HOST_PASSWORD:-}" \
       -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
       -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
       -e "adguard_username=${ADGUARD_USERNAME:-}" \

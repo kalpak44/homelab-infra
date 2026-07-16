@@ -14,6 +14,8 @@ module "node_1" {
   disk_size_gb = 40
 
   ssh_public_keys = [var.ssh_public_key]
+
+  password = var.host_password
 }
 
 module "node_2" {
@@ -32,4 +34,6 @@ module "node_2" {
   disk_size_gb = 40
 
   ssh_public_keys = [var.ssh_public_key]
+
+  password = var.host_password
 }
