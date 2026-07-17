@@ -7,14 +7,10 @@ spec:
   entryPoints:
     - public-web-secure
   routes:
-    - match: Host(`nocobase.pavel-usanli.online`) || Host(`crmnoco-fwafz.deepcraftstudio.com`)
+    - match: Host(`nocobase.pavel-usanli.online`)
       kind: Rule
       services:
         - name: nocobase
           port: 80
   tls:
     certResolver: cloudflare
-    domains:
-      - main: nocobase.pavel-usanli.online
-        sans:
-          - crmnoco-fwafz.deepcraftstudio.com
