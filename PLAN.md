@@ -15,13 +15,22 @@ Verified from this repository:
 - Private DNS records for standalone services point directly at their host IPs.
 - k3s routing uses Traefik `IngressRoute` CRDs with `public-web-secure` and
   `private-web-secure`.
-- k3s Traefik is exposed on MetalLB-backed IPs including `192.168.1.120` and
-  `192.168.1.121`.
-- CrowdSec currently integrates with the in-cluster Traefik path.
+- k3s Traefik is exposed on MetalLB-backed IPs: public service `192.168.1.120`,
+  private service `192.168.1.121`.
+- k3s Traefik `private-web` (port 80 on `192.168.1.121`) redirects to
+  `private-web-secure` (port 443 on `192.168.1.121`) — plain HTTP is not usable
+  as a backend target from the edge.
+- CrowdSec LAPI and AppSec are ClusterIP services inside k3s with no external
+  LAN endpoint today.
+- CrowdSec bouncer middleware is applied only on the `public-web-secure`
+  entrypoint, not on `private-web-secure`.
 - Portainer runs on `192.168.1.7`, with nginx terminating TLS and the Portainer
   container bound to `127.0.0.1:9000`.
 - AdGuard, Vault, pgAdmin, RabbitMQ, and Portainer currently manage their own
   certificates on-host with certbot and the Cloudflare DNS plugin.
+- `terraform/proxmox/traefik-lxc/` exists (LXC 210, `192.168.1.10`) and is
+  wired into `proxmox-deploy.yml`, `proxmox-destroy.yml`, and
+  `terraform/Justfile`. The Ansible layer is not yet created.
 
 ## Target state
 
@@ -41,28 +50,82 @@ Important:
 - `*.pavel-usanli.online` does not cover `pavel-usanli.online`.
 - The root website therefore needs the apex name included explicitly.
 
-## Traffic model
+## Design decisions
 
-Public:
+These decisions resolve gaps in the original plan and must not be re-opened
+without updating the affected steps.
 
-`Internet -> Cloudflare proxy or Tunnel -> Edge Traefik LXC -> backend`
+### Edge → k3s backend protocol
 
-Private:
+The edge forwards to k3s Traefik via **HTTPS with `insecureSkipVerify: true`**
+on a named `serversTransport` in the edge file provider.
 
-`LAN client -> internal DNS -> Edge Traefik LXC -> backend`
+Reason: `private-web` (port 80) redirects immediately to HTTPS so plain HTTP
+is not usable as a backend target. The k3s Traefik cert is a valid Let's
+Encrypt cert but is issued for hostnames, not the MetalLB IP
+(`192.168.1.121`), so standard TLS verification fails. `insecureSkipVerify`
+on an internal LAN hop is acceptable — the cert is still used for encryption,
+just not for identity verification at this hop.
 
-Backends behind the edge can be:
+Concretely, define one `ServersTransport` in the edge file provider:
 
-- k3s Traefik VIPs
-- Portainer VM endpoints
-- future standalone web apps on LXCs/VMs
+```yaml
+http:
+  serversTransports:
+    k3s-private:
+      insecureSkipVerify: true
+```
 
-Backends that stay direct:
+All edge routes that target k3s private apps reference this transport.
 
-- AdGuard
-- Vault
-- Proxmox
-- direct database/service endpoints
+### Edge dashboard hostname
+
+The edge Traefik dashboard uses **`traefik-edge.internal.pavel-usanli.online`**,
+served by a new DNS record at `terraform/cloudflare/dns/private/traefik-edge/`
+pointing at `192.168.1.10`.
+
+Reason: `terraform/cloudflare/dns/private/traefik/` already exists and points
+at the in-cluster Traefik dashboard on `192.168.1.121`. Taking it over during
+bootstrap would break the in-cluster dashboard before the edge is proven.
+`traefik-edge.internal` is a new, distinct record with no conflict.
+
+### CrowdSec LAPI and AppSec LAN exposure
+
+Expose LAPI and AppSec via a **MetalLB `LoadBalancer` Service at
+`192.168.1.122`** in a new GitOps manifest
+`gitops/clusters/homelab/infrastructure/crowdsec/lxc-service.yaml`.
+
+Ports on `192.168.1.122`:
+- `8080` — LAPI (HTTP)
+- `7422` — AppSec
+
+Reason: MetalLB is the existing pattern for stable LAN-reachable IPs in this
+cluster. A dedicated IP keeps LAPI/AppSec separate from the Traefik VIPs and
+avoids port collisions. `192.168.1.122` is within the pool `192.168.1.120–130`.
+
+### CrowdSec bouncer key for the edge
+
+The edge Traefik needs its own bouncer key separate from the in-cluster
+`BOUNCER_KEY_traefik`.
+
+- Vault path: `secret/crowdsec/bouncer-key-edge`
+- GitHub Actions secret: `CROWDSEC_BOUNCER_KEY_EDGE`
+- Plumbed through `ansible-configure.yml` env block to the `traefik-lxc` role.
+- The key is registered in CrowdSec LAPI during the `just configure traefik-lxc`
+  run (an Ansible task that calls `cscli bouncers add traefik-edge`).
+
+### Cloudflare Tunnel Terraform structure
+
+- Terraform dir: `terraform/cloudflare/shared/cloudflare-tunnel/`
+- State key: `homelab/cloudflare/shared/cloudflare-tunnel.tfstate`
+- New GitHub Actions secret: `CLOUDFLARE_TUNNEL_TOKEN`
+- Added to `cloudflare-deploy.yml` / `cloudflare-destroy.yml` dropdowns and
+  `terraform/Justfile` list.
+- The `cloudflared` daemon runs on the edge LXC, managed by a new Ansible role
+  `ansible/proxmox/traefik-lxc/roles/cloudflared/`. The token is passed via
+  `ansible-configure.yml` env block.
+
+---
 
 ## Step-by-step plan
 
@@ -82,42 +145,43 @@ Validation:
 - current private apps still resolve through `192.168.1.121`
 - no GitOps app manifests need to change yet
 
-### 2. Add a new Proxmox service for `traefik-lxc`
+### 2. Complete the `traefik-lxc` Proxmox service scaffolding
 
-Create a new Proxmox-managed service following the existing repo pattern.
+The Terraform half is done. Complete the remaining pieces:
 
-Repo changes:
+Done:
+- `terraform/proxmox/traefik-lxc/` (LXC 210, `192.168.1.10`)
+- `traefik-lxc` in `proxmox-deploy.yml` and `proxmox-destroy.yml`
+- `traefik-lxc` description in `terraform/Justfile` list
 
-- add `terraform/proxmox/traefik-lxc/`
-- add `ansible/proxmox/traefik-lxc/`
-- add the host to `ansible/inventories/hosts.yml`
-- add `traefik-lxc` to:
-  - `.github/workflows/proxmox-deploy.yml`
-  - `.github/workflows/proxmox-destroy.yml`
-  - `.github/workflows/ansible-configure.yml`
-- add list entries to:
-  - `terraform/Justfile`
-  - `ansible/Justfile`
-- update `README.md`
+Still needed:
+- add `ansible/proxmox/traefik-lxc/playbook.yml` + `roles/traefik/`
+- add `192.168.1.10` host to `ansible/inventories/hosts.yml` under `lxc`
+- add `traefik-lxc` to `.github/workflows/ansible-configure.yml` options
+- add `CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, and
+  `CROWDSEC_BOUNCER_KEY_EDGE` to the `ansible-configure.yml` env block (they
+  are already present for other roles but verify)
+- add `traefik-lxc` description to `ansible/Justfile` list
+- add `traefik-lxc` row to `README.md` services table
 
 Validation:
 
-- `just deploy proxmox traefik-lxc` works
-- the LXC is reachable on LAN
+- `just deploy proxmox traefik-lxc` provisions the LXC
+- the LXC is reachable on LAN at `192.168.1.10`
 - `just configure traefik-lxc` can target it
 
 ### 3. Install and configure Traefik on the new LXC
 
-The LXC should run Traefik as a systemd service.
+The LXC should run Traefik as a systemd service (binary install, not Docker).
 
 The initial Traefik setup should include:
 
-- `web` and `websecure` entrypoints
-- file provider configuration
-- upstreams for k3s VIPs
-- ACME DNS-01 with Cloudflare
-- access logging
-- dashboard on a private hostname
+- `web` (80) and `websecure` (443) entrypoints
+- file provider pointing at `/etc/traefik/conf.d/`
+- ACME DNS-01 with Cloudflare for certificate issuance
+- access logging to `/var/log/traefik/access.log` (JSON, for CrowdSec later)
+- dashboard on `traefik-edge.internal.pavel-usanli.online` (see design
+  decisions — this is a new record, not the existing in-cluster one)
 
 Certificate scope:
 
@@ -125,12 +189,25 @@ Certificate scope:
 - `*.pavel-usanli.online`
 - `*.internal.pavel-usanli.online`
 
+Additional file provider config needed at this step:
+
+```yaml
+http:
+  serversTransports:
+    k3s-private:
+      insecureSkipVerify: true
+```
+
+Also add `terraform/cloudflare/dns/private/traefik-edge/` pointing at
+`192.168.1.10` and wire it into `cloudflare-{deploy,destroy}.yml` dropdowns
+and `terraform/Justfile` list.
+
 Validation:
 
 - Traefik starts cleanly
 - certificates issue successfully
-- dashboard is reachable privately
-- logs show requests correctly
+- `traefik-edge.internal.pavel-usanli.online` dashboard is reachable privately
+- logs appear in `/var/log/traefik/access.log`
 
 ### 4. Decide the first private apps to move behind the edge
 
@@ -139,72 +216,84 @@ in-cluster Traefik.
 
 Good first candidates from the repo:
 
-- `traefik.internal.pavel-usanli.online`
 - `headlamp.internal.pavel-usanli.online`
 - `crowdsec.internal.pavel-usanli.online`
 - `home.internal.pavel-usanli.online`
-- `data-source-example.internal.pavel-usanli.online`
+
+Note: `traefik.internal.pavel-usanli.online` (in-cluster dashboard) stays
+pointing at `192.168.1.121` for now. It will be moved in a later step if
+desired. Do not move it during the first migration wave.
 
 Do not move direct infra in this step.
 
 Validation:
 
-- explicit list of first hostnames is agreed
+- an explicit list of first hostnames is agreed
 - direct infra hostnames remain unchanged
 
 ### 5. Point selected private DNS records to the edge LXC
 
 For each chosen private hostname, change the Cloudflare private DNS record from
-`192.168.1.121` to the new edge LXC IP.
+`192.168.1.121` to `192.168.1.10` (the edge LXC).
 
-Expected record groups:
+Expected record groups for the first wave:
 
-- `terraform/cloudflare/dns/private/traefik/`
 - `terraform/cloudflare/dns/private/headlamp/`
 - `terraform/cloudflare/dns/private/crowdsec-web-ui/`
 - `terraform/cloudflare/dns/private/private-home-page/`
-- `terraform/cloudflare/dns/private/data-source-connector-example/`
 
 Do this one hostname at a time.
 
 Validation:
 
-- each hostname resolves to the edge LXC
+- each hostname resolves to `192.168.1.10`
 - the edge forwards to k3s correctly
 - the underlying `IngressRoute` stays unchanged
 
 ### 6. Add edge routes for k3s private apps
 
-Create edge routes that match each moved private hostname and proxy to the
-appropriate k3s private VIP/backend.
+Create edge routes in `/etc/traefik/conf.d/` on the edge LXC that match each
+moved private hostname and proxy to the k3s private VIP backend.
+
+Backend target for all k3s private apps: `https://192.168.1.121:443`
+
+All routes targeting k3s must reference the `k3s-private` serversTransport
+(see design decisions) to skip TLS verification on the internal hop.
 
 Keep the in-cluster Traefik semantics intact:
 
-- edge matches the hostname
-- edge forwards to k3s
-- k3s Traefik still dispatches to the final service/pod
+- edge matches the hostname and forwards with the original `Host` header
+- k3s Traefik still dispatches to the final service/pod via its `IngressRoute`
+- no app manifest rewrite needed
 
 Validation:
 
 - private k3s apps work through the edge
 - there is no app-manifest rewrite
-- private app TLS is served by the edge
+- private app TLS is served by the edge cert (not k3s cert — clients see the
+  edge wildcard cert)
 
 ### 7. Add Cloudflare Tunnel support for public entry
 
-If the goal remains zero inbound WAN ports, add Cloudflare Tunnel for the edge
-LXC.
+Add a Cloudflare Tunnel so public traffic no longer requires WAN NAT on 80/443.
 
-Repo changes:
+Repo changes (see design decisions for specifics):
 
-- add a Cloudflare shared Terraform resource for the tunnel
-- add workflow dropdown entries
-- add `Justfile` list entries
-- store the tunnel token in the current secret flow you use for Ansible
+- add `terraform/cloudflare/shared/cloudflare-tunnel/` with `main.tf`,
+  `backend.tf` (key `homelab/cloudflare/shared/cloudflare-tunnel.tfstate`),
+  `variables.tf`, `providers.tf`, `versions.tf`
+- add `shared/cloudflare-tunnel` to `cloudflare-deploy.yml` and
+  `cloudflare-destroy.yml` dropdowns
+- add description line to `terraform/Justfile` list
+- add new GitHub Actions secret `CLOUDFLARE_TUNNEL_TOKEN`
+- add `cloudflared` Ansible role at `ansible/proxmox/traefik-lxc/roles/cloudflared/`
+  that installs and configures the `cloudflared` daemon as a systemd service,
+  reading the token from the `CLOUDFLARE_TUNNEL_TOKEN` env var
+- add `CLOUDFLARE_TUNNEL_TOKEN` to the `ansible-configure.yml` env block
 
-The public flow should become:
+The public flow becomes:
 
-`Cloudflare -> edge LXC -> backend`
+`Internet -> Cloudflare Tunnel -> edge LXC -> backend`
 
 Validation:
 
@@ -230,21 +319,55 @@ Validation:
 - another public app works through the edge path
 - certificate coverage is correct for both apex and wildcard hosts
 
-### 9. Expose CrowdSec services so the edge can use them
+### 9. Expose CrowdSec LAPI and AppSec for the edge
 
-The edge needs a reliable private path to CrowdSec LAPI/AppSec.
+Add a MetalLB `LoadBalancer` Service that gives the edge LXC a stable LAN
+address to reach CrowdSec.
 
-Update the k3s CrowdSec side so the edge LXC can reach:
+New GitOps manifest: `gitops/clusters/homelab/infrastructure/crowdsec/lxc-service.yaml`
 
-- LAPI
-- AppSec
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: crowdsec-lxc
+  namespace: crowdsec
+  annotations:
+    metallb.universe.tf/address-pool: homelab
+    metallb.universe.tf/loadBalancerIPs: 192.168.1.122
+spec:
+  type: LoadBalancer
+  selector:
+    k8s-app: crowdsec
+    type: lapi
+    version: v1
+  ports:
+    - name: lapi
+      port: 8080
+      targetPort: 8080
+    - name: appsec
+      port: 7422
+      targetPort: 7422
+```
 
-Keep this private to the LAN.
+The edge LXC reaches CrowdSec at:
+- LAPI: `http://192.168.1.122:8080`
+- AppSec: `http://192.168.1.122:7422`
+
+Bouncer key provisioning:
+- Store the key at Vault path `secret/crowdsec/bouncer-key-edge`
+- Add GitHub Actions secret `CROWDSEC_BOUNCER_KEY_EDGE`
+- Add `CROWDSEC_BOUNCER_KEY_EDGE` to `ansible-configure.yml` env block
+- The `traefik-lxc` Ansible role registers the bouncer key by calling
+  `cscli bouncers add traefik-edge --key $CROWDSEC_BOUNCER_KEY_EDGE` via an
+  Ansible task that shells into the k3s LAPI pod (or via the exposed
+  `192.168.1.122:8080` endpoint once it is up)
 
 Validation:
 
-- the edge can reach CrowdSec endpoints
-- the edge bouncer/plugin can initialize successfully
+- `192.168.1.122:8080` is reachable from the edge LXC
+- the edge bouncer plugin initializes successfully against the LAPI
+- `192.168.1.122:7422` (AppSec) is reachable from the edge LXC
 
 ### 10. Feed edge Traefik logs into CrowdSec
 
@@ -253,10 +376,14 @@ Do not stop at only wiring the bouncer.
 Because the edge will see Portainer and standalone-app traffic that never hits
 the k3s Traefik pods, CrowdSec must also see edge traffic.
 
-Implement one of:
+Preferred approach: **CrowdSec agent on the edge LXC** parsing
+`/var/log/traefik/access.log` and forwarding decisions to the LAPI at
+`192.168.1.122:8080`.
 
-- CrowdSec agent on the edge LXC parsing Traefik logs
-- log shipping from the edge into a central CrowdSec-consumable location
+This is added as a second Ansible role (`crowdsec-agent`) inside
+`ansible/proxmox/traefik-lxc/roles/`, installed and configured to:
+- parse the Traefik access log (`crowdsecurity/traefik` collection)
+- connect to LAPI at `http://192.168.1.122:8080`
 
 Validation:
 
@@ -272,9 +399,16 @@ Current verified runtime shape:
 - nginx on the VM terminates TLS
 - Portainer container is only on `127.0.0.1:9000`
 
+The edge backend for Portainer is the Portainer VM nginx, which already holds
+a valid Let's Encrypt cert. The edge→Portainer hop is HTTPS, and because the
+cert is issued for `portainer.internal.pavel-usanli.online` (not an IP), a
+named `serversTransport` with `insecureSkipVerify: true` is required here as
+well (same pattern as `k3s-private` — add a `portainer-vm` transport or reuse
+the existing one).
+
 So the first safe hop is:
 
-`Edge Traefik LXC -> Portainer VM nginx`
+`Edge Traefik LXC -> Portainer VM nginx (https://192.168.1.7:443)`
 
 Do not try to proxy directly to `127.0.0.1:9000` from the edge LXC.
 
@@ -319,7 +453,8 @@ Validation:
 
 ### 14. Remove WAN NAT for `80/443` only after the edge path is proven
 
-Only do this after public apps are confirmed through Cloudflare to the edge.
+Only do this after public apps are confirmed through Cloudflare Tunnel to the
+edge.
 
 Then:
 

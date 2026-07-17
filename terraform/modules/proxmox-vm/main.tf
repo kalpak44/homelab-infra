@@ -52,10 +52,12 @@ resource "proxmox_virtual_environment_vm" "this" {
     }
 
     user_account {
-      username = "ubuntu"
+      username = "root"
       password = var.password
       keys     = var.ssh_public_keys
     }
+
+    vendor_data_file_id = "local:snippets/vm-ssh-password.yaml"
   }
 
   agent {

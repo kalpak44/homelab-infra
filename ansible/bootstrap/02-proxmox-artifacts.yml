@@ -24,11 +24,75 @@
       args:
         creates: "/var/lib/vz/template/cache/{{ lxc_template }}"
 
+    - name: Check if SSH password-auth drop-in already patched into LXC template
+      ansible.builtin.shell: |
+        tar -I zstd -tf /var/lib/vz/template/cache/{{ lxc_template }} \
+          | grep -qF "etc/ssh/sshd_config.d/99-password-login.conf"
+      register: lxc_template_patched
+      changed_when: false
+      failed_when: false
+
+    - name: Patch LXC template – enable SSH password auth
+      when: lxc_template_patched.rc != 0
+      block:
+        - name: Create temp dir for template extraction
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: lxc-patch
+          register: lxc_patch_dir
+
+        - name: Extract LXC template
+          ansible.builtin.command:
+            cmd: "tar -I zstd -xf /var/lib/vz/template/cache/{{ lxc_template }} -C {{ lxc_patch_dir.path }}"
+
+        - name: Ensure sshd_config.d exists in extracted rootfs
+          ansible.builtin.file:
+            path: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d"
+            state: directory
+            mode: "0755"
+
+        - name: Write SSH password-auth drop-in
+          ansible.builtin.copy:
+            dest: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d/99-password-login.conf"
+            content: |
+              PermitRootLogin yes
+              PasswordAuthentication yes
+              UsePAM yes
+            mode: "0644"
+
+        - name: Repack LXC template
+          ansible.builtin.command:
+            cmd: "tar -I zstd -cf /var/lib/vz/template/cache/{{ lxc_template }} --numeric-owner -C {{ lxc_patch_dir.path }} ."
+
+      always:
+        - name: Remove temp extraction dir
+          ansible.builtin.file:
+            path: "{{ lxc_patch_dir.path }}"
+            state: absent
+          when: lxc_patch_dir.path is defined
+
+    - name: Create VM vendor-data snippet for SSH password auth
+      ansible.builtin.copy:
+        dest: /var/lib/vz/snippets/vm-ssh-password.yaml
+        content: |
+          #cloud-config
+          write_files:
+            - path: /etc/ssh/sshd_config.d/00-password-login.conf
+              content: |
+                PermitRootLogin yes
+                PasswordAuthentication yes
+                UsePAM yes
+              permissions: '0644'
+          runcmd:
+            - systemctl restart ssh
+        mode: "0644"
+
     - name: Download Ubuntu cloud image
       ansible.builtin.get_url:
         url: "{{ cloud_image_url }}"
         dest: "{{ cloud_image_dest }}"
         mode: "0644"
+        force: false
 
     - name: Check if template VM {{ template_vm_id }} already exists
       ansible.builtin.command: "qm status {{ template_vm_id }}"
@@ -65,3 +129,15 @@
         - name: Convert to template
           ansible.builtin.command:
             cmd: "qm template {{ template_vm_id }}"
+
+    - name: Check if VM {{ template_vm_id }} already has vendor cicustom set
+      ansible.builtin.shell: "qm config {{ template_vm_id }} | grep -q cicustom"
+      register: vm_cicustom_check
+      changed_when: false
+      failed_when: false
+
+    - name: Apply vendor-data cicustom to VM {{ template_vm_id }} template
+      ansible.builtin.command:
+        cmd: "qm set {{ template_vm_id }} --cicustom 'vendor=local:snippets/vm-ssh-password.yaml'"
+      when: vm_cicustom_check.rc != 0
+      changed_when: true

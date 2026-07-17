@@ -7,7 +7,8 @@
 #   just list                          # show all configurable resources
 #
 # Env vars (workflow injects them; locally come from your shell):
-#   CLOUDFLARE_API_TOKEN, LETSENCRYPT_EMAIL, PROXMOX_DOMAIN, SSH_PUBLIC_KEY_FILE   (bootstrap)
+#   CLOUDFLARE_API_TOKEN, LETSENCRYPT_EMAIL, PROXMOX_DOMAIN   (bootstrap)
+#   GITHUB_TOKEN (PAT with repo scope), GITHUB_REPO (owner/repo)    (bootstrap - runner auto-register)
 #   ADGUARD_USERNAME/PASSWORD, VAULT_USERNAME/PASSWORD,
 #   POSTGRESQL_USER/PASSWORD/DB, PGADMIN_EMAIL/PASSWORD,
 #   REDIS_PASSWORD, REDIS_COMMANDER_USER/PASSWORD,
@@ -70,21 +71,25 @@ configure resource: setup
       -e "flux_github_token=${FLUX_GITHUB_TOKEN:-}"
 
 # Bootstrap a fresh Proxmox node (SSH key auth) - see bootstrap/README.md
-bootstrap ip user='root':
+bootstrap ip user='root': setup
     ansible-playbook -i "{{ip}}," -u {{user}} \
+      -e "host_password=${HOST_PASSWORD:-}" \
       -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
       -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
       -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
-      -e "ssh_public_key_file=${SSH_PUBLIC_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}" \
+      -e "github_token=${GITHUB_TOKEN:-}" \
+      -e "github_repo=${GITHUB_REPO:-}" \
       bootstrap/main.yml
 
 # Bootstrap a fresh Proxmox node (SSH password prompt - fresh node with no keys)
-bootstrap-pw ip user='root':
+bootstrap-pw ip user='root': setup
     ansible-playbook -i "{{ip}}," -u {{user}} --ask-pass \
+      -e "host_password=${HOST_PASSWORD:-}" \
       -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
       -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
       -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
-      -e "ssh_public_key_file=${SSH_PUBLIC_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}" \
+      -e "github_token=${GITHUB_TOKEN:-}" \
+      -e "github_repo=${GITHUB_REPO:-}" \
       bootstrap/main.yml
 
 # List every configurable resource

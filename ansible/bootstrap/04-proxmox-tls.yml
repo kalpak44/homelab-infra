@@ -8,7 +8,7 @@
 #   proxmox_domain - FQDN that resolves to this node (must already exist as a DNS A record)
 
 - name: Bootstrap - Proxmox Let's Encrypt cert
-  hosts: all
+  hosts: "all:!github-runner"
   gather_facts: false
   vars:
     acme_account: default
@@ -56,14 +56,30 @@
         path: /tmp/cf.env
         state: absent
 
+    - name: Check if ACME domain is already bound
+      ansible.builtin.shell: "pvenode config get | grep -qF '{{ proxmox_domain }}'"
+      register: acme_domain_check
+      changed_when: false
+      failed_when: false
+
     - name: Bind ACME domain to this node
       ansible.builtin.command:
         cmd: >-
           pvenode config set
           --acme account={{ acme_account }}
           --acmedomain0 domain={{ proxmox_domain }},plugin=cloudflare
+      when: acme_domain_check.rc != 0
       changed_when: true
+
+    - name: Check current cert validity (skip order if valid for > 30 days)
+      ansible.builtin.shell: >-
+        test -f /etc/pve/local/pveproxy-ssl.pem &&
+        openssl x509 -in /etc/pve/local/pveproxy-ssl.pem -noout -checkend 2592000
+      register: cert_valid
+      changed_when: false
+      failed_when: false
 
     - name: Order Let's Encrypt certificate (this takes ~30s)
       ansible.builtin.command: pvenode acme cert order
+      when: cert_valid.rc != 0
       changed_when: true

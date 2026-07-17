@@ -1,10 +1,11 @@
 ---
 # Phase 3 - create VM 101 (github-runner) from the Ubuntu cloud image,
-# install ansible/terraform/just, and print instructions for the (interactive)
-# GitHub Actions runner registration.
+# install ansible/terraform/just/qemu-guest-agent, and register the
+# GitHub Actions runner automatically when GITHUB_TOKEN + GITHUB_REPO are set.
 #
-# Idempotent: skips VM creation if 101 already exists; tool installs are
-# idempotent themselves.
+# Idempotent: VM creation is skipped when VM 101 already exists.
+# Tooling and runner registration checks run on every execution (safe re-run).
+# Password auth used throughout - no SSH key required on the controller.
 
 - name: Bootstrap - create runner VM on Proxmox
   hosts: all
@@ -15,29 +16,7 @@
     runner_gw: 192.168.1.1
     runner_storage: local-lvm
     cloud_image_dest: /var/lib/vz/template/iso/noble-server-cloudimg-amd64.img
-    ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
   tasks:
-    - name: Verify local SSH pubkey exists on controller
-      delegate_to: localhost
-      become: false
-      ansible.builtin.stat:
-        path: "{{ ssh_public_key_file }}"
-      register: local_pubkey_stat
-      failed_when: not local_pubkey_stat.stat.exists
-
-    - name: Read local SSH pubkey
-      delegate_to: localhost
-      become: false
-      ansible.builtin.slurp:
-        src: "{{ ssh_public_key_file }}"
-      register: local_pubkey
-
-    - name: Upload SSH pubkey to Proxmox
-      ansible.builtin.copy:
-        content: "{{ local_pubkey.content | b64decode }}"
-        dest: /tmp/runner-key.pub
-        mode: "0644"
-
     - name: Check if runner VM {{ runner_id }} already exists
       ansible.builtin.command: "qm status {{ runner_id }}"
       register: runner_vm_status
@@ -60,8 +39,8 @@
           ansible.builtin.command:
             cmd: "qm importdisk {{ runner_id }} {{ cloud_image_dest }} {{ runner_storage }}"
 
-        - name: qm set (disk + cloud-init + IP + SSH key)
-          ansible.builtin.command:
+        - name: qm set (disk + cloud-init + IP + password auth)
+          ansible.builtin.shell:
             cmd: >-
               qm set {{ runner_id }}
               --scsihw virtio-scsi-pci
@@ -70,9 +49,11 @@
               --boot order=scsi0
               --serial0 socket --vga serial0
               --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }}
-              --sshkeys /tmp/runner-key.pub
               --ciuser ubuntu
+              --cipassword {{ host_password | quote }}
+              --cicustom vendor=local:snippets/vm-ssh-password.yaml
               --onboot 1
+              --agent enabled=1
 
         - name: qm resize (+10G)
           ansible.builtin.command:
@@ -93,6 +74,8 @@
         name: github-runner
         ansible_host: "{{ runner_ip }}"
         ansible_user: ubuntu
+        ansible_password: "{{ host_password }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
 - name: Bootstrap - install tooling on the runner VM
   hosts: github-runner
@@ -100,7 +83,35 @@
   become: true
   vars:
     terraform_version: 1.15.4
+    runner_version: "2.334.0"
+    runner_dir: /home/ubuntu/actions-runner
+    github_token: "{{ github_token | default('') }}"
+    github_repo: "{{ github_repo | default('') }}"
   tasks:
+    - name: Enable root SSH + set root password
+      ansible.builtin.import_tasks: ../proxmox/_shared/enable-root-ssh.yml
+
+    - name: Keep ubuntu user password in sync with HOST_PASSWORD
+      ansible.builtin.user:
+        name: ubuntu
+        password: "{{ host_password | password_hash('sha512') }}"
+        update_password: always
+      when: host_password | default('') | length > 0
+
+    - name: Add GitHub CLI apt keyring
+      ansible.builtin.shell:
+        cmd: >-
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg
+          | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/githubcli-archive-keyring.gpg
+
+    - name: Add GitHub CLI apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/github-cli.list
+        content: "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n"
+        mode: "0644"
+
     - name: Install apt packages
       ansible.builtin.apt:
         name:
@@ -110,8 +121,17 @@
           - git
           - curl
           - unzip
+          - jq
+          - gh
+          - qemu-guest-agent
         state: present
         update_cache: true
+
+    - name: Enable and start qemu-guest-agent
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        state: started
+        enabled: true
 
     - name: Check for terraform
       ansible.builtin.stat:
@@ -134,21 +154,134 @@
       args:
         creates: /usr/local/bin/just
 
-    - name: Print next steps
+    - name: Save GitHub PAT to /root/.github-runner-token
+      ansible.builtin.copy:
+        dest: /root/.github-runner-token
+        content: "{{ github_token }}\n"
+        mode: "0600"
+        owner: root
+      when: github_token | length > 0
+      no_log: true
+
+    - name: Ensure actions-runner directory exists
+      ansible.builtin.file:
+        path: "{{ runner_dir }}"
+        state: directory
+        mode: "0755"
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Check installed runner version
+      ansible.builtin.shell: >-
+        {{ runner_dir }}/bin/Runner.Listener --version 2>/dev/null || echo "0.0.0"
+      register: installed_runner_version
+      changed_when: false
+
+    - name: Download GitHub Actions runner v{{ runner_version }}
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        dest: /tmp/actions-runner.tar.gz
+        mode: "0644"
+      when: installed_runner_version.stdout | trim != runner_version
+
+    - name: Extract runner binary
+      ansible.builtin.unarchive:
+        src: /tmp/actions-runner.tar.gz
+        dest: "{{ runner_dir }}"
+        remote_src: true
+        owner: ubuntu
+        group: ubuntu
+      when: installed_runner_version.stdout | trim != runner_version
+      register: runner_extracted
+
+    - name: Check if runner already configured
+      ansible.builtin.stat:
+        path: "{{ runner_dir }}/.runner"
+      register: runner_config
+
+    - name: Check if runner service already installed
+      ansible.builtin.shell: "systemctl list-units --type=service --all | grep -q 'actions.runner'"
+      register: runner_service_check
+      changed_when: false
+      failed_when: false
+
+    - name: Authenticate gh CLI with GITHUB_TOKEN
+      ansible.builtin.shell: echo "{{ github_token }}" | gh auth login --with-token
+      no_log: true
+      when: github_token | length > 0
+
+    - name: Show gh auth status (token scopes)
+      ansible.builtin.command: gh auth status
+      register: gh_auth_status
+      changed_when: false
+      failed_when: false
+      when: github_token | length > 0
+
+    - name: Print gh auth status
       ansible.builtin.debug:
-        msg: |
-          ================================================================
-          Runner VM ready at {{ ansible_host }}. Tooling installed.
+        msg: "{{ gh_auth_status.stderr }}"
+      when: github_token | length > 0
 
-          GitHub Actions runner registration (INTERACTIVE, do manually):
+    - name: Get runner registration token via gh CLI
+      ansible.builtin.shell: >-
+        gh api repos/{{ github_repo }}/actions/runners/registration-token
+        --method POST --jq '.token'
+      register: reg_token_raw
+      failed_when: false
+      when:
+        - not runner_config.stat.exists
+        - github_token | length > 0
+        - github_repo | length > 0
 
-            1. Repo → Settings → Actions → Runners → New self-hosted runner
-               Select Linux x64 and copy the token.
-            2. ssh ubuntu@{{ ansible_host }}
-            3. mkdir actions-runner && cd actions-runner
-               curl -o runner.tar.gz -L \
-                 https://github.com/actions/runner/releases/download/v2.334.0/actions-runner-linux-x64-2.334.0.tar.gz
-               tar xzf runner.tar.gz
-               ./config.sh --url https://github.com/<owner>/homelab-infra --token <TOKEN>
-               sudo ./svc.sh install && sudo ./svc.sh start
-          ================================================================
+    - name: Show registration token error (if any)
+      ansible.builtin.debug:
+        msg: "gh api exit={{ reg_token_raw.rc }} stderr={{ reg_token_raw.stderr }}"
+      when: reg_token_raw is defined and reg_token_raw.rc | default(0) != 0
+
+    - name: Configure GitHub Actions runner
+      ansible.builtin.command:
+        cmd: >-
+          ./config.sh
+          --url https://github.com/{{ github_repo }}
+          --token {{ reg_token_raw.stdout | trim }}
+          --name github-runner
+          --unattended
+          --replace
+        chdir: "{{ runner_dir }}"
+      become_user: ubuntu
+      when:
+        - not runner_config.stat.exists
+        - reg_token_raw is defined
+        - reg_token_raw.rc | default(1) == 0
+        - reg_token_raw.stdout | trim | length > 0
+      register: runner_configured
+
+    - name: Stop runner service before binary update
+      ansible.builtin.command:
+        cmd: ./svc.sh stop
+        chdir: "{{ runner_dir }}"
+      when:
+        - runner_extracted is defined and runner_extracted.changed
+        - runner_service_check.rc == 0
+
+    - name: Install runner service
+      ansible.builtin.command:
+        cmd: ./svc.sh install ubuntu
+        chdir: "{{ runner_dir }}"
+      when:
+        - runner_service_check.rc != 0
+        - runner_config.stat.exists or (runner_configured is defined and runner_configured.changed)
+
+    - name: Start runner service
+      ansible.builtin.command:
+        cmd: ./svc.sh start
+        chdir: "{{ runner_dir }}"
+      when: >
+        (runner_service_check.rc != 0 and
+         (runner_config.stat.exists or (runner_configured is defined and runner_configured.changed)))
+        or
+        (runner_extracted is defined and runner_extracted.changed and runner_service_check.rc == 0)
+
+    - name: Verify runner service is active
+      ansible.builtin.shell: "systemctl list-units --type=service --state=active | grep -q 'actions.runner'"
+      changed_when: false

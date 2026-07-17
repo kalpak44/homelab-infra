@@ -23,25 +23,6 @@
     update_password: always
   when: host_password | default('') | length > 0
 
-# Cloud-init on Ubuntu VMs plants a `command="echo 'Please login as ubuntu'…"`
-# restriction in /root/.ssh/authorized_keys. Overwrite it with ubuntu's clean
-# keys so the root can be reached both by a key and by password. LXCs don't have a user — this step is
-#  just no-ops for them.
-- name: Check if ubuntu authorized_keys exists (VMs only)
-  ansible.builtin.stat:
-    path: /home/ubuntu/.ssh/authorized_keys
-  register: _ubuntu_authkeys
-
-- name: Replace root authorized_keys with ubuntu's (strip cloud-init redirect)
-  ansible.builtin.copy:
-    src: /home/ubuntu/.ssh/authorized_keys
-    dest: /root/.ssh/authorized_keys
-    remote_src: true
-    owner: root
-    group: root
-    mode: "0600"
-  when: _ubuntu_authkeys.stat.exists
-
 - name: Ensure sshd_config.d directory exists
   ansible.builtin.file:
     path: /etc/ssh/sshd_config.d
