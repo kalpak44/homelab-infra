@@ -21,14 +21,8 @@ on:
           - dns/private/redis
           - dns/private/traefik
           - dns/private/vault
-          - dns/public/bunker-game-app
-          - dns/public/capacity-planner
-          - dns/public/google-assistant-mcp
-          - dns/public/mite-assistant-mcp
-          - dns/public/nocobase
-          - dns/public/personal-web-page
-          - dns/public/shopify-gpt-assistant
           - shared/cloudflare-email
+          - shared/zero-trust
 
 jobs:
   deploy:
@@ -42,7 +36,6 @@ jobs:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      PUBLIC_WAN_IP: ${{ secrets.PUBLIC_WAN_IP }}
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2

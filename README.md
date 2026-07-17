@@ -82,7 +82,6 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `PROXMOX_USERNAME`                                                   | `terraform@pve!terraform`                                                                                    |
 | `PROXMOX_PASSWORD`                                                   | Proxmox API token secret from bootstrap phase 1                                                              |
 | `HOST_PASSWORD`                                                      | Root password for every LXC/VM (SSH + console). Bootstrap bakes it in; Ansible keeps it in sync.             |
-| `PUBLIC_WAN_IP`                                                      | Your WAN IP – used for public Cloudflare A records                                                           |
 | `CLOUDFLARE_API_TOKEN`                                               | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below)                                      |
 | `LETSENCRYPT_EMAIL`                                                  | Email for Let's Encrypt registration                                                                         |
 | `GITHUB_TOKEN`                                                       | PAT with `repo` scope – bootstrap auto-registers the runner (optional; skipped if unset)                     |
@@ -94,6 +93,7 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | Redis + Commander UI creds                                                                                   |
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD`                                 | RabbitMQ admin creds                                                                                         |
 | `FLUX_GITHUB_TOKEN`                                                  | GitHub PAT with `repo` scope – Flux CD bootstrap                                                             |
+| `CLOUDFLARE_TUNNEL_TOKEN`                                            | Token from `terraform output -raw tunnel_token` after deploying `cloudflare/shared/zero-trust`               |
 
 ### 4. Cloudflare API token - required scopes
 
@@ -102,33 +102,38 @@ The single `CLOUDFLARE_API_TOKEN` needs:
 | Type    | Resource                | Permission  |
 |---------|-------------------------|-------------|
 | Zone    | DNS                     | Edit        |
+| Account | Cloudflare Tunnel       | Edit        |
+| Account | Zero Trust              | Edit        |
 | Account | Email Routing Addresses | Edit + Read |
 | Zone    | Email Routing Rules     | Edit + Read |
 | Zone    | Zone Settings           | Edit + Read |
 
-Zone resource is scoped to your domain (e.g. `pavel-usanli.online`).
+Zone resource is scoped to your domain (e.g. `pavel-usanli.online`). Account-level permissions cover the Zero Trust
+tunnel (`cloudflare/shared/zero-trust`).
 
 ---
 
 ## Services
 
 All services live behind `*.internal.pavel-usanli.online` (LAN only, unproxied) or `*.pavel-usanli.online` (public,
-proxied through Cloudflare). Deploy order: Terraform (creates the box + DNS record) → Ansible (configures the service).
+routed through a Cloudflare Zero Trust tunnel — no open WAN ports required). Deploy order: Terraform (creates the
+box + DNS record) → Ansible (configures the service).
 
-| Service                  | Where      | IP            | Terraform dir                        | Ansible dir                                 |
-|--------------------------|------------|---------------|--------------------------------------|---------------------------------------------|
-| AdGuard Home             | LXC        | 192.168.1.2   | `proxmox/adguard-lxc`                | `proxmox/adguard-lxc`                       |
-| Vault                    | LXC        | 192.168.1.3   | `proxmox/vault-lxc`                  | `proxmox/vault-lxc`                         |
-| PostgreSQL + pgAdmin     | LXC        | 192.168.1.4   | `proxmox/postgres-lxc`               | `proxmox/postgres-lxc`                      |
-| Redis + Commander        | LXC        | 192.168.1.6   | `proxmox/redis-lxc`                  | `proxmox/redis-lxc`                         |
-| Portainer                | VM         | 192.168.1.7   | `proxmox/portainer-vm`               | `proxmox/portainer-vm`                      |
-| RabbitMQ                 | LXC        | 192.168.1.8   | `proxmox/rabbitmq-lxc`               | `proxmox/rabbitmq-lxc`                      |
-| Traefik edge             | LXC        | 192.168.1.10  | `proxmox/traefik-lxc`                | `proxmox/traefik-lxc`                       |
-| NFS server (k3s PVs)     | VM         | 192.168.1.108 | `proxmox/nfs-vm`                     | `proxmox/nfs-vm`                            |
-| k3s control plane        | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
-| k3s worker               | VM         | 192.168.1.111 | `proxmox/k3s-cluster`                | (same)                                      |
-| Flux CD bootstrap        | -          | (on k3s)      | -                                    | `proxmox/k3s-cluster` (`flux-install.yml`)  |
-| Cloudflare email routing | Cloudflare | -             | `cloudflare/shared/cloudflare-email` | -                                           |
+| Service                    | Where      | IP            | Terraform dir                          | Ansible dir                                 |
+|----------------------------|------------|---------------|----------------------------------------|---------------------------------------------|
+| AdGuard Home               | LXC        | 192.168.1.2   | `proxmox/adguard-lxc`                  | `proxmox/adguard-lxc`                       |
+| Vault                      | LXC        | 192.168.1.3   | `proxmox/vault-lxc`                    | `proxmox/vault-lxc`                         |
+| PostgreSQL + pgAdmin       | LXC        | 192.168.1.4   | `proxmox/postgres-lxc`                 | `proxmox/postgres-lxc`                      |
+| Redis + Commander          | LXC        | 192.168.1.6   | `proxmox/redis-lxc`                    | `proxmox/redis-lxc`                         |
+| Portainer                  | VM         | 192.168.1.7   | `proxmox/portainer-vm`                 | `proxmox/portainer-vm`                      |
+| RabbitMQ                   | LXC        | 192.168.1.8   | `proxmox/rabbitmq-lxc`                 | `proxmox/rabbitmq-lxc`                      |
+| Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
+| NFS server (k3s PVs)       | VM         | 192.168.1.108 | `proxmox/nfs-vm`                       | `proxmox/nfs-vm`                            |
+| k3s control plane          | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                  | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
+| k3s worker                 | VM         | 192.168.1.111 | `proxmox/k3s-cluster`                  | (same)                                      |
+| Flux CD bootstrap          | -          | (on k3s)      | -                                      | `proxmox/k3s-cluster` (`flux-install.yml`)  |
+| Cloudflare Zero Trust      | Cloudflare | -             | `cloudflare/shared/zero-trust`         | -                                           |
+| Cloudflare email routing   | Cloudflare | -             | `cloudflare/shared/cloudflare-email`   | -                                           |
 
 ### Per-service notes
 
@@ -163,6 +168,25 @@ scp ubuntu@192.168.1.110:/etc/rancher/k3s/k3s.yaml ~/.kube/homelab.yaml
 sed -i '' 's/127.0.0.1/192.168.1.110/' ~/.kube/homelab.yaml
 export KUBECONFIG=~/.kube/homelab.yaml
 kubectl get nodes
+```
+
+**Cloudflare Tunnel** – `cloudflared` daemon running on LXC 210 (`192.168.1.10`). Connects outbound to the
+Cloudflare Zero Trust network; all public traffic for `*.pavel-usanli.online` routes through the tunnel to Traefik
+at `192.168.1.120` — no open WAN ports needed. The tunnel is provisioned by `cloudflare/shared/zero-trust`
+(outputs `tunnel_token`); the daemon is installed and configured by `ansible/proxmox/cloudflared-lxc`.
+Firewall: outbound restricted to `192.168.1.120` (k3s) + internet only.
+
+To retrieve the tunnel token after deploying `cloudflare/shared/zero-trust`:
+
+```bash
+cd terraform && just output cloudflare shared/zero-trust tunnel_token
+```
+
+Save the printed value as `CLOUDFLARE_TUNNEL_TOKEN` in your shell (`~/.zshenv`) and as a GitHub Actions secret.
+Then configure the daemon:
+
+```bash
+cd ansible && just configure cloudflared-lxc
 ```
 
 **Cloudflare email routing** - `contact@pavel-usanli.online` forwards to your Gmail. First deploy triggers a
@@ -202,10 +226,10 @@ Five workflows, all `workflow_dispatch` (manual), all running on the self-hosted
 
 | Workflow                 | Picks                           | Runs                                 |
 |--------------------------|---------------------------------|--------------------------------------|
-| `cloudflare-deploy.yml`  | 21 cloudflare/ dirs             | `just deploy cloudflare <resource>`  |
-| `cloudflare-destroy.yml` | 21 cloudflare/ dirs             | `just destroy cloudflare <resource>` |
-| `proxmox-deploy.yml`     | 8 proxmox/ services             | `just deploy proxmox <resource>`     |
-| `proxmox-destroy.yml`    | 8 proxmox/ services             | `just destroy proxmox <resource>`    |
+| `cloudflare-deploy.yml`  | 15 cloudflare/ dirs             | `just deploy cloudflare <resource>`  |
+| `cloudflare-destroy.yml` | 15 cloudflare/ dirs             | `just destroy cloudflare <resource>` |
+| `proxmox-deploy.yml`     | 9 proxmox/ services             | `just deploy proxmox <resource>`     |
+| `proxmox-destroy.yml`    | 9 proxmox/ services             | `just destroy proxmox <resource>`    |
 | `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
 
 Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [

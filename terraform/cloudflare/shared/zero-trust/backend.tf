@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    key    = "homelab/cloudflare/dns/public/shopify-gpt-assistant.tfstate"
+    key    = "homelab/cloudflare/shared/zero-trust.tfstate"
     region = "auto"
 
     skip_credentials_validation = true

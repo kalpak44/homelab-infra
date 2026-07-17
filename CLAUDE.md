@@ -16,8 +16,7 @@ Cloudflare R2 (S3-compatible backend). No monolithic root.
 
 - `terraform/cloudflare/` - all Cloudflare records and email routing
     - `dns/private/<name>/` - LAN-only `*.internal` A records (unproxied)
-    - `dns/public/<name>/` - internet-facing records (Cloudflare-proxied)
-    - `shared/<name>/` - non-DNS Cloudflare (email routing)
+    - `shared/<name>/` - non-DNS Cloudflare (email routing + Zero Trust tunnel + public DNS)
 - `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
 - `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
 - `terraform/Justfile` - `deploy <layer> <resource>`, `destroy <layer> <resource>`, `list`
@@ -66,8 +65,7 @@ homelab-infra/
 │   ├── Justfile                    # just deploy | destroy | list
 │   ├── cloudflare/
 │   │   ├── dns/private/<name>/     # 14 dirs, one per LAN record set
-│   │   ├── dns/public/<name>/      # 7 dirs, one per public record set
-│   │   └── shared/<name>/          # non-DNS Cloudflare (email routing)
+│   │   └── shared/<name>/          # non-DNS Cloudflare (email routing, Zero Trust tunnel + public DNS)
 │   ├── proxmox/
 │   │   └── <service>/              # 8 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   └── modules/{proxmox-lxc,proxmox-vm}/

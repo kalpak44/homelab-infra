@@ -68,7 +68,8 @@ configure resource: setup
       -e "redis_commander_password=${REDIS_COMMANDER_PASSWORD:-}" \
       -e "rabbitmq_user=${RABBITMQ_USER:-}" \
       -e "rabbitmq_password=${RABBITMQ_PASSWORD:-}" \
-      -e "flux_github_token=${FLUX_GITHUB_TOKEN:-}"
+      -e "flux_github_token=${FLUX_GITHUB_TOKEN:-}" \
+      -e "cloudflare_tunnel_token=${CLOUDFLARE_TUNNEL_TOKEN:-}"
 
 # Bootstrap a fresh Proxmox node (SSH key auth) - see bootstrap/README.md
 bootstrap ip user='root': setup
@@ -106,5 +107,6 @@ list:
     @printf "  %-24s %s\n" "rabbitmq-lxc"     "RabbitMQ - message broker"
     @printf "  %-24s %s\n" "nfs-vm"           "NFS server - persistent volumes for k3s"
     @printf "  %-24s %s\n" "portainer-vm"     "Portainer - Docker container management UI"
+    @printf "  %-24s %s\n" "cloudflared-lxc"  "Cloudflare Tunnel daemon - WAN-less public ingress"
     @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
     @printf "  %-24s %s\n" "k3s-cluster/flux" "Flux CD - GitOps bootstrap on the k3s cluster"

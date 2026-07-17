@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    key    = "homelab/cloudflare/dns/public/nocobase.tfstate"
+    key    = "homelab/proxmox/cloudflared-lxc.tfstate"
     region = "auto"
 
     skip_credentials_validation = true

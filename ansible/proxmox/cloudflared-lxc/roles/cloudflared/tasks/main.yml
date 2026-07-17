@@ -1,0 +1,64 @@
+---
+- name: Download Cloudflare GPG key
+  ansible.builtin.get_url:
+    url: https://pkg.cloudflare.com/cloudflare-main.gpg
+    dest: /usr/share/keyrings/cloudflare-main.gpg
+    mode: "0644"
+    force: false
+
+- name: Add cloudflared APT repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/cloudflared.list
+    content: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared {{ ansible_facts['distribution_release'] }} main\n"
+    mode: "0644"
+  register: _repo
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  when: _repo.changed
+
+- name: Install cloudflared
+  ansible.builtin.apt:
+    name: cloudflared
+    state: present
+
+- name: Write tunnel token env file
+  ansible.builtin.copy:
+    dest: /etc/default/cloudflared
+    content: "TUNNEL_TOKEN={{ cloudflare_tunnel_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: cloudflare_tunnel_token | length > 0
+  notify: Restart cloudflared
+
+- name: Install cloudflared systemd unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cloudflared.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Cloudflare Tunnel
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      TimeoutStartSec=0
+      Type=notify
+      ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token ${TUNNEL_TOKEN}
+      Restart=on-failure
+      RestartSec=5s
+      EnvironmentFile=/etc/default/cloudflared
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart cloudflared
+
+- name: Enable and start cloudflared
+  ansible.builtin.systemd:
+    name: cloudflared
+    state: started
+    enabled: true
+    daemon_reload: true

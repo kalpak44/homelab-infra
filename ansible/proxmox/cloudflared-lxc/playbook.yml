@@ -1,0 +1,12 @@
+---
+- name: Configure Cloudflare Tunnel
+  hosts: cloudflared
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Enable root SSH + rotate password
+      ansible.builtin.import_tasks: ../_shared/enable-root-ssh.yml
+
+  roles:
+    - cloudflared

@@ -1,7 +1,7 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Five workflows, all `workflow_dispatch` (manual), all running on the *
-*self-hosted** runner (VM 101 on the Proxmox node):
+All CI/CDs live in `.github/workflows/`. Five workflows, all `workflow_dispatch` (manual), all running on the
+**self-hosted** runner (VM 101 on the Proxmox node):
 
 | File                     | Purpose                                    | Underlying command                   |
 |--------------------------|--------------------------------------------|--------------------------------------|
@@ -47,20 +47,20 @@ jobs:
 Terraform workflows use **`TF_VAR_`** prefixed env vars so undeclared vars are silently ignored per dir (unlike `-var`
 flags which error):
 
-| Workflow                      | Env vars                                                                                                                                                                                                                                                                               |
-|-------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`, `TF_VAR_public_wan_ip`                                                                                                                                                                                            |
-| `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`                                                                                                                                                                 |
-| `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `RABBITMQ_*`, `FLUX_GITHUB_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
+| Workflow                      | Env vars                                                                                                                                                                                                                                                                                              |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`                                                                                                                                                                                                                                  |
+| `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`, `TF_VAR_host_password`                                                                                                                                                       |
+| `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `RABBITMQ_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns
 
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
-- `cloudflare-*.yml`: 21 entries (13 private DNS + 7 public DNS + 1 shared).
-- `proxmox-*.yml`: 8 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`,
-  `nfs-vm`, `portainer-vm`, `k3s-cluster`).
-- `ansible-configure.yml`: 9 entries (the 8 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
+- `cloudflare-*.yml`: 15 entries (13 private DNS + 2 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
+- `proxmox-*.yml`: 9 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`,
+  `cloudflared-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
+- `ansible-configure.yml`: 10 entries (the 9 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
   the Justfile).
 
 Adding or removing a resource means updating the dropdown in **every** relevant workflow **and** the matching `list`
@@ -90,10 +90,16 @@ without SSH keys yet) from the `ansible/` dir.
 In-cluster services are managed by Flux, not by Terraform/Ansible — the only piece that touches these workflows is the
 DNS record.
 
-1. Manifests: `gitops/clusters/homelab/apps/{public,private}/<name>/` (see `dns-public.md` / `dns-private.md`).
-2. DNS record dir: `terraform/cloudflare/dns/{public,private}/<name>/`.
-3. Add `dns/{public,private}/<name>` to `cloudflare-{deploy,destroy}.yml` dropdowns and to `terraform/Justfile`'s
-   `list`.
+**Public service** (internet-facing, through the tunnel):
+1. Add one entry to `local.public_k3s_apps` in `terraform/cloudflare/shared/zero-trust/main.tf` (see `dns-public.md`).
+2. Deploy: `just deploy cloudflare shared/zero-trust` (or **Cloudflare - Deploy** → `shared/zero-trust`).
+3. Manifests: `gitops/clusters/homelab/apps/public/<name>/`.
+4. `gitops/README.md` and `README.md` updated.
+
+**Private service** (LAN-only):
+1. DNS record dir: `terraform/cloudflare/dns/private/<name>/` (see `dns-private.md`).
+2. Add `dns/private/<name>` to `cloudflare-{deploy,destroy}.yml` dropdowns and to `terraform/Justfile`'s `list`.
+3. Manifests: `gitops/clusters/homelab/apps/private/<name>/`.
 4. `gitops/README.md` and `README.md` updated.
 
 No workflow entry is needed for the in-cluster manifests themselves — Flux reconciles from Git.

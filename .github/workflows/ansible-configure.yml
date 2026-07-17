@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - adguard-lxc
+          - cloudflared-lxc
           - vault-lxc
           - postgres-lxc
           - redis-lxc
@@ -43,6 +44,7 @@ jobs:
       RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
       RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
       FLUX_GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
+      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2
