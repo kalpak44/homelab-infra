@@ -13,24 +13,30 @@ spec:
       labels:
         app: playwright-mcp
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: playwright-mcp
-          image: microsoft/playwright-mcp:latest
+          image: mcp/playwright:latest
           args:
+            - --headless
+            - --browser
+            - chromium
+            - --no-sandbox
             - --port
             - "8931"
+            - --host
+            - 0.0.0.0
           ports:
             - containerPort: 8931
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 8931
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
