@@ -29,7 +29,8 @@ gitops/clusters/homelab/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard
         ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
-        └── lex-bg-connector/                # Lex background connector (data preloader)
+        ├── lex-bg-connector/                # Lex background connector (data preloader)
+        └── playwright-mcp/                  # Microsoft Playwright MCP server (browser automation)
 ```
 
 ## Required secrets in Vault
