@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: playwright-mcp
+  namespace: private
+spec:
+  entryPoints:
+    - private-web-secure
+  routes:
+    - match: Host(`playwright-mcp.internal.pavel-usanli.online`)
+      kind: Rule
+      services:
+        - name: playwright-mcp
+          port: 8931
+  tls:
+    certResolver: cloudflare

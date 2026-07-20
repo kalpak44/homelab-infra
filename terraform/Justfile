@@ -85,6 +85,7 @@ list:
     @printf "    %-40s %s\n" "dns/private/traefik"                     "traefik.internal → 192.168.1.121 (Traefik, in-cluster)"
     @printf "    %-40s %s\n" "dns/private/headlamp"                    "headlamp.internal → 192.168.1.121 (K8s dashboard)"
     @printf "    %-40s %s\n" "dns/private/crowdsec-web-ui"             "crowdsec.internal → 192.168.1.121 (CrowdSec UI)"
+    @printf "    %-40s %s\n" "dns/private/playwright-mcp"              "playwright-mcp.internal → 192.168.1.121 (Playwright MCP server)"
     @printf "    %-40s %s\n" "dns/private/private-home-page"           "home.internal → 192.168.1.121 (internal home page)"
     @printf "    %-40s %s\n" "dns/private/data-source-connector-example" "data-source-example.internal → 192.168.1.121"
     @echo "  shared (non-DNS Cloudflare resources)"

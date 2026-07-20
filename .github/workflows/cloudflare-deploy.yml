@@ -15,6 +15,7 @@ on:
           - dns/private/nfs
           - dns/private/portainer
           - dns/private/postgres
+          - dns/private/playwright-mcp
           - dns/private/private-home-page
           - dns/private/proxmox
           - dns/private/rabbitmq
