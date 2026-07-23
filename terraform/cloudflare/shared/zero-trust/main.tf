@@ -23,6 +23,7 @@ locals {
     "mite-assistant"        = "mite-assistant.pavel-usanli.online"
     "google-assistant"      = "google-assistant.pavel-usanli.online"
     "shopify-gpt-assistant" = "shopify-gpt-assistant.pavel-usanli.online"
+    "noco-ai-tools"         = "noco-ai-tools.pavel-usanli.online"
   }
 
   tunnel_cname = "${cloudflare_zero_trust_tunnel_cloudflared.homelab.id}.cfargotunnel.com"

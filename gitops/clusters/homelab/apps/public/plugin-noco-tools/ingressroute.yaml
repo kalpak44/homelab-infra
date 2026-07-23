@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: plugin-noco-tools
+  namespace: public
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`noco-ai-tools.pavel-usanli.online`)
+      kind: Rule
+      services:
+        - name: plugin-noco-tools
+          port: 80
+  tls:
+    certResolver: cloudflare

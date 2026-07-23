@@ -24,7 +24,8 @@ gitops/clusters/homelab/
     │   ├── shopify-gpt-assistant/ # Shopify GPT assistant
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
     │   ├── google-assistant-mcp/  # Google MCP server
-    │   └── nocobase/              # NocoBase no-code platform
+    │   ├── nocobase/              # NocoBase no-code platform
+    │   └── plugin-noco-tools/     # Noco Tools landing page (noco-ai-tools.pavel-usanli.online)
     └── private/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard
