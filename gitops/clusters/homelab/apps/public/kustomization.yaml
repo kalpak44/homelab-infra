@@ -4,7 +4,7 @@ resources:
   - personal-web-page
   - mite-assistant-mcp
   - capacity-planner
-  - shopify-gpt-assistant
+#  - shopify-gpt-assistant
   - bunker-game-app
   - google-assistant-mcp
   - nocobase
