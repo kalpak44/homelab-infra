@@ -32,10 +32,3 @@ spec:
             limits:
               memory: 64Mi
               ephemeral-storage: 100Mi
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 3
