@@ -34,12 +34,12 @@
 #
 #   WebOS TV / IPTV client
 #       │
-#       │  http://192.168.1.7:8000/playlist.m3u8  (refreshed hourly)
+#       │  http://192.168.1.7:6880/playlist.m3u8  (refreshed hourly)
 #       ▼
-#   playlist proxy :8000  ── periodic http://engine:6878/search ──┐
-#       │  (M3U entries point at ▼)                               │
-#       ▼                                                         │
-#   acexy :8080                                                   │
+#   playlist proxy :6880  ── periodic http://engine:6878/search ──┐
+#       │  (M3U entries point at ▼)                                │
+#       ▼                                                          │
+#   acexy :6879                                                    │
 #       │                                                         │
 #       ▼                                                         │
 #   acestream-engine :6878 (internal bridge network only)  ◄──────┘
@@ -55,7 +55,7 @@
 #   3. Paste or upload this file (or point Portainer at this repo path).
 #   4. Deploy the stack.
 #   5. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at:
-#        http://192.168.1.7:8000/playlist.m3u8
+#        http://192.168.1.7:6880/playlist.m3u8
 #      No further setup. Playlist auto-refreshes every hour.
 #
 # Manual refresh
@@ -64,7 +64,7 @@
 # The proxy exposes POST /refresh to force an immediate rebuild without
 # waiting for the TTL:
 #
-#   curl -X POST http://192.168.1.7:8000/refresh
+#   curl -X POST http://192.168.1.7:6880/refresh
 #
 # Security notes
 # --------------
@@ -75,7 +75,7 @@
 # - P2P port 8621/tcp+udp IS published for swarm health. It speaks the
 #   BitTorrent-family protocol, not HTTP; there is no admin surface on it.
 # - When exposing this stack over the Cloudflare tunnel later, publish
-#   only the playlist proxy (:8000) and acexy (:8080). Never publish the
+#   only the playlist proxy (:6880) and acexy (:6879). Never publish the
 #   engine's HTTP port. Add a Cloudflare Access policy (email/IP allowlist)
 #   on both public hostnames.
 #
@@ -158,8 +158,8 @@ services:
 
     ports:
       # Client-facing stream endpoint. WebOS / IPTV players hit:
-      #   http://192.168.1.7:8080/ace/getstream?infohash=<hash>
-      - "8080:8080"
+      #   http://192.168.1.7:6879/ace/getstream?infohash=<hash>
+      - "6879:8080"
 
     environment:
       # acexy talks to the engine using the compose network DNS name.
@@ -167,7 +167,8 @@ services:
       ACEXY_PORT: "6878"
       ACEXY_SCHEME: http
 
-      # acexy listens on all interfaces on port 8080.
+      # acexy listens on all interfaces on port 8080 inside the container;
+      # published on the host as 6879.
       ACEXY_LISTEN_ADDR: ":8080"
 
       # MPEG-TS mode (default). HLS mode is marked non-tested upstream.
@@ -184,9 +185,9 @@ services:
   # points at acexy — the client's TV never touches the engine directly.
   #
   # Endpoints:
-  #   GET  http://192.168.1.7:8000/playlist.m3u8   — current playlist
-  #   HEAD http://192.168.1.7:8000/playlist.m3u8   — probe (headers only)
-  #   POST http://192.168.1.7:8000/refresh         — force immediate rebuild
+  #   GET  http://192.168.1.7:6880/playlist.m3u8   — current playlist
+  #   HEAD http://192.168.1.7:6880/playlist.m3u8   — probe (headers only)
+  #   POST http://192.168.1.7:6880/refresh         — force immediate rebuild
   #
   playlist:
     image: ghcr.io/kalpak44/acestream-proxy:e2a0b50
@@ -201,7 +202,7 @@ services:
         condition: service_healthy
 
     ports:
-      - "8000:8000"
+      - "6880:8000"
 
     environment:
       # Talks to the engine via the compose network DNS name.
@@ -210,7 +211,8 @@ services:
       # Base URL baked into every M3U entry. MUST be the URL the CLIENT (TV)
       # uses to reach acexy — not the internal Docker name. Uses acexy's
       # /ace/getstream endpoint (MPEG-TS); the proxy appends ?infohash=<hash>.
-      ACESTREAM_STREAM_BASE: "http://192.168.1.7:8080/ace/getstream"
+      # Host port 6879 → container port 8080.
+      ACESTREAM_STREAM_BASE: "http://192.168.1.7:6879/ace/getstream"
 
       # Search pagination size.
       ACESTREAM_PAGE_SIZE: "50"
