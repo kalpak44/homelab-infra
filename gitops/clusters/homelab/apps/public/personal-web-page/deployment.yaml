@@ -21,7 +21,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: personal-web-page
-          image: ghcr.io/kalpak44/kalpak44:e6115fc
+          image: ghcr.io/kalpak44/kalpak44:a75c591
           ports:
             - containerPort: 80
           resources:
