@@ -198,7 +198,7 @@ services:
   # add sources, configure channel mapping.
   #
   threadfin:
-    image: ghcr.io/threadfin/threadfin:latest
+    image: fyb3roptik/threadfin:latest
     container_name: acestream-threadfin
     restart: unless-stopped
 
