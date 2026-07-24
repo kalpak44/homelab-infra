@@ -117,7 +117,7 @@ services:
   # the `acestream` network via the Docker DNS name `engine`.
   #
   engine:
-    image: ghcr.io/kalpak44/acestream-engine:latest
+    image: ghcr.io/kalpak44/acestream-engine:274465d
     container_name: acestream-engine
     restart: unless-stopped
 
