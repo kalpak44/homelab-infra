@@ -1,49 +1,51 @@
 # ==============================================================================
-# Portainer Stack: AceStream (Engine + acexy + Threadfin)
+# Portainer Stack: AceStream (Engine + acexy + playlist proxy)
 # ==============================================================================
 #
 # Purpose
 # -------
-# This stack provides a three-tier AceStream IPTV setup:
+# Three-tier AceStream IPTV setup that produces a single, auto-refreshing M3U
+# for WebOS / Kodi / VLC clients on the LAN. Zero manual setup after deploy:
+# the playlist proxy scrapes the AceStream search catalog on a TTL and re-emits
+# playlist.m3u8 with URLs already pointing at the acexy multiplex layer.
 #
 #   1. AceStream Engine
-#      The upstream P2P streaming engine. Exposes a full admin HTTP API on
-#      port 6878 that can mutate settings, wipe cache, or shut the engine down.
-#      For safety this port is NEVER published to the host — it is reachable
-#      only from other containers in this stack's internal Docker network.
+#      P2P streaming engine. Its HTTP admin API on 6878 is NEVER published to
+#      the host — reachable only from other containers in this stack's Docker
+#      network. P2P port 8621/tcp+udp IS published for swarm health.
 #
 #   2. acexy
-#      A small Go proxy that sits in front of the engine. Solves three
-#      AceStream limitations:
+#      Small Go proxy in front of the engine. Solves three AceStream limits:
 #        - Only one client per stream (acexy multiplexes so N clients can
 #          watch the same infohash concurrently).
 #        - Manual pid assignment per client (acexy generates one automatically).
-#        - Fragile transmission — a momentary engine hiccup drops every client
+#        - Fragile transmission — momentary engine hiccup drops every client
 #          (acexy insulates the clients from those errors).
 #      Only endpoint exposed: /ace/getstream.
 #
-#   3. Threadfin
-#      IPTV middleware. Ingests M3U playlists (community lists, iptv-org,
-#      hand-curated AceStream lists) + XMLTV EPG, merges/filters/renames
-#      channels, and serves a unified M3U + EPG to WebOS TVs, Kodi, Plex,
-#      Jellyfin, etc. Configured via its own web UI on first run.
+#   3. playlist proxy (kalpak44/acestream-proxy)
+#      Node.js service that paginates the engine's /search endpoint, merges
+#      external iptv-org M3U sources, applies category/country/blacklist
+#      overrides, and emits playlist.m3u8 on a TTL (default 3600s). Each entry
+#      already points at acexy — no post-processing needed.
 #
 # Data flow
 # ---------
 #
 #   WebOS TV / IPTV client
 #       │
+#       │  http://192.168.1.7:8000/playlist.m3u8  (refreshed hourly)
 #       ▼
-#   http://acestream.internal:34400/m3u/threadfin.m3u   (Threadfin)
-#       │  (URLs in the playlist point at ▼)
-#       ▼
-#   http://acestream.internal:8080/ace/getstream?id=<hash>   (acexy)
+#   playlist proxy :8000  ── periodic http://engine:6878/search ──┐
+#       │  (M3U entries point at ▼)                               │
+#       ▼                                                         │
+#   acexy :8080                                                   │
+#       │                                                         │
+#       ▼                                                         │
+#   acestream-engine :6878 (internal bridge network only)  ◄──────┘
 #       │
 #       ▼
-#   acestream-engine :6878 (internal bridge network only)
-#       │
-#       ▼
-#   AceStream P2P swarm  (via published TCP+UDP :8621)
+#   AceStream P2P swarm (via published TCP+UDP :8621)
 #
 # Portainer deployment
 # --------------------
@@ -52,48 +54,37 @@
 #   2. Select "Add stack".
 #   3. Paste or upload this file (or point Portainer at this repo path).
 #   4. Deploy the stack.
-#   5. Open http://acestream.internal:34400 to complete Threadfin setup:
-#        - Set an admin password.
-#        - Add M3U sources (paste URLs or upload files).
-#        - Add XMLTV EPG sources (optional but recommended).
-#        - Rewrite AceStream URLs to point at acexy — either by preparing
-#          your source M3U with acexy URLs directly, or by using Threadfin's
-#          channel mapping to substitute the base URL.
-#   6. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at
-#      Threadfin's playlist URL (shown in the Threadfin UI after setup).
+#   5. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at:
+#        http://192.168.1.7:8000/playlist.m3u8
+#      No further setup. Playlist auto-refreshes every hour.
 #
-# Host directory preparation
-# --------------------------
+# Manual refresh
+# --------------
 #
-# Create the required directories before deployment:
+# The proxy exposes POST /refresh to force an immediate rebuild without
+# waiting for the TTL:
 #
-#   mkdir -p /mnt/data/threadfin/conf
-#   mkdir -p /mnt/data/threadfin/data
-#
-# Ensure UID 1000 and GID 1000 own them:
-#
-#   chown -R 1000:1000 /mnt/data/threadfin
+#   curl -X POST http://192.168.1.7:8000/refresh
 #
 # Security notes
 # --------------
 #
 # - The AceStream engine admin API on port 6878 is NEVER published to the
-#   host. Only acexy (in the same Docker network) can reach it. Do not add
+#   host. Only acexy (in the same Docker network) can reach it. Do NOT add
 #   a `ports:` entry to the engine service.
-# - The P2P port 8621/tcp+udp IS published for swarm health. It speaks the
+# - P2P port 8621/tcp+udp IS published for swarm health. It speaks the
 #   BitTorrent-family protocol, not HTTP; there is no admin surface on it.
-# - Threadfin's web UI has no authentication out of the box — set an admin
-#   password immediately on first launch, before adding sources.
-# - When exposing this stack over the Cloudflare tunnel later, only publish
-#   Threadfin (:34400) and acexy (:8080). Never publish the engine's HTTP
-#   port. Add a Cloudflare Access policy (email/IP allowlist) on both
-#   public hostnames.
+# - When exposing this stack over the Cloudflare tunnel later, publish
+#   only the playlist proxy (:8000) and acexy (:8080). Never publish the
+#   engine's HTTP port. Add a Cloudflare Access policy (email/IP allowlist)
+#   on both public hostnames.
 #
 # Image versioning
 # ----------------
 #
-# The stack currently uses "latest" image tags. For production use, pin each
-# image to a tested version.
+# Engine + playlist proxy are pinned to specific short-sha tags for
+# reproducibility. Acexy is on :latest — pin to a specific tag before going
+# public.
 #
 # ==============================================================================
 
@@ -102,10 +93,6 @@ version: "3.8"
 networks:
   acestream:
     driver: bridge
-
-volumes:
-  threadfin-conf:
-  threadfin-data:
 
 services:
   # ============================================================================
@@ -129,7 +116,7 @@ services:
       - "6878"
 
     # P2P port for AceStream peer traffic. Publishing improves swarm health.
-    # This port is BitTorrent-family; it does NOT expose the admin API.
+    # This port is BitTorrent family; it does NOT expose the admin API.
     ports:
       - "8621:8621/tcp"
       - "8621:8621/udp"
@@ -144,9 +131,7 @@ services:
       - "1610612736"      # 1.5 GiB
 
     healthcheck:
-      test:
-        - CMD-SHELL
-        - "curl -fsS http://127.0.0.1:6878/webui/api/service?method=get_version || exit 1"
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:6878/webui/api/service?method=get_version || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -173,7 +158,7 @@ services:
 
     ports:
       # Client-facing stream endpoint. WebOS / IPTV players hit:
-      #   http://acestream.internal:8080/ace/getstream?id=<infohash>
+      #   http://192.168.1.7:8080/ace/getstream?infohash=<hash>
       - "8080:8080"
 
     environment:
@@ -190,34 +175,50 @@ services:
       ACEXY_M3U8: "false"
 
   # ============================================================================
-  # Threadfin
+  # Playlist proxy (kalpak44/acestream-proxy)
   # ============================================================================
   #
-  # IPTV middleware: ingests M3U + XMLTV, serves a unified playlist + EPG.
-  # First run: open http://acestream.internal:34400, set an admin password,
-  # add sources, configure channel mapping.
+  # Node service that periodically scrapes the engine's /search catalog +
+  # external iptv-org M3U sources, applies category/country/blacklist
+  # overrides, and emits playlist.m3u8. Each entry's stream URL already
+  # points at acexy — the client's TV never touches the engine directly.
   #
-  threadfin:
-    image: fyb3roptik/threadfin:latest
-    container_name: acestream-threadfin
+  # Endpoints:
+  #   GET  http://192.168.1.7:8000/playlist.m3u8   — current playlist
+  #   HEAD http://192.168.1.7:8000/playlist.m3u8   — probe (headers only)
+  #   POST http://192.168.1.7:8000/refresh         — force immediate rebuild
+  #
+  playlist:
+    image: ghcr.io/kalpak44/acestream-proxy:e2a0b50
+    container_name: acestream-playlist
     restart: unless-stopped
 
     networks:
       - acestream
 
+    depends_on:
+      engine:
+        condition: service_healthy
+
     ports:
-      # Threadfin web UI + M3U/XMLTV endpoints:
-      #   http://acestream.internal:34400
-      - "34400:34400"
+      - "8000:8000"
 
     environment:
-      PUID: "1000"
-      PGID: "1000"
-      TZ: "Europe/Sofia"
+      # Talks to the engine via the compose network DNS name.
+      ACESTREAM_SEARCH_URL: "http://engine:6878/search"
 
-    volumes:
-      # Persistent Threadfin configuration (settings, channel mappings, sources).
-      - threadfin-conf:/home/threadfin/conf
+      # Base URL baked into every M3U entry. MUST be the URL the CLIENT (TV)
+      # uses to reach acexy — not the internal Docker name. Uses acexy's
+      # /ace/getstream endpoint (MPEG-TS); the proxy appends ?infohash=<hash>.
+      ACESTREAM_STREAM_BASE: "http://192.168.1.7:8080/ace/getstream"
 
-      # Persistent Threadfin data (cached EPG, playlists, backups).
-      - threadfin-data:/home/threadfin/data
+      # Search pagination size.
+      ACESTREAM_PAGE_SIZE: "50"
+
+      # Playlist regenerates when older than this (seconds). 3600 = 1 hour.
+      PLAYLIST_TTL: "3600"
+
+      # Output filename served at /playlist.m3u8
+      PLAYLIST_FILE: "playlist.m3u8"
+
+      PORT: "8000"
