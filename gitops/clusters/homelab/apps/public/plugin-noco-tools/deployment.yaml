@@ -21,7 +21,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: plugin-noco-tools
-          image: ghcr.io/kalpak44/noco-tools-site:8b38fae
+          image: ghcr.io/kalpak44/noco-tools-site:119d59d
           ports:
             - containerPort: 80
           resources:
