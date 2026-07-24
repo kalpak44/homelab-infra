@@ -1,0 +1,223 @@
+# ==============================================================================
+# Portainer Stack: AceStream (Engine + acexy + Threadfin)
+# ==============================================================================
+#
+# Purpose
+# -------
+# This stack provides a three-tier AceStream IPTV setup:
+#
+#   1. AceStream Engine
+#      The upstream P2P streaming engine. Exposes a full admin HTTP API on
+#      port 6878 that can mutate settings, wipe cache, or shut the engine down.
+#      For safety this port is NEVER published to the host — it is reachable
+#      only from other containers in this stack's internal Docker network.
+#
+#   2. acexy
+#      A small Go proxy that sits in front of the engine. Solves three
+#      AceStream limitations:
+#        - Only one client per stream (acexy multiplexes so N clients can
+#          watch the same infohash concurrently).
+#        - Manual pid assignment per client (acexy generates one automatically).
+#        - Fragile transmission — a momentary engine hiccup drops every client
+#          (acexy insulates the clients from those errors).
+#      Only endpoint exposed: /ace/getstream.
+#
+#   3. Threadfin
+#      IPTV middleware. Ingests M3U playlists (community lists, iptv-org,
+#      hand-curated AceStream lists) + XMLTV EPG, merges/filters/renames
+#      channels, and serves a unified M3U + EPG to WebOS TVs, Kodi, Plex,
+#      Jellyfin, etc. Configured via its own web UI on first run.
+#
+# Data flow
+# ---------
+#
+#   WebOS TV / IPTV client
+#       │
+#       ▼
+#   http://acestream.internal:34400/m3u/threadfin.m3u   (Threadfin)
+#       │  (URLs in the playlist point at ▼)
+#       ▼
+#   http://acestream.internal:8080/ace/getstream?id=<hash>   (acexy)
+#       │
+#       ▼
+#   acestream-engine :6878 (internal bridge network only)
+#       │
+#       ▼
+#   AceStream P2P swarm  (via published TCP+UDP :8621)
+#
+# Portainer deployment
+# --------------------
+#
+#   1. In Portainer, open "Stacks".
+#   2. Select "Add stack".
+#   3. Paste or upload this file (or point Portainer at this repo path).
+#   4. Deploy the stack.
+#   5. Open http://acestream.internal:34400 to complete Threadfin setup:
+#        - Set an admin password.
+#        - Add M3U sources (paste URLs or upload files).
+#        - Add XMLTV EPG sources (optional but recommended).
+#        - Rewrite AceStream URLs to point at acexy — either by preparing
+#          your source M3U with acexy URLs directly, or by using Threadfin's
+#          channel mapping to substitute the base URL.
+#   6. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at
+#      Threadfin's playlist URL (shown in the Threadfin UI after setup).
+#
+# Host directory preparation
+# --------------------------
+#
+# Create the required directories before deployment:
+#
+#   mkdir -p /mnt/data/threadfin/conf
+#   mkdir -p /mnt/data/threadfin/data
+#
+# Ensure UID 1000 and GID 1000 own them:
+#
+#   chown -R 1000:1000 /mnt/data/threadfin
+#
+# Security notes
+# --------------
+#
+# - The AceStream engine admin API on port 6878 is NEVER published to the
+#   host. Only acexy (in the same Docker network) can reach it. Do not add
+#   a `ports:` entry to the engine service.
+# - The P2P port 8621/tcp+udp IS published for swarm health. It speaks the
+#   BitTorrent-family protocol, not HTTP; there is no admin surface on it.
+# - Threadfin's web UI has no authentication out of the box — set an admin
+#   password immediately on first launch, before adding sources.
+# - When exposing this stack over the Cloudflare tunnel later, only publish
+#   Threadfin (:34400) and acexy (:8080). Never publish the engine's HTTP
+#   port. Add a Cloudflare Access policy (email/IP allowlist) on both
+#   public hostnames.
+#
+# Image versioning
+# ----------------
+#
+# The stack currently uses "latest" image tags. For production use, pin each
+# image to a tested version.
+#
+# ==============================================================================
+
+version: "3.8"
+
+networks:
+  acestream:
+    driver: bridge
+
+volumes:
+  threadfin-conf:
+  threadfin-data:
+
+services:
+  # ============================================================================
+  # AceStream Engine
+  # ============================================================================
+  #
+  # The P2P streaming engine. HTTP admin API on 6878 is intentionally NOT
+  # published to the host — it is reachable only from other containers in
+  # the `acestream` network via the Docker DNS name `engine`.
+  #
+  engine:
+    image: ghcr.io/kalpak44/acestream-engine:latest
+    container_name: acestream-engine
+    restart: unless-stopped
+
+    networks:
+      - acestream
+
+    # Only visible inside the compose network — no `ports:` for 6878.
+    expose:
+      - "6878"
+
+    # P2P port for AceStream peer traffic. Publishing improves swarm health.
+    # This port is BitTorrent-family; it does NOT expose the admin API.
+    ports:
+      - "8621:8621/tcp"
+      - "8621:8621/udp"
+
+    # The engine caches stream chunks in /dev/shm. Default 64 MB is too small.
+    shm_size: "2g"
+
+    # Passed through as extra args to the engine binary (via the image's
+    # entrypoint, which always prepends --client-console).
+    command:
+      - "--cache-max-bytes"
+      - "1610612736"      # 1.5 GiB
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsS http://127.0.0.1:6878/webui/api/service?method=get_version || exit 1"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ============================================================================
+  # acexy
+  # ============================================================================
+  #
+  # Stream multiplexer + resilience layer in front of the engine. This is the
+  # only component that talks to the engine's HTTP API.
+  #
+  acexy:
+    image: ghcr.io/javinator9889/acexy:latest
+    container_name: acestream-acexy
+    restart: unless-stopped
+
+    networks:
+      - acestream
+
+    depends_on:
+      engine:
+        condition: service_healthy
+
+    ports:
+      # Client-facing stream endpoint. WebOS / IPTV players hit:
+      #   http://acestream.internal:8080/ace/getstream?id=<infohash>
+      - "8080:8080"
+
+    environment:
+      # acexy talks to the engine using the compose network DNS name.
+      ACEXY_HOST: engine
+      ACEXY_PORT: "6878"
+      ACEXY_SCHEME: http
+
+      # acexy listens on all interfaces on port 8080.
+      ACEXY_LISTEN_ADDR: ":8080"
+
+      # MPEG-TS mode (default). HLS mode is marked non-tested upstream.
+      # Set to "true" to switch to HLS output if you need it.
+      ACEXY_M3U8: "false"
+
+  # ============================================================================
+  # Threadfin
+  # ============================================================================
+  #
+  # IPTV middleware: ingests M3U + XMLTV, serves a unified playlist + EPG.
+  # First run: open http://acestream.internal:34400, set an admin password,
+  # add sources, configure channel mapping.
+  #
+  threadfin:
+    image: ghcr.io/threadfin/threadfin:latest
+    container_name: acestream-threadfin
+    restart: unless-stopped
+
+    networks:
+      - acestream
+
+    ports:
+      # Threadfin web UI + M3U/XMLTV endpoints:
+      #   http://acestream.internal:34400
+      - "34400:34400"
+
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "Europe/Sofia"
+
+    volumes:
+      # Persistent Threadfin configuration (settings, channel mappings, sources).
+      - threadfin-conf:/home/threadfin/conf
+
+      # Persistent Threadfin data (cached EPG, playlists, backups).
+      - threadfin-data:/home/threadfin/data

@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - dns/private/acestream
           - dns/private/adguard
           - dns/private/crowdsec-web-ui
           - dns/private/data-source-connector-example
