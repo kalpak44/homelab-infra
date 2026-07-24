@@ -4,10 +4,11 @@
 #
 # Purpose
 # -------
-# Three-tier AceStream IPTV setup that produces a single, auto-refreshing M3U
-# for WebOS / Kodi / VLC clients on the LAN. Zero manual setup after deploy:
-# the playlist proxy scrapes the AceStream search catalog on a TTL and re-emits
-# playlist.m3u8 with URLs already pointing at the acexy multiplex layer.
+# Three-tier AceStream IPTV setup that produces a single M3U for WebOS / Kodi /
+# VLC clients on the LAN. The playlist proxy uses an upstream M3U (SOURCE_PLAYLIST_URL)
+# as the channel catalog, matches each channel against live AceStream infohashes
+# from the engine's /search, and re-emits playlist.m3u8 on a cron schedule with
+# URLs already pointing at the acexy multiplex layer.
 #
 #   1. AceStream Engine
 #      P2P streaming engine. Its HTTP admin API on 6878 is NEVER published to
@@ -24,10 +25,11 @@
 #      Only endpoint exposed: /ace/getstream.
 #
 #   3. playlist proxy (kalpak44/acestream-proxy)
-#      Node.js service that paginates the engine's /search endpoint, merges
-#      external iptv-org M3U sources, applies category/country/blacklist
-#      overrides, and emits playlist.m3u8 on a TTL (default 3600s). Each entry
-#      already points at acexy — no post-processing needed.
+#      Node.js service that uses SOURCE_PLAYLIST_URL as the channel catalog
+#      (names, groups, logos, EPG ids), matches each channel against live
+#      AceStream infohashes from the engine's /search endpoint, and emits
+#      playlist.m3u8 on a cron schedule (default nightly). Each entry already
+#      points at acexy — no post-processing needed.
 #
 # Data flow
 # ---------
@@ -54,17 +56,13 @@
 #   2. Select "Add stack".
 #   3. Paste or upload this file (or point Portainer at this repo path).
 #   4. Deploy the stack.
-#   5. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at:
+#   5. Set the SOURCE_PLAYLIST_URL stack variable to your upstream M3U URL.
+#   6. Deploy the stack.
+#   7. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at:
 #        http://192.168.1.7:6880/playlist.m3u8
-#      No further setup. Playlist auto-refreshes every hour.
-#
-# Manual refresh
-# --------------
-#
-# The proxy exposes POST /refresh to force an immediate rebuild without
-# waiting for the TTL:
-#
-#   curl -X POST http://192.168.1.7:6880/refresh
+#      Playlist rebuilds on startup and nightly at 03:00 (configurable via
+#      CRON_SCHEDULE). Restart the playlist container to force an immediate
+#      rebuild.
 #
 # Security notes
 # --------------
@@ -179,18 +177,18 @@ services:
   # Playlist proxy (kalpak44/acestream-proxy)
   # ============================================================================
   #
-  # Node service that periodically scrapes the engine's /search catalog +
-  # external iptv-org M3U sources, applies category/country/blacklist
-  # overrides, and emits playlist.m3u8. Each entry's stream URL already
-  # points at acexy — the client's TV never touches the engine directly.
+  # Node service that uses SOURCE_PLAYLIST_URL as the channel catalog (names,
+  # groups, logos, EPG ids), matches each channel against live AceStream
+  # infohashes from the engine's /search, and emits playlist.m3u8 on a cron
+  # schedule. Each entry's stream URL already points at acexy.
   #
   # Endpoints:
   #   GET  http://192.168.1.7:6880/playlist.m3u8   — current playlist
   #   HEAD http://192.168.1.7:6880/playlist.m3u8   — probe (headers only)
-  #   POST http://192.168.1.7:6880/refresh         — force immediate rebuild
+  #   (no /refresh endpoint — rebuilds on startup and via cron only)
   #
   playlist:
-    image: ghcr.io/kalpak44/acestream-proxy:e2a0b50
+    image: ghcr.io/kalpak44/acestream-proxy:46ce330
     container_name: acestream-playlist
     restart: unless-stopped
 
@@ -205,6 +203,10 @@ services:
       - "6880:8000"
 
     environment:
+      # Required. Upstream M3U used as the channel catalog (names, groups,
+      # logos, EPG ids). Set via Portainer stack variable SOURCE_PLAYLIST_URL.
+      SOURCE_PLAYLIST_URL: "${SOURCE_PLAYLIST_URL}"
+
       # Talks to the engine via the compose network DNS name.
       ACESTREAM_SEARCH_URL: "http://engine:6878/search"
 
@@ -217,8 +219,11 @@ services:
       # Search pagination size.
       ACESTREAM_PAGE_SIZE: "50"
 
-      # Playlist regenerates when older than this (seconds). 3600 = 1 hour.
-      PLAYLIST_TTL: "3600"
+      # Cron schedule for playlist rebuilds (default: nightly at 03:00).
+      CRON_SCHEDULE: "0 3 * * *"
+
+      # EPG URL advertised in the #EXTM3U header of the generated playlist.
+      EPG_URL: "https://iptv.online/epg/epg.xml.gz"
 
       # Output filename served at /playlist.m3u8
       PLAYLIST_FILE: "playlist.m3u8"
