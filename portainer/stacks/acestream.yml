@@ -188,7 +188,7 @@ services:
   #   (no /refresh endpoint — rebuilds on startup and via cron only)
   #
   playlist:
-    image: ghcr.io/kalpak44/acestream-proxy:46ce330
+    image: ghcr.io/kalpak44/acestream-proxy:ec564c6
     container_name: acestream-playlist
     restart: unless-stopped
 
