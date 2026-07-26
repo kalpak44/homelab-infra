@@ -4,11 +4,10 @@
 #
 # Purpose
 # -------
-# Three-tier AceStream IPTV setup that produces a single M3U for WebOS / Kodi /
-# VLC clients on the LAN. The playlist proxy uses an upstream M3U (SOURCE_PLAYLIST_URL)
-# as the channel catalog, matches each channel against live AceStream infohashes
-# from the engine's /search, and re-emits playlist.m3u8 on a cron schedule with
-# URLs already pointing at the acexy multiplex layer.
+# Three-tier AceStream IPTV setup for WebOS / Kodi / VLC clients on the LAN.
+# The playlist proxy is an authenticated UI for manually curating playlists
+# from live AceStream search results. It serves each playlist and its matching
+# XMLTV document through a random, bearer-token-style playlist ID.
 #
 #   1. AceStream Engine
 #      P2P streaming engine. Its HTTP admin API on 6878 is NEVER published to
@@ -25,21 +24,19 @@
 #      Only endpoint exposed: /ace/getstream.
 #
 #   3. playlist proxy (kalpak44/acestream-proxy)
-#      Node.js service that uses SOURCE_PLAYLIST_URL as the channel catalog
-#      (names, groups, logos, EPG ids), matches each channel against live
-#      AceStream infohashes from the engine's /search endpoint, and emits
-#      playlist.m3u8 on a cron schedule (default nightly). Each entry already
+#      Authenticated Node.js UI for searching the engine, curating categories
+#      and channels, and serving playlists. Each generated channel URL already
 #      points at acexy — no post-processing needed.
 #
 # Data flow
 # ---------
 #
-#   WebOS TV / IPTV client
+#   Administrator
 #       │
-#       │  http://192.168.1.7:6880/playlist.m3u8  (refreshed hourly)
+#       │  http://192.168.1.7:6880/  (authenticated UI)
 #       ▼
-#   playlist proxy :6880  ── periodic http://engine:6878/search ──┐
-#       │  (M3U entries point at ▼)                                │
+#   playlist proxy :6880  ── http://engine:6878/search ───────────┐
+#       │  /<playlist-id>/playlist.m3u8 points at ▼                │
 #       ▼                                                          │
 #   acexy :6879                                                    │
 #       │                                                         │
@@ -56,13 +53,12 @@
 #   2. Select "Add stack".
 #   3. Paste or upload this file (or point Portainer at this repo path).
 #   4. Deploy the stack.
-#   5. Set the SOURCE_PLAYLIST_URL stack variable to your upstream M3U URL.
-#   6. Deploy the stack.
-#   7. On the WebOS TV IPTV client (SS IPTV, IPTV Smarters, etc.), point at:
-#        http://192.168.1.7:6880/playlist.m3u8
-#      Playlist rebuilds on startup and nightly at 03:00 (configurable via
-#      CRON_SCHEDULE). Restart the playlist container to force an immediate
-#      rebuild.
+#   5. Set the AUTH_USERNAME, AUTH_PASSWORD, and SESSION_SECRET stack
+#      variables to their existing values.
+#   6. Deploy the stack, then open http://192.168.1.7:6880/ and sign in.
+#   7. Create a playlist, add channels from Search, and use the private URL
+#      shown for that playlist (/<playlist-id>/playlist.m3u8) in the IPTV
+#      client. The random playlist ID is a bearer token; do not share it.
 #
 # Security notes
 # --------------
@@ -91,6 +87,10 @@ version: "3.8"
 networks:
   acestream:
     driver: bridge
+
+volumes:
+  # Persists curated playlists, settings, and generated M3U/XML files.
+  acestream-playlist-data:
 
 services:
   # ============================================================================
@@ -197,18 +197,17 @@ services:
   # Playlist proxy (kalpak44/acestream-proxy)
   # ============================================================================
   #
-  # Node service that uses SOURCE_PLAYLIST_URL as the channel catalog (names,
-  # groups, logos, EPG ids), matches each channel against live AceStream
-  # infohashes from the engine's /search, and emits playlist.m3u8 on a cron
-  # schedule. Each entry's stream URL already points at acexy.
+  # Authenticated UI for searching the engine and manually curating playlists.
+  # Every generated stream URL points at acexy. Playlist state is persisted in
+  # the named volume below.
   #
   # Endpoints:
-  #   GET  http://192.168.1.7:6880/playlist.m3u8   — current playlist
-  #   HEAD http://192.168.1.7:6880/playlist.m3u8   — probe (headers only)
-  #   (no /refresh endpoint — rebuilds on startup and via cron only)
+  #   GET  http://192.168.1.7:6880/                           — admin UI
+  #   GET  http://192.168.1.7:6880/<playlist-id>/playlist.m3u8 — playlist
+  #   GET  http://192.168.1.7:6880/<playlist-id>/epg.xml       — XMLTV EPG
   #
   playlist:
-    image: ghcr.io/kalpak44/acestream-proxy:eb186b4
+    image: ghcr.io/kalpak44/acestream-proxy:7d8d15f
     container_name: acestream-playlist
     restart: unless-stopped
 
@@ -222,30 +221,31 @@ services:
     ports:
       - "6880:8000"
 
-    environment:
-      # Required. Upstream M3U used as the channel catalog (names, groups,
-      # logos, EPG ids). Set via Portainer stack variable SOURCE_PLAYLIST_URL.
-      SOURCE_PLAYLIST_URL: "${SOURCE_PLAYLIST_URL}"
+    volumes:
+      - acestream-playlist-data:/app/data
 
-      # Talks to the engine via the compose network DNS name.
+    environment:
+      # Required. Preserve these existing Portainer stack variables; startup
+      # fails if any is absent. Changing SESSION_SECRET invalidates sessions.
+      AUTH_USERNAME: "${AUTH_USERNAME}"
+      AUTH_PASSWORD: "${AUTH_PASSWORD}"
+      SESSION_SECRET: "${SESSION_SECRET}"
+
+      # Defaults used by the admin UI. Runtime overrides are stored in the
+      # mounted data volume and therefore survive image upgrades.
       ACESTREAM_SEARCH_URL: "http://engine:6878/search"
 
-      # Base URL baked into every M3U entry. MUST be the URL the CLIENT (TV)
-      # uses to reach acexy — not the internal Docker name. Uses acexy's
-      # /ace/getstream endpoint (MPEG-TS); the proxy appends ?infohash=<hash>.
-      # Host port 6879 → container port 8080.
+      # MPEG-TS base URL baked into generated M3U entries. This must be the
+      # client-reachable acexy URL, not the internal Docker name.
       ACESTREAM_STREAM_BASE: "http://192.168.1.7:6879/ace/getstream"
-
-      # Search pagination size.
       ACESTREAM_PAGE_SIZE: "50"
 
-      # Cron schedule for playlist rebuilds (default: nightly at 03:00).
-      CRON_SCHEDULE: "0 3 * * *"
-
-      # EPG URL advertised in the #EXTM3U header of the generated playlist.
-      EPG_URL: "https://iptv.online/epg/epg.xml.gz"
-
-      # Output filename served at /playlist.m3u8
-      PLAYLIST_FILE: "playlist.m3u8"
-
+      # Used in the M3U's url-tvg header for the matching per-playlist XMLTV.
+      PUBLIC_BASE_URL: "http://192.168.1.7:6880"
       PORT: "8000"
+      DATA_DIR: "/app/data"
+
+      # The service is currently accessed directly over HTTP on the LAN.
+      # Set both to true if it moves behind a TLS-terminating reverse proxy.
+      SESSION_COOKIE_SECURE: "false"
+      TRUST_PROXY: "false"
