@@ -207,7 +207,7 @@ services:
   #   GET  http://192.168.1.7:6880/<playlist-id>/epg.xml       — XMLTV EPG
   #
   playlist:
-    image: ghcr.io/kalpak44/acestream-proxy:a14423e
+    image: ghcr.io/kalpak44/acestream-proxy:f579367
     container_name: acestream-playlist
     restart: unless-stopped
 
