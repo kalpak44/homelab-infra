@@ -109,13 +109,18 @@ services:
     networks:
       - acestream
 
-    # Only visible inside the compose network — no `ports:` for 6878.
     expose:
       - "6878"
 
-    # P2P port for AceStream peer traffic. Publishing improves swarm health.
-    # This port is BitTorrent family; it does NOT expose the admin API.
     ports:
+      # ⚠️ TEMPORARY — admin API exposed to LAN for channel search / debugging.
+      # REMOVE this line once done. See "Security notes" at the top of this
+      # file: this port must NOT stay published in the long term, and MUST
+      # NEVER be exposed via the Cloudflare tunnel.
+      - "6878:6878"
+
+      # P2P port for AceStream peer traffic. Publishing improves swarm health.
+      # This port is BitTorrent family; it does NOT expose the admin API.
       - "8621:8621/tcp"
       - "8621:8621/udp"
 
