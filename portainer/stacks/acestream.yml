@@ -173,6 +173,21 @@ services:
       # Set to "true" to switch to HLS output if you need it.
       ACEXY_M3U8: "false"
 
+      # Per-stream client-facing buffer. Upstream default is 4.2MiB, which
+      # only holds ~1 s at 4K HDR bitrates and stutters on flaky swarms.
+      # 32MiB gives ~10 s at 25 Mbit/s and ~4-5 s at 60 Mbit/s. Bump to
+      # 64MiB if 4K HDR still stalls. Cost: RAM per active stream × clients.
+      ACEXY_BUFFER_SIZE: "32MiB"
+
+      # How long acexy waits for the engine to start returning bytes before
+      # giving up (default 1s). P2P swarms often need a few seconds to warm
+      # up, especially on 4K streams.
+      ACEXY_NO_RESPONSE_TIMEOUT: "5s"
+
+      # How long a stalled client can stay connected before being evicted
+      # (default 5s). Slightly higher to survive brief TV-side hiccups.
+      ACEXY_CLIENT_EVICTION_TIMEOUT: "10s"
+
   # ============================================================================
   # Playlist proxy (kalpak44/acestream-proxy)
   # ============================================================================
