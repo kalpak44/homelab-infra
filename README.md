@@ -143,7 +143,10 @@ box + DNS record) → Ansible (configures the service).
 
 **Vault** - Playbook initializes, unseals, enables userpass auth, and creates the admin. Unseal key and root token are
 saved to `/root/vault-init.json` inside the container - **back this file up**. UI at
-`http://vault.internal.pavel-usanli.online:8200`.
+`https://vault.internal.pavel-usanli.online:8200`. A systemd override
+(`/etc/systemd/system/vault.service.d/override.conf`) auto-unseals Vault after every `vault.service` restart
+(e.g. the certbot TLS-renewal hook, or a container/host reboot) using the key from `/root/vault-init.json`, so it no
+longer needs a manual unsealing via the UI each time.
 
 **PostgreSQL + pgAdmin** - Both roles run in a single `just configure postgres-lxc`. Postgres listens on
 `192.168.1.4:5432`; pgAdmin at `https://pgadmin.internal.pavel-usanli.online`. All hosts on `192.168.1.0/24` connect

@@ -1,0 +1,20 @@
+#!/bin/bash
+set -uo pipefail
+
+export VAULT_ADDR="{{ vault_addr }}"
+export VAULT_SKIP_VERIFY="{{ vault_tls_enabled | string | lower }}"
+
+status=""
+for i in $(seq 1 30); do
+  status=$(vault status -format=json 2>/dev/null) && break
+  sleep 1
+done
+
+sealed=$(printf '%s' "$status" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sealed", False))' 2>/dev/null || echo True)
+
+if [ "$sealed" = "True" ]; then
+  key=$(python3 -c 'import json; print(json.load(open("/root/vault-init.json"))["unseal_keys_b64"][0])' 2>/dev/null || true)
+  if [ -n "$key" ]; then
+    vault operator unseal "$key" >/dev/null 2>&1 || true
+  fi
+fi

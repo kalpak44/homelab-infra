@@ -127,6 +127,33 @@
     mode: "0640"
   notify: Restart Vault
 
+- name: Deploy auto-unseal script
+  ansible.builtin.template:
+    src: vault-unseal.sh.j2
+    dest: /usr/local/bin/vault-unseal.sh
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure Vault systemd override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/vault.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy systemd override to auto-unseal Vault after every restart
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/vault.service.d/override.conf
+    content: |
+      [Service]
+      ExecStartPost=-+/usr/local/bin/vault-unseal.sh
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Vault
+
 - name: Flush handlers to restart Vault immediately if upgraded
   ansible.builtin.meta: flush_handlers
 
