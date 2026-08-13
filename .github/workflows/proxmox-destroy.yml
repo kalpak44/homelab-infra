@@ -14,6 +14,7 @@ on:
           - redis-lxc
           - rabbitmq-lxc
           - cloudflared-lxc
+          - whisper-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster

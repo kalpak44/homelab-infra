@@ -127,6 +127,7 @@ box + DNS record) → Ansible (configures the service).
 | Redis + Commander          | LXC        | 192.168.1.6   | `proxmox/redis-lxc`                    | `proxmox/redis-lxc`                         |
 | Portainer                  | VM         | 192.168.1.7   | `proxmox/portainer-vm`                 | `proxmox/portainer-vm`                      |
 | RabbitMQ                   | LXC        | 192.168.1.8   | `proxmox/rabbitmq-lxc`                 | `proxmox/rabbitmq-lxc`                      |
+| whisper.cpp                | LXC        | 192.168.1.9   | `proxmox/whisper-lxc`                  | `proxmox/whisper-lxc`                       |
 | Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
 | NFS server (k3s PVs)       | VM         | 192.168.1.108 | `proxmox/nfs-vm`                       | `proxmox/nfs-vm`                            |
 | k3s control plane          | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                  | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
@@ -155,6 +156,11 @@ with password auth (scram-sha-256).
 **Redis** – Redis on `192.168.1.6:6379`, Commander UI at `http://redis.internal.pavel-usanli.online:8081`.
 
 **RabbitMQ** – AMQP on `192.168.1.8:5672`. Management UI at `https://rabbitmq.internal.pavel-usanli.online`.
+
+**whisper.cpp** – Builds `whisper.cpp` from source and downloads the `ggml-large-v3-q5_0.bin` model (~1.1GB) on first
+`just configure whisper-lxc`; sized at 3GB RAM / 8GB disk to fit the model in memory. HTTP server (OpenAI-compatible
+transcription API) on `192.168.1.9:8080`, no DNS hostname. To change the model edit
+`ansible/proxmox/whisper-lxc/roles/whisper/defaults/main.yml`.
 
 **Portainer** - Docker + nginx + certbot inside the VM. UI at `https://portainer.internal.pavel-usanli.online`. First
 visit shows a setup wizard – create the admin there within 5 minutes of the first launch (

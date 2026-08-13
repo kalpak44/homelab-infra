@@ -100,6 +100,7 @@ list:
     @printf "  %-14s %s\n" "redis-lxc"      "LXC 204 · 192.168.1.6   · Redis + Redis Commander"
     @printf "  %-14s %s\n" "rabbitmq-lxc"   "LXC 205 · 192.168.1.8   · RabbitMQ"
     @printf "  %-14s %s\n" "cloudflared-lxc" "LXC 210 · 192.168.1.10  · Cloudflare Tunnel connector"
+    @printf "  %-14s %s\n" "whisper-lxc"    "LXC 206 · 192.168.1.9   · whisper.cpp server (large-v3-q5_0)"
     @printf "  %-14s %s\n" "nfs-vm"         "VM  301 · 192.168.1.108 · NFS server (k3s PVs)"
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"

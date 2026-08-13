@@ -58,9 +58,9 @@ flags which error):
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
 - `cloudflare-*.yml`: 15 entries (13 private DNS + 2 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
-- `proxmox-*.yml`: 9 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`,
-  `cloudflared-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
-- `ansible-configure.yml`: 10 entries (the 9 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
+- `proxmox-*.yml`: 10 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`,
+  `cloudflared-lxc`, `whisper-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
+- `ansible-configure.yml`: 11 entries (the 10 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
   the Justfile).
 
 Adding or removing a resource means updating the dropdown in **every** relevant workflow **and** the matching `list`

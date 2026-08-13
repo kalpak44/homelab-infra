@@ -1,0 +1,46 @@
+---
+- name: Install build dependencies
+  ansible.builtin.apt:
+    name: [build-essential, cmake, git]
+    state: present
+    update_cache: true
+
+- name: Clone whisper.cpp
+  ansible.builtin.git:
+    repo: "{{ whisper_repo }}"
+    dest: "{{ whisper_dir }}"
+    version: "{{ whisper_version }}"
+    depth: 1
+
+- name: Download the ggml model
+  ansible.builtin.get_url:
+    url: "{{ whisper_model_url }}"
+    dest: "{{ whisper_dir }}/models/{{ whisper_model_name }}"
+    mode: "0644"
+    timeout: 600
+
+- name: Configure whisper.cpp build
+  ansible.builtin.command:
+    cmd: cmake -B build -DCMAKE_BUILD_TYPE=Release
+    chdir: "{{ whisper_dir }}"
+    creates: "{{ whisper_dir }}/build/CMakeCache.txt"
+
+- name: Build whisper-server
+  ansible.builtin.command:
+    cmd: cmake --build build --config Release --target whisper-server -j{{ ansible_processor_vcpus | default(2) }}
+    chdir: "{{ whisper_dir }}"
+    creates: "{{ whisper_dir }}/build/bin/whisper-server"
+
+- name: Deploy whisper-server systemd service
+  ansible.builtin.template:
+    src: whisper-server.service.j2
+    dest: /etc/systemd/system/whisper-server.service
+    mode: "0644"
+  notify: Restart whisper-server
+
+- name: Ensure whisper-server is running
+  ansible.builtin.systemd:
+    name: whisper-server
+    state: started
+    enabled: true
+    daemon_reload: true

@@ -1,0 +1,16 @@
+[Unit]
+Description=whisper.cpp server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ whisper_dir }}
+ExecStart={{ whisper_dir }}/build/bin/whisper-server \
+  --model {{ whisper_dir }}/models/{{ whisper_model_name }} \
+  --port {{ whisper_port }} \
+  --host 0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -14,6 +14,7 @@ on:
           - postgres-lxc
           - redis-lxc
           - rabbitmq-lxc
+          - whisper-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster

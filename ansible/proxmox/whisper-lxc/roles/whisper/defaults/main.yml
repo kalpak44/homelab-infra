@@ -1,0 +1,7 @@
+---
+whisper_repo: https://github.com/ggerganov/whisper.cpp.git
+whisper_version: master
+whisper_dir: /opt/whisper.cpp
+whisper_model_name: ggml-large-v3-q5_0.bin
+whisper_model_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{{ whisper_model_name }}?download=true"
+whisper_port: 8080
