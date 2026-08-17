@@ -1,4 +1,4 @@
-apiVersion: apps/v1
+  apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: plugin-noco-tools
@@ -21,7 +21,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: plugin-noco-tools
-          image: ghcr.io/kalpak44/noco-tools-site:bcaa02c
+          image: ghcr.io/kalpak44/noco-tools-site:31b1e26
           ports:
             - containerPort: 80
           resources:
