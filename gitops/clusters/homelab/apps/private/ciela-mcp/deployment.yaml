@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ciela-mcp
+  namespace: private
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ciela-mcp
+  template:
+    metadata:
+      labels:
+        app: ciela-mcp
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: ciela-mcp
+          image: kalpak44/ciela-mcp:0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8811
+          env:
+            - name: PORT
+              value: "8811"
+            - name: CIELA_BASE_URL
+              value: https://web7.ciela.net
+            - name: CIELA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: ciela-mcp-secrets
+                  key: CIELA_USERNAME
+            - name: CIELA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ciela-mcp-secrets
+                  key: CIELA_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8811
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8811
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 256Mi

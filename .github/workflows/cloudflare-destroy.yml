@@ -10,6 +10,7 @@ on:
         options:
           - dns/private/acestream
           - dns/private/adguard
+          - dns/private/ciela-mcp
           - dns/private/crowdsec-web-ui
           - dns/private/data-source-connector-example
           - dns/private/headlamp

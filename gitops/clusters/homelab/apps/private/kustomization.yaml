@@ -6,3 +6,4 @@ resources:
   - headlamp
   - lex-bg-connector
   - playwright-mcp
+  - ciela-mcp
