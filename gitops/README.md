@@ -86,17 +86,17 @@ vault kv put secret/mite-assistant-mcp-secrets \
   mite-url="https://<account>.mite.de"
 ```
 
-### `secret/ciela-mcp-secrets`
+### `secret/ciela-secrets`
 
 | Property | Description |
 |---|---|
-| `ciela-username` | Ciela (web7.ciela.net) account username |
-| `ciela-password` | Ciela account password |
+| `username` | Ciela (web7.ciela.net) account username |
+| `password` | Ciela account password |
 
 ```bash
-vault kv put secret/ciela-mcp-secrets \
-  ciela-username="<username>" \
-  ciela-password="<password>"
+vault kv put secret/ciela-secrets \
+  username="<username>" \
+  password="<password>"
 ```
 
 ### `secret/nocobase-secrets`
