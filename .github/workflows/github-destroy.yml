@@ -1,0 +1,33 @@
+name: GitHub - Destroy
+
+# Removes the managed secrets, the agent workflow file and any ruleset.
+# The repository itself is archived, never deleted (archive_on_destroy = true).
+on:
+  workflow_dispatch:
+    inputs:
+      resource:
+        description: Which repo under terraform/github/ to destroy
+        required: true
+        type: choice
+        options:
+          - kalpak44
+          - mite-assistant-mcp
+
+jobs:
+  destroy:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      GH_ADMIN_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+      GH_OWNER: ${{ secrets.GH_OWNER }}
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just destroy github "${{ inputs.resource }}"

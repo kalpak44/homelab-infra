@@ -4,17 +4,18 @@
 #   just deploy  <layer> <resource>   # e.g. just deploy cloudflare dns/private/adguard
 #   just destroy <layer> <resource>   # e.g. just destroy proxmox adguard-lxc
 #
-# Layers: cloudflare | proxmox
+# Layers: cloudflare | proxmox | github
 # Resource: subdir under the layer (see `just list`)
 #
 # Env vars (must be set - the workflow injects them, locally they come from your shell).
 # Names match the GitHub secrets 1:1; this Justfile maps them to what terraform + the
 # AWS-compatible S3 SDK expect (AWS_*, TF_VAR_*) right before terraform runs.
 #
-#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_NAME     (both layers)
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_NAME     (all layers)
 #   CLOUDFLARE_API_TOKEN                                                     (cloudflare layer)
 #   PROXMOX_ENDPOINT, PROXMOX_USERNAME, PROXMOX_PASSWORD,
 #   SSH_PUBLIC_KEY, SSH_PRIVATE_KEY, HOST_PASSWORD                          (proxmox layer)
+#   GH_ADMIN_TOKEN, GH_OWNER, DEEPSEEK_APIKEY                                (github layer)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
@@ -36,6 +37,10 @@ deploy layer resource:
     export TF_VAR_ssh_public_key="${SSH_PUBLIC_KEY:-}"
     export TF_VAR_ssh_private_key="${SSH_PRIVATE_KEY:-}"
     export TF_VAR_host_password="${HOST_PASSWORD:-ubuntu}"
+
+    export TF_VAR_github_owner="${GH_OWNER:-kalpak44}"
+    export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"
+    export TF_VAR_deepseek_api_key="${DEEPSEEK_APIKEY:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform apply -auto-approve -input=false
@@ -55,6 +60,10 @@ destroy layer resource:
     export TF_VAR_ssh_public_key="${SSH_PUBLIC_KEY:-}"
     export TF_VAR_ssh_private_key="${SSH_PRIVATE_KEY:-}"
     export TF_VAR_host_password="${HOST_PASSWORD:-ubuntu}"
+
+    export TF_VAR_github_owner="${GH_OWNER:-kalpak44}"
+    export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"
+    export TF_VAR_deepseek_api_key="${DEEPSEEK_APIKEY:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform destroy -auto-approve -input=false
@@ -105,3 +114,7 @@ list:
     @printf "  %-14s %s\n" "nfs-vm"         "VM  301 · 192.168.1.108 · NFS server (k3s PVs)"
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"
+    @echo
+    @echo "GitHub - repo settings + DeepSeek PR agent (just deploy github <resource>):"
+    @printf "  %-20s %s\n" "kalpak44"           "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI PR agent workflow"
+    @printf "  %-20s %s\n" "mite-assistant-mcp" "kalpak44/mite-assistant-mcp · same"
