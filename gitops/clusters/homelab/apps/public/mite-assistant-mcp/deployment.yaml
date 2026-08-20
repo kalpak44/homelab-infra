@@ -4,7 +4,15 @@ metadata:
   name: mite-assistant-mcp
   namespace: public
 spec:
+  # Stays at 1: server.js keeps MCP sessions in an in-memory map, so a second replica
+  # would drop requests whose session lives on the other pod.
   replicas: 1
+  # Bring the new pod up and wait for it to be ready before the old one goes away.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: mite-assistant-mcp
@@ -13,6 +21,8 @@ spec:
       labels:
         app: mite-assistant-mcp
     spec:
+      # Long enough for the preStop drain plus any in-flight request to finish.
+      terminationGracePeriodSeconds: 30
       containers:
         - name: mite-assistant-mcp
           image: ghcr.io/kalpak44/mite-assistant-mcp:3194d5d
@@ -26,6 +36,31 @@ spec:
             limits:
               cpu: 200m
               memory: 256Mi
+          # src/server.js serves GET /health.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 3
+            failureThreshold: 20 # up to 60s to come up before it counts as failed
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 20
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Give Traefik time to drop this pod from its endpoints before the
+              # process exits, otherwise in-flight requests land on a dead pod.
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           env:
             - name: MCP_PATH
               value: /mcp
