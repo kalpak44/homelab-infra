@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: mite-assistant-mcp
-          image: ghcr.io/kalpak44/mite-assistant-mcp:3194d5d
+          image: ghcr.io/kalpak44/mite-assistant-mcp:984e1ff
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
