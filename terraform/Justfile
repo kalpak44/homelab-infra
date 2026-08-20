@@ -116,6 +116,7 @@ list:
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"
     @echo
     @echo "GitHub - repo settings + DeepSeek PR agent (just deploy github <resource>):"
+    @printf "  %-20s %s\n" "code-viewer-bot"    "kalpak44/code-viewer-bot · same (no PR CI yet → agent reviews only)"
     @printf "  %-20s %s\n" "kalpak44"           "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI PR agent workflow"
     @printf "  %-20s %s\n" "mac-calendar-mcp"   "kalpak44/mac-calendar-mcp · same (no PR CI yet → agent reviews only)"
     @printf "  %-20s %s\n" "mite-assistant-mcp" "kalpak44/mite-assistant-mcp · same"
