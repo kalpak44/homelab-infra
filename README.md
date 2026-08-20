@@ -243,7 +243,9 @@ layers.
 | Repo                          | Terraform dir               | What it manages                                                                    |
 |-------------------------------|-----------------------------|-------------------------------------------------------------------------------------|
 | `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, AI PR agent workflow |
+| `kalpak44/mac-calendar-mcp`   | `github/mac-calendar-mcp`   | same - but the repo has no `pull_request` workflow, so the agent reviews and comments without ever merging |
 | `kalpak44/mite-assistant-mcp` | `github/mite-assistant-mcp` | same                                                        |
+| `kalpak44/plugin-noco-tools`  | `github/plugin-noco-tools`  | same; PR check is the repo's own `build.yml`                |
 
 **CI stays with the repo.** This layer ships the agent and points it at the repo's own check via the
 `PR_CHECK_WORKFLOW` variable (`publish-frontend.yml` / `pr-check.yml`) - it does not manage the check itself. A repo
@@ -307,8 +309,8 @@ Seven workflows, all `workflow_dispatch` (manual), all running on the self-hoste
 | `cloudflare-destroy.yml` | 15 cloudflare/ dirs             | `just destroy cloudflare <resource>` |
 | `proxmox-deploy.yml`     | 9 proxmox/ services             | `just deploy proxmox <resource>`     |
 | `proxmox-destroy.yml`    | 9 proxmox/ services             | `just destroy proxmox <resource>`    |
-| `github-deploy.yml`      | 2 github/ repos                 | `just deploy github <resource>`      |
-| `github-destroy.yml`     | 2 github/ repos                 | `just destroy github <resource>`     |
+| `github-deploy.yml`      | 4 github/ repos                 | `just deploy github <resource>`      |
+| `github-destroy.yml`     | 4 github/ repos                 | `just destroy github <resource>`     |
 | `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 

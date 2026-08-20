@@ -11,7 +11,9 @@ on:
         type: choice
         options:
           - kalpak44
+          - mac-calendar-mcp
           - mite-assistant-mcp
+          - plugin-noco-tools
 
 jobs:
   destroy:
