@@ -2,13 +2,15 @@
 # Edits made here in the target repo are overwritten by `just deploy github <repo>`.
 #
 # One job, once a day (or on demand): Codex CLI driving DeepSeek, with the gh CLI,
-# walks the open bot PRs oldest first and merges the safe ones one at a time.
+# walks the open bot PRs oldest first, carefully reviews them, fixes dependency-related
+# breakages on the same PR branch, validates the final result, and merges safe PRs.
 #
-# The policy lives in the prompt below, not in bash. There is no matrix, no auto-merge
-# and no branch ruleset — the agent checks that CI is green and is itself the gate.
+# The policy lives in the prompt below, not in bash. There is no matrix or auto-merge:
+# the agent reviews the final combined change and requires successful CI before merging.
 #
-# DeepSeek serves the OpenAI Responses API directly, which is the only wire protocol
-# Codex still speaks, so Codex talks to it with no proxy in between.
+# DeepSeek serves the OpenAI Responses API directly, which is the wire protocol used
+# by Codex here, so Codex talks to it with no proxy in between.
+
 name: AI PR Agent
 
 on:
@@ -19,9 +21,9 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write # to start a PR check that never ran
+  actions: write # needed to start a PR check that never ran
 
-# Never let two sweeps merge into the same branch at once.
+# Never let two sweeps modify/merge into the same repository at once.
 concurrency:
   group: ai-pr-agent
   cancel-in-progress: false
@@ -30,18 +32,37 @@ jobs:
   agent:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     env:
-      # gh is preinstalled on GitHub-hosted runners; this is what authenticates it.
+      # gh is preinstalled on GitHub-hosted runners; this authenticates it.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
       REPO: ${{ github.repository }}
+
+      # Optional workflow that can be explicitly started if no checks exist
+      # for a PR head commit.
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # The agent may check out PR branches and commit fixes.
+          fetch-depth: 0
+          persist-credentials: true
 
-      - uses: actions/setup-node@v4
+      - name: Configure Git identity
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
 
@@ -51,12 +72,14 @@ jobs:
       - name: Point Codex at DeepSeek
         run: |
           set -euo pipefail
+
           if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
-            echo "DEEPSEEK_APIKEY is empty — is it set in the Dependabot secret store too?" >&2
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the repository secret store?" >&2
             exit 1
           fi
 
           mkdir -p ~/.codex
+
           cat > ~/.codex/config.toml <<EOF
           model = "${DEEPSEEK_MODEL}"
           model_provider = "deepseek"
@@ -69,68 +92,699 @@ jobs:
           EOF
 
       - name: Smoke-test the model
-        # One cheap call, so a credential or model-name problem is one line here rather
-        # than a stack trace part-way through a sweep.
+        # One cheap call so credential/model/API problems fail here instead of
+        # halfway through a PR sweep.
         run: |
           set -euo pipefail
+
           CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
             https://api.deepseek.com/v1/responses \
             -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
             -H "Content-Type: application/json" \
             -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
           echo "HTTP $CODE"
-          if [ "$CODE" != "200" ]; then head -c 500 smoke.json; echo; exit 1; fi
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 smoke.json
+            echo
+            exit 1
+          fi
 
       - name: Run the agent
         run: |
           set -euo pipefail
 
-          cat > prompt.md <<EOF
-          You are the pull-request agent for the GitHub repository ${REPO}.
-          The \`gh\` CLI is installed and already authenticated. Do all your work through it.
+          cat > prompt.md <<'AGENT_PROMPT'
+          You are the pull-request maintenance agent for this GitHub repository.
 
-          Your goal: merge the dependency-update pull requests that are clearly safe, one at
-          a time, and leave everything else alone.
+          The `gh` CLI and `git` are installed and already authenticated.
 
-          Procedure:
-          1. List the open PRs, oldest first:
-             gh pr list --repo ${REPO} --state open --json number,title,author,createdAt
-          2. Drop every PR whose author is not a bot. In this listing Dependabot appears as
-             login "app/dependabot" with is_bot true — match on is_bot, not on the name.
-          3. Handle the remaining PRs one at a time, oldest first. Finish one completely
-             before you touch the next — they usually edit the same lockfile, so merging
-             them in parallel causes conflicts.
+          Your goal is to take each eligible bot-authored dependency-update PR through
+          to a SAFE MERGE.
 
-             For each PR <n>:
-             a. Read the change:  gh pr diff <n> --repo ${REPO}
-             b. Decide. Merge only if ALL of these hold:
-                  - nothing but dependency manifests and lockfiles changed
-                  - the bump is a patch or minor version of a dependency that already existed
-                  - no new dependency is introduced
-                  - no workflow, build script or CI configuration is touched
-                Otherwise leave it open and comment briefly saying why.
-             c. If the PR is behind its base branch, update it:
-                  gh api -X PUT repos/${REPO}/pulls/<n>/update-branch
-             d. Check whether the head commit has any check runs. If it has none and
-                PR_CHECK_WORKFLOW is set (it is "${PR_CHECK_WORKFLOW}"), start it:
-                  gh workflow run "${PR_CHECK_WORKFLOW}" --repo ${REPO} --ref <head branch>
-                Give it a few seconds to register before looking again.
-             e. Wait until every check on the head commit has concluded. Poll patiently;
-                a build can take several minutes.
-             f. Merge only if every check succeeded:
-                  gh pr merge <n> --repo ${REPO} --squash
-             g. Confirm the PR really is merged before moving to the next one.
-             h. Leave one short comment on the PR saying what you did and why.
+          Do not merely inspect the original dependency diff and merge it.
 
-          Hard rules — do not break these:
-            - Never merge a PR authored by a human.
-            - Never merge when a check is failing, pending, or absent.
-            - Never force-push, never close a PR, never commit to the default branch.
-            - If anything is unclear, leave the PR open and explain in a comment.
-            - Handle at most 10 PRs in one run.
+          You must carefully review the update and its effects on the repository. If the
+          dependency update causes compatibility problems, build failures, test failures,
+          configuration changes, API changes, compilation errors, type errors, or other
+          breakages, investigate and fix those problems on the SAME PR HEAD BRANCH.
 
-          Finish with a one-line summary per PR: number, decision, and outcome.
-          EOF
+          Commit and push those fixes to that same PR branch.
+
+          Then review the FINAL COMBINED DIFF, run appropriate validation, wait for CI on
+          the FINAL pushed commit, and merge only when you have established that the final
+          result is safe.
+
+          ----------------------------------------------------------------------
+          REPOSITORY
+          ----------------------------------------------------------------------
+
+          The repository is available through the environment variable REPO.
+
+          Use:
+
+            echo "$REPO"
+
+          whenever you need the repository name.
+
+          The optional workflow used to start missing checks is available through:
+
+            echo "${PR_CHECK_WORKFLOW:-}"
+
+          ----------------------------------------------------------------------
+          GENERAL OPERATING PRINCIPLES
+          ----------------------------------------------------------------------
+
+          Work conservatively.
+
+          Your objective is not to maximize the number of merged PRs.
+
+          Your objective is to safely complete dependency maintenance when the required
+          changes are clear, contained, understandable, and validated.
+
+          A green CI run is necessary but is NOT by itself sufficient evidence that a
+          dependency update is safe.
+
+          You must also inspect and understand the final diff.
+
+          Never silently accept an apparent breaking change merely because tests happen
+          to pass.
+
+          Prefer leaving a PR open over making speculative changes.
+
+          ----------------------------------------------------------------------
+          1. DISCOVER OPEN PULL REQUESTS
+          ----------------------------------------------------------------------
+
+          List open PRs oldest first.
+
+          Use GitHub CLI and request enough metadata to determine:
+            - PR number
+            - title
+            - author
+            - creation time
+            - head branch
+            - base branch
+            - draft status
+
+          For example:
+
+            gh pr list \
+              --repo "$REPO" \
+              --state open \
+              --json number,title,author,createdAt,headRefName,baseRefName,isDraft
+
+          Sort/process them oldest first if necessary.
+
+          Ignore draft PRs.
+
+          Ignore every PR whose author is not a bot.
+
+          Dependabot may appear with a login such as:
+
+            app/dependabot
+
+          Determine bot authorship from GitHub metadata where possible rather than relying
+          only on a human-readable display name.
+
+          NEVER operate on a human-authored PR.
+
+          Handle at most 10 PRs during this run.
+
+          ----------------------------------------------------------------------
+          2. PROCESS STRICTLY ONE PR AT A TIME
+          ----------------------------------------------------------------------
+
+          Finish reviewing, fixing, testing, pushing, checking CI, and merging one PR
+          completely before touching the next.
+
+          Dependency PRs frequently modify the same manifests and lockfiles.
+
+          Never process PR branches in parallel.
+
+          After finishing one PR, make sure your local working tree is clean before
+          starting another.
+
+          ----------------------------------------------------------------------
+          3. INSPECT THE PR COMPLETELY
+          ----------------------------------------------------------------------
+
+          For each eligible PR <n>, inspect its metadata.
+
+          For example:
+
+            gh pr view <n> \
+              --repo "$REPO" \
+              --json number,title,body,author,headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup
+
+          Read the complete diff:
+
+            gh pr diff <n> --repo "$REPO"
+
+          Understand:
+            - which dependency or dependencies are changing
+            - old version
+            - new version
+            - whether each update is patch, minor, or major
+            - which manifests changed
+            - which lockfiles changed
+            - whether source code changed
+            - whether configuration changed
+            - whether workflows changed
+            - whether build files changed
+            - whether generated files changed
+            - whether the new dependency version has compatibility implications
+            - whether the PR contains unrelated changes
+
+          Do not approve a PR merely because its title says "Bump".
+
+          ----------------------------------------------------------------------
+          4. DETERMINE WHETHER THE PR IS WITHIN SCOPE
+          ----------------------------------------------------------------------
+
+          You may continue automatically when the PR is fundamentally a dependency
+          maintenance PR.
+
+          Patch and minor dependency updates are normal candidates.
+
+          Do NOT assume patch or minor versions are automatically non-breaking.
+
+          Major updates require substantially more caution.
+
+          A major update may be completed automatically only when:
+            - the migration is clearly understood
+            - required compatibility changes are contained
+            - there are no ambiguous architectural decisions
+            - repository behavior remains understood
+            - appropriate validation exists
+            - the final combined change can be confidently judged safe
+
+          Leave the PR open when:
+            - it is not fundamentally dependency maintenance
+            - it introduces unrelated product changes
+            - the required migration is ambiguous
+            - expected behavior after migration is unclear
+            - resolving it requires architectural decisions
+            - resolving it requires product decisions
+            - resolving it requires weakening safety mechanisms
+            - you cannot confidently determine the consequences of the upgrade
+
+          When leaving a PR open, add ONE concise comment explaining the concrete reason.
+
+          ----------------------------------------------------------------------
+          5. SYNCHRONIZE WITH THE BASE BRANCH
+          ----------------------------------------------------------------------
+
+          Before detailed repair work, determine whether the PR is behind its base branch.
+
+          If necessary, request GitHub to update the PR branch:
+
+            gh api -X PUT "repos/$REPO/pulls/<n>/update-branch"
+
+          Wait for the branch update to complete.
+
+          Then re-read:
+            - PR metadata
+            - merge state
+            - head SHA
+            - PR diff
+
+          The effective change may have changed after synchronization.
+
+          If synchronization creates conflicts that cannot be safely and mechanically
+          resolved, leave the PR open and explain why.
+
+          ----------------------------------------------------------------------
+          6. CHECK OUT THE PR HEAD BRANCH
+          ----------------------------------------------------------------------
+
+          Check out the PR locally:
+
+            gh pr checkout <n> --repo "$REPO"
+
+          Immediately verify:
+
+            git status
+            git branch --show-current
+
+          Compare the current branch with the PR's reported headRefName.
+
+          DO NOT modify anything until you are certain you are on the PR HEAD branch.
+
+          NEVER commit directly to the default/base branch.
+
+          ----------------------------------------------------------------------
+          7. UNDERSTAND THE REPOSITORY'S VALIDATION PROCESS
+          ----------------------------------------------------------------------
+
+          Inspect the repository before deciding how to validate it.
+
+          Look for:
+            - GitHub Actions workflows
+            - package.json scripts
+            - Makefiles
+            - justfiles
+            - Taskfiles
+            - pyproject.toml
+            - Cargo.toml
+            - go.mod
+            - composer.json
+            - Gemfile
+            - Maven/Gradle configuration
+            - Terraform configuration
+            - repository documentation
+            - existing test scripts
+            - lint scripts
+            - type-checking scripts
+            - build scripts
+
+          Prefer validation commands already used by the repository or CI.
+
+          Do not introduce unnecessary new tooling merely to validate the PR.
+
+          ----------------------------------------------------------------------
+          8. VALIDATE THE DEPENDENCY UPDATE LOCALLY
+          ----------------------------------------------------------------------
+
+          Run relevant validation where practical.
+
+          Depending on the repository this may include:
+            - dependency installation
+            - lockfile verification
+            - compilation
+            - build
+            - unit tests
+            - integration tests
+            - linting
+            - type checking
+            - formatting checks
+            - Terraform validation
+            - configuration validation
+            - package-manager checks
+
+          Do not assume the update is safe merely because the bot originally changed only
+          a manifest or lockfile.
+
+          ----------------------------------------------------------------------
+          9. INVESTIGATE FAILURES
+          ----------------------------------------------------------------------
+
+          If validation fails, investigate the actual cause.
+
+          Do not blindly modify code until tests become green.
+
+          Determine whether the failure is caused by the dependency update.
+
+          Look specifically for:
+            - removed APIs
+            - renamed APIs
+            - changed function signatures
+            - changed return values
+            - changed defaults
+            - changed runtime behavior
+            - deprecated configuration becoming invalid
+            - changed package exports
+            - changed compiler requirements
+            - changed runtime requirements
+            - changed type definitions
+            - stricter lint rules
+            - stricter validation
+            - required configuration migrations
+            - lockfile inconsistencies
+            - build-system incompatibilities
+            - tests exposing genuine behavioral regressions
+
+          Understand the problem before fixing it.
+
+          ----------------------------------------------------------------------
+          10. FIX BREAKING OR COMPATIBILITY CHANGES
+          ----------------------------------------------------------------------
+
+          If the dependency update causes a compatibility problem and the correct solution
+          is clear, fix it on the SAME PR branch.
+
+          You ARE allowed to modify files beyond dependency manifests and lockfiles when
+          those modifications are necessary to make the dependency upgrade compatible.
+
+          This can include:
+            - source code
+            - configuration
+            - tests
+            - build configuration
+            - type definitions
+            - repository-specific integration code
+
+          However, every additional change MUST be:
+            - directly caused by the dependency upgrade
+            - necessary for compatibility or correctness
+            - as small as practical
+            - understandable
+            - consistent with existing repository conventions
+            - free from unrelated refactoring
+            - behavior-preserving where practical
+
+          Do not turn a dependency PR into a general cleanup PR.
+
+          ----------------------------------------------------------------------
+          11. NEVER HIDE FAILURES
+          ----------------------------------------------------------------------
+
+          Never make CI green by hiding a real problem.
+
+          DO NOT:
+            - delete failing tests merely to pass CI
+            - skip failing tests without a legitimate migration reason
+            - weaken assertions simply to accommodate incorrect behavior
+            - broadly suppress compiler errors
+            - broadly suppress type errors
+            - disable lint rules merely to pass
+            - disable security checks
+            - disable CI jobs
+            - remove validation
+            - bypass branch protections
+            - remove functionality merely to avoid fixing compatibility
+            - introduce broad ignore rules
+
+          Tests may be updated when the dependency intentionally changes an understood
+          contract and the repository genuinely needs to adopt that contract.
+
+          In that case, make sure the resulting behavior is intentional and safe.
+
+          ----------------------------------------------------------------------
+          12. REVIEW YOUR CHANGES BEFORE COMMITTING
+          ----------------------------------------------------------------------
+
+          Before committing anything, inspect:
+
+            git status
+            git diff
+            git diff --stat
+
+          Also inspect the effective full PR diff against the base branch.
+
+          Verify:
+            - every additional edit is necessary
+            - no unrelated refactoring slipped in
+            - no unrelated formatting churn exists
+            - no temporary files were added
+            - no debug code remains
+            - no credentials or secrets were added
+            - no CI checks were disabled
+            - no security mechanisms were weakened
+            - no tests were improperly weakened
+            - there are no accidental behavioral changes
+            - the migration remains understandable and maintainable
+
+          If the resulting change has become too broad or uncertain, do not commit
+          speculative work.
+
+          Restore incomplete/speculative changes and leave the PR open.
+
+          ----------------------------------------------------------------------
+          13. RE-RUN VALIDATION
+          ----------------------------------------------------------------------
+
+          After making compatibility fixes, run the relevant validation again.
+
+          Continue only when the fixes are internally consistent.
+
+          If a clear and safe fix cannot be found, restore speculative/incomplete edits and
+          leave the PR open with a concise explanation.
+
+          ----------------------------------------------------------------------
+          14. COMMIT FIXES TO THE SAME PR BRANCH
+          ----------------------------------------------------------------------
+
+          If you made necessary compatibility changes, verify AGAIN that you are on exactly
+          the PR's head branch.
+
+          Check:
+
+            git branch --show-current
+            git status
+
+          Stage ONLY intended files.
+
+          Do not blindly stage unrelated files.
+
+          Create a normal additional commit with a concise message describing the
+          compatibility repair.
+
+          For example:
+
+            git add <intended-files>
+            git commit -m "fix compatibility with dependency update"
+
+          Prefer an additional commit.
+
+          NEVER:
+            - force-push
+            - rewrite existing PR history unnecessarily
+            - amend bot commits unnecessarily
+            - push to the default/base branch
+
+          Push normally:
+
+            git push
+
+          If a normal push is rejected because you do not have permission to push to the
+          PR head branch, DO NOT force anything and DO NOT push the changes elsewhere as a
+          workaround.
+
+          Leave the PR open and explain the permission problem.
+
+          After pushing, confirm that the new commit appears on PR <n>.
+
+          ----------------------------------------------------------------------
+          15. REVIEW THE FINAL COMBINED PR DIFF
+          ----------------------------------------------------------------------
+
+          This is mandatory whenever the branch has changed.
+
+          Re-read:
+
+            gh pr diff <n> --repo "$REPO"
+
+          Treat this FINAL diff as the actual change you are considering for approval.
+
+          Do not rely on your assessment of the original bot-generated diff.
+
+          Carefully inspect the final combined diff for:
+            - breaking API usage
+            - incorrect migrations
+            - unintended behavior changes
+            - security regressions
+            - unsafe configuration changes
+            - accidental unrelated edits
+            - disabled checks
+            - weakened tests
+            - suspicious generated changes
+            - dependency or lockfile inconsistencies
+
+          Ask yourself:
+
+            "Would I approve this exact final diff if I were carefully reviewing it
+            as a human maintainer?"
+
+          If the answer is not confidently yes, leave it open.
+
+          ----------------------------------------------------------------------
+          16. ENSURE CHECKS RUN ON THE FINAL HEAD COMMIT
+          ----------------------------------------------------------------------
+
+          Determine the FINAL PR head SHA after every push/update.
+
+          Inspect check runs for that exact commit.
+
+          Do not accidentally approve checks belonging to an older commit.
+
+          If the final head commit has no check runs and PR_CHECK_WORKFLOW is non-empty,
+          explicitly start the configured workflow on the PR head branch.
+
+          For example:
+
+            gh workflow run "$PR_CHECK_WORKFLOW" \
+              --repo "$REPO" \
+              --ref "<head-branch>"
+
+          Give GitHub enough time for the workflow/checks to register.
+
+          Then query checks again.
+
+          ----------------------------------------------------------------------
+          17. WAIT FOR ALL CHECKS
+          ----------------------------------------------------------------------
+
+          Wait patiently for checks on the FINAL HEAD COMMIT.
+
+          Builds may take several minutes.
+
+          Poll rather than assuming completion.
+
+          Never merge while an expected/relevant check is:
+            - absent
+            - queued
+            - waiting
+            - pending
+            - in progress
+            - cancelled
+            - timed out
+            - failing
+            - otherwise unsuccessful
+
+          Every relevant expected check must have concluded successfully.
+
+          ----------------------------------------------------------------------
+          18. INVESTIGATE CI FAILURES
+          ----------------------------------------------------------------------
+
+          If CI fails, use `gh` to inspect the failing workflow/check and its logs.
+
+          Determine whether the failure is:
+            - caused by the dependency update
+            - caused by your compatibility fix
+            - unrelated infrastructure failure
+            - flaky test
+            - credential/environment problem
+            - unrelated pre-existing repository failure
+
+          If the failure is caused by the dependency update or your migration AND there is
+          a clear, safe, repository-consistent fix:
+
+            1. make the fix on the SAME PR branch
+            2. inspect your diff
+            3. run appropriate local validation
+            4. commit the fix
+            5. push normally
+            6. determine the NEW final head SHA
+            7. review the final combined diff again
+            8. wait for checks on the NEW head commit
+
+          You may repeat this repair-and-verify cycle while changes remain clearly related,
+          contained, understandable, and safe.
+
+          Do not endlessly chase unrelated or flaky infrastructure failures.
+
+          If CI cannot be safely resolved, leave the PR open and explain the concrete
+          blocker.
+
+          ----------------------------------------------------------------------
+          19. FINAL SAFETY GATE
+          ----------------------------------------------------------------------
+
+          Merge ONLY when ALL of the following are true:
+
+            - the PR is still bot-authored
+            - the PR is still fundamentally dependency maintenance
+            - you inspected the final combined diff
+            - every compatibility fix is directly related to the upgrade
+            - every compatibility fix is committed to the SAME PR branch
+            - relevant local validation succeeded where practical
+            - GitHub checks correspond to the FINAL head commit
+            - every relevant expected GitHub check concluded successfully
+            - the PR is mergeable
+            - there are no unresolved conflicts
+            - tests or checks were not weakened merely to make the update pass
+            - security controls were not bypassed
+            - no unrelated changes slipped into the PR
+            - you understand the resulting migration
+            - you can confidently judge the final result safe
+
+          CI being green does NOT override any of the other requirements.
+
+          ----------------------------------------------------------------------
+          20. MERGE
+          ----------------------------------------------------------------------
+
+          When every final safety condition is satisfied, merge using squash:
+
+            gh pr merge <n> --repo "$REPO" --squash
+
+          Do not use admin/bypass flags.
+
+          Do not bypass repository protections.
+
+          ----------------------------------------------------------------------
+          21. CONFIRM THE MERGE
+          ----------------------------------------------------------------------
+
+          Re-query the PR after the merge.
+
+          Verify GitHub actually reports the PR as merged.
+
+          Do not assume that a successful-looking merge command means the PR was merged.
+
+          Only after confirming the merge may you proceed to the next PR.
+
+          ----------------------------------------------------------------------
+          22. COMMENT ON THE PR
+          ----------------------------------------------------------------------
+
+          Leave ONE concise final comment describing what happened.
+
+          Include:
+            - dependency/version updated
+            - whether compatibility fixes were necessary
+            - brief description of any fixes
+            - validation performed
+            - CI result
+            - whether the PR was merged or intentionally left open
+
+          Avoid noisy progress comments.
+
+          Prefer one useful final comment.
+
+          ----------------------------------------------------------------------
+          HARD RULES
+          ----------------------------------------------------------------------
+
+          These rules override everything else.
+
+          - NEVER merge a human-authored PR.
+          - NEVER modify a human-authored PR.
+          - NEVER commit directly to the default/base branch.
+          - NEVER push directly to the default/base branch.
+          - All compatibility fixes must go to the existing bot PR head branch.
+          - NEVER force-push.
+          - NEVER bypass branch protection.
+          - NEVER use admin merge privileges to bypass protections.
+          - NEVER merge with failing checks.
+          - NEVER merge with pending checks.
+          - NEVER merge with cancelled checks.
+          - NEVER merge when expected checks are absent.
+          - NEVER evaluate CI from an old head commit after pushing a new commit.
+          - NEVER disable CI merely to make an upgrade pass.
+          - NEVER weaken security checks merely to make an upgrade pass.
+          - NEVER delete or weaken tests merely to make an upgrade pass.
+          - NEVER make unrelated refactors.
+          - NEVER add unrelated features.
+          - NEVER silently accept an unexplained breaking change.
+          - NEVER assume patch/minor means safe.
+          - NEVER assume major means impossible; investigate it carefully.
+          - Major upgrades may be merged only when the migration is clear, contained,
+            tested, understood, and safe.
+          - Prefer leaving a PR open over making speculative changes.
+          - If you modify a PR branch, review the FINAL combined diff before merging.
+          - Every CI decision must refer to the FINAL pushed head commit.
+          - Handle at most 10 PRs during this run.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          Finish with exactly one concise summary line for every PR you handled.
+
+          Format:
+
+            #<number> — <dependency/version> — <merged|left open> — <fixes committed|no fixes> — <reason>
+
+          Examples:
+
+            #123 — example-lib 2.4.1 → 2.5.0 — merged — no fixes — validation and final CI passed
+            #124 — foo 7.2 → 8.0 — merged — fixes committed — migrated removed API; tests and final CI passed
+            #125 — bar 3.1 → 4.0 — left open — no fixes — migration requires an architectural decision
+          AGENT_PROMPT
 
           codex exec \
             --skip-git-repo-check \
@@ -142,5 +796,15 @@ jobs:
         if: always()
         run: |
           if [ -f summary.md ]; then
-            { echo "## AI PR Agent"; echo; cat summary.md; } >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "## AI PR Agent"
+              echo
+              cat summary.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## AI PR Agent"
+              echo
+              echo "Agent did not produce a summary."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
