@@ -1,7 +1,8 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Five workflows, all `workflow_dispatch` (manual), all running on the
-**self-hosted** runner (VM 101 on the Proxmox node):
+All CI/CDs live in `.github/workflows/`. Eight workflows, all running on the **self-hosted** runner (VM 101 on the
+Proxmox node). All are `workflow_dispatch` (manual) except `gitops-bump-images.yml`, which is also on a daily
+`schedule`:
 
 | File                     | Purpose                                    | Underlying command                   |
 |--------------------------|--------------------------------------------|--------------------------------------|
@@ -9,7 +10,10 @@ All CI/CDs live in `.github/workflows/`. Five workflows, all `workflow_dispatch`
 | `cloudflare-destroy.yml` | Terraform destroy on a Cloudflare resource | `just destroy cloudflare <resource>` |
 | `proxmox-deploy.yml`     | Terraform apply on a Proxmox LXC/VM        | `just deploy proxmox <resource>`     |
 | `proxmox-destroy.yml`    | Terraform destroy on a Proxmox LXC/VM      | `just destroy proxmox <resource>`    |
+| `github-deploy.yml`      | Terraform apply on a managed GitHub repo   | `just deploy github <repo>`          |
+| `github-destroy.yml`     | Terraform destroy on a managed GitHub repo | `just destroy github <repo>`         |
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
+| `gitops-bump-images.yml` | Point public apps at the newest published image | `just bump-images` (in `gitops/`) |
 
 Every workflow has one job with three steps: `checkout`, `extractions/setup-just@v2`, and a single `just <recipe>` call.
 All actual logic lives in the layer's `Justfile`.
@@ -51,6 +55,7 @@ flags which error):
 |-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`                                                                                                                                                                                                                                  |
 | `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`, `TF_VAR_host_password`                                                                                                                                                       |
+| `github-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `GH_ADMIN_TOKEN`, `GH_OWNER`, `DEEPSEEK_APIKEY` (secret names can't start with `GITHUB_`)                                                                                                        |
 | `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `RABBITMQ_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns
@@ -62,6 +67,7 @@ Every workflow's `options:` lists the deployable resource paths for that layer:
   `cloudflared-lxc`, `whisper-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
 - `ansible-configure.yml`: 11 entries (the 10 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml` in
   the Justfile).
+- `github-*.yml`: one entry per dir under `terraform/github/` (see `github-repos.md`).
 
 Adding or removing a resource means updating the dropdown in **every** relevant workflow **and** the matching `list`
 recipe in `terraform/Justfile` / `ansible/Justfile`.

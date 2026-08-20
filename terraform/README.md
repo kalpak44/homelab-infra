@@ -17,16 +17,19 @@ terraform/
 │   └── shared/              # non-DNS Cloudflare resources
 │       ├── cloudflare-email/  # email routing
 │       └── zero-trust/        # Cloudflare Tunnel + ingress config
-└── proxmox/                 # LXCs + VMs on the Proxmox node
-    ├── adguard-lxc/
-    ├── vault-lxc/
-    ├── postgres-lxc/
-    ├── redis-lxc/
-    ├── rabbitmq-lxc/
-    ├── cloudflared-lxc/     # Cloudflare Tunnel connector (LXC 210)
-    ├── nfs-vm/
-    ├── portainer-vm/
-    └── k3s-cluster/         # two VMs (k3s-1, k3s-2)
+├── proxmox/                 # LXCs + VMs on the Proxmox node
+│   ├── adguard-lxc/
+│   ├── vault-lxc/
+│   ├── postgres-lxc/
+│   ├── redis-lxc/
+│   ├── rabbitmq-lxc/
+│   ├── cloudflared-lxc/     # Cloudflare Tunnel connector (LXC 210)
+│   ├── nfs-vm/
+│   ├── portainer-vm/
+│   └── k3s-cluster/         # two VMs (k3s-1, k3s-2)
+└── github/                  # GitHub repo settings + DeepSeek PR agent
+    └── kalpak44/            # one dir per managed repo
+        └── workflows/       # workflow files pushed into the target repo
 ```
 
 Each leaf directory has `main.tf`, `variables.tf`, `providers.tf`, `versions.tf`, and a `backend.tf` pointing at its own
@@ -46,12 +49,13 @@ Examples:
 ```bash
 just deploy  cloudflare dns/private/adguard
 just deploy  proxmox    adguard-lxc
+just deploy  github     kalpak44
 just destroy cloudflare shared/cloudflare-email
 just output  cloudflare shared/zero-trust tunnel_token
 ```
 
-Via GitHub Actions: **Cloudflare - Deploy** / **Cloudflare - Destroy** / **Proxmox - Deploy** / **Proxmox - Destroy** -
-pick the resource from the dropdown, one dispatch per resource.
+Via GitHub Actions: **Cloudflare - Deploy** / **Cloudflare - Destroy** / **Proxmox - Deploy** / **Proxmox - Destroy** /
+**GitHub - Deploy** / **GitHub - Destroy** - pick the resource from the dropdown, one dispatch per resource.
 
 ## Environment variables
 
@@ -78,6 +82,14 @@ Proxmox layer:
 | `TF_VAR_ssh_public_key`                             | injected via cloud-init         |
 | `TF_VAR_ssh_private_key`                            | proxmox provider SSH connection |
 | `TF_VAR_host_password`                              | root password baked into LXC/VM |
+
+GitHub layer:
+
+| Var                        | From env var      | Where used                                                |
+|----------------------------|-------------------|-----------------------------------------------------------|
+| `TF_VAR_github_token`      | `GH_ADMIN_TOKEN`  | github provider auth (Administration/Contents/Secrets/Workflows: write) |
+| `TF_VAR_github_owner`      | `GH_OWNER`        | repo owner, defaults to `kalpak44`                        |
+| `TF_VAR_deepseek_api_key`  | `DEEPSEEK_APIKEY` | published to the repo as the `DEEPSEEK_APIKEY` secret      |
 
 `TF_VAR_*` env vars are silently ignored by directories that don't declare the matching variable – this is why one
 workflow can safely set them all.

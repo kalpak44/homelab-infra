@@ -18,6 +18,7 @@ Cloudflare R2 (S3-compatible backend). No monolithic root.
     - `dns/private/<name>/` - LAN-only `*.internal` A records (unproxied)
     - `shared/<name>/` - non-DNS Cloudflare (email routing + Zero Trust tunnel + public DNS)
 - `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
+- `terraform/github/<repo>/` - GitHub repo settings + DeepSeek PR agent, one dir per managed repo
 - `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
 - `terraform/Justfile` - `deploy <layer> <resource>`, `destroy <layer> <resource>`, `list`
 
@@ -49,6 +50,7 @@ See `gitops/README.md` for the in-cluster service list.
 
 @.claude/rules/dns-public.md
 @.claude/rules/dns-private.md
+@.claude/rules/github-repos.md
 @.claude/rules/workflows.md
 @.claude/rules/commits.md
 
@@ -68,6 +70,8 @@ homelab-infra/
 │   │   └── shared/<name>/          # non-DNS Cloudflare (email routing, Zero Trust tunnel + public DNS)
 │   ├── proxmox/
 │   │   └── <service>/              # 8 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
+│   ├── github/
+│   │   └── <repo>/                 # repo settings + DeepSeek PR agent (workflows/ai-pr-agent.yml)
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
 │   ├── README.md
@@ -81,6 +85,7 @@ homelab-infra/
 │           └── roles/<role>/
 ├── gitops/
 │   ├── README.md
+│   ├── Justfile                    # just bump-images | list
 │   └── clusters/homelab/
 │       ├── flux-system/
 │       ├── infrastructure/         # MetalLB, Traefik, cert-manager, NFS, External Secrets, CrowdSec
@@ -90,14 +95,18 @@ homelab-infra/
     ├── cloudflare-destroy.yml      # just destroy cloudflare <resource>
     ├── proxmox-deploy.yml          # just deploy proxmox <resource>
     ├── proxmox-destroy.yml         # just destroy proxmox <resource>
-    └── ansible-configure.yml       # just configure <resource>
+    ├── github-deploy.yml           # just deploy github <repo>
+    ├── github-destroy.yml          # just destroy github <repo>
+    ├── ansible-configure.yml       # just configure <resource>
+    └── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
 ```
 
 ---
 
 ## Key Conventions
 
-- **Per-resource Terraform state** – every leaf dir under `terraform/cloudflare/` and `terraform/proxmox/` has its own
+- **Per-resource Terraform state** – every leaf dir under `terraform/cloudflare/`, `terraform/proxmox/` and
+  `terraform/github/` has its own
   `backend.tf` with a unique R2 key. No cross-state refs; services reference shared Proxmox artifacts (VM 9000 template,
   LXC template file) by static string ID.
 - **DNS records live under `terraform/cloudflare/dns/{private,public}/<name>/`** - not in a shared file.
@@ -129,5 +138,6 @@ There is one dropdown entry, one dir, one description per resource. When adding 
 | Inventory                  | Ansible connection             | Host entry in `ansible/inventories/hosts.yml` (Proxmox services only)                                                          |
 | GitOps README              | In-cluster only                | `gitops/README.md` (only for services deployed by Flux)                                                                        |
 
-See `.claude/rules/workflows.md` for the workflow-specific checklist and
-`.claude/rules/dns-{public,private}.md` for the DNS record patterns.
+See `.claude/rules/workflows.md` for the workflow-specific checklist,
+`.claude/rules/dns-{public,private}.md` for the DNS record patterns, and
+`.claude/rules/github-repos.md` for managing a GitHub repo + its DeepSeek PR agent.

@@ -7,7 +7,7 @@ triggered manually from GitHub Actions on a self-hosted runner, or locally via `
 
 ```
 homelab-infra/
-├── terraform/     # Proxmox LXCs/VMs + Cloudflare records  →  see terraform/README.md
+├── terraform/     # Proxmox LXCs/VMs + Cloudflare records + GitHub repos →  see terraform/README.md
 ├── ansible/       # Post-provisioning for Proxmox services →  see ansible/README.md
 ├── gitops/        # Flux CD manifests (k3s workloads)      →  see gitops/README.md
 └── .github/workflows/
@@ -15,6 +15,8 @@ homelab-infra/
     ├── cloudflare-destroy.yml   | Cloudflare - Destroy
     ├── proxmox-deploy.yml       | Proxmox    - Deploy
     ├── proxmox-destroy.yml      | Proxmox    - Destroy
+    ├── github-deploy.yml        | GitHub     - Deploy
+    ├── github-destroy.yml       | GitHub     - Destroy
     └── ansible-configure.yml    | Ansible    - Configure
 ```
 
@@ -94,6 +96,9 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD`                                 | RabbitMQ admin creds                                                                                         |
 | `FLUX_GITHUB_TOKEN`                                                  | GitHub PAT with `repo` scope – Flux CD bootstrap                                                             |
 | `CLOUDFLARE_TUNNEL_TOKEN`                                            | Token from `terraform output -raw tunnel_token` after deploying `cloudflare/shared/zero-trust`               |
+| `GH_ADMIN_TOKEN`                                                     | PAT used by the `github/` Terraform layer – see [Managed GitHub repos](#managed-github-repos)                |
+| `GH_OWNER`                                                           | GitHub user/org owning the managed repos, e.g. `kalpak44` (optional; defaults to `kalpak44`)                 |
+| `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI PR agent                                        |
 
 ### 4. Cloudflare API token - required scopes
 
@@ -229,9 +234,72 @@ Highlights:
 
 ---
 
+## Managed GitHub repos
+
+`terraform/github/<repo>/` manages the settings of a GitHub repository and installs a DeepSeek-backed PR agent into it.
+One directory per repo, one R2 state file each (`homelab/github/<repo>.tfstate`) - same per-resource model as the other
+layers.
+
+| Repo                          | Terraform dir               | What it manages                                                                    |
+|-------------------------------|-----------------------------|-------------------------------------------------------------------------------------|
+| `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, AI PR agent workflow |
+| `kalpak44/mite-assistant-mcp` | `github/mite-assistant-mcp` | same                                                        |
+
+**CI stays with the repo.** This layer ships the agent and points it at the repo's own check via the
+`PR_CHECK_WORKFLOW` variable (`publish-frontend.yml` / `pr-check.yml`) - it does not manage the check itself. A repo
+with no `pull_request` workflow will never have a green check, so the agent will never merge anything there.
+
+Deploy: `just deploy github <repo>` (or the **GitHub - Deploy** workflow).
+
+### What the agent does
+
+Terraform pushes `.github/workflows/ai-pr-agent.yml` into the managed repo. It runs **daily at 06:00 UTC** (`schedule`)
+or on demand (`workflow_dispatch`) - it is not triggered per pull request.
+
+One job: it installs the [Codex CLI](https://github.com/openai/codex), points it at DeepSeek, and hands it the `gh` CLI
+plus a prompt. The agent then walks the open **bot-authored** PRs oldest first and, for each one in turn:
+
+1. reads the diff and decides whether it is a safe dependency bump,
+2. updates the branch if it is behind, and dispatches the repo's own `PR_CHECK_WORKFLOW` if the head commit has no
+   checks (a PR opened before that workflow existed never gets one retroactively),
+3. waits for every check to conclude,
+4. merges with `gh pr merge --squash` **only** if all checks succeeded,
+5. confirms the merge landed before moving to the next PR,
+6. leaves a short comment explaining the decision.
+
+Human-authored PRs are never merged. The merge policy lives in the prompt, not in bash.
+
+**Why sequential.** Dependency PRs almost always touch the same lockfile. `gh pr merge --auto` arms them all at once and
+they collide; merging one at a time means each PR rebases onto the previous merge instead of conflicting.
+
+**Why no branch ruleset.** The agent is the gate - it refuses to merge without a green check. A ruleset was tried and
+removed: its `pull_request` rule also blocks Terraform from committing the workflow files it manages
+(`409 Changes must be made through a pull request`), which needs an admin bypass actor to work around.
+
+**Wire protocol.** DeepSeek serves the OpenAI Responses API at `/v1/responses`, which is the only protocol Codex still
+speaks - `wire_api = "chat"` was removed upstream. They talk directly, with no proxy in between.
+
+**Both secret stores.** The key is written to the Actions *and* Dependabot stores. Runs triggered from a Dependabot PR
+read from the Dependabot store, so a key present only in the Actions store would be empty on exactly the PRs that
+matter.
+
+### `GH_ADMIN_TOKEN` scopes
+
+The built-in `GITHUB_TOKEN` cannot manage other repositories, so this layer needs its own PAT:
+
+| PAT type    | Required                                                                              |
+|-------------|---------------------------------------------------------------------------------------|
+| Classic     | `repo` + `workflow`                                                                   |
+| Fine-grained | Administration, Contents, Secrets, Dependabot secrets, Variables, Workflows - all *write* |
+
+> `terraform destroy` on this layer removes the secrets, the agent workflow file and any ruleset. The repository itself
+> is **archived, not deleted** (`archive_on_destroy = true`).
+
+---
+
 ## CI
 
-Five workflows, all `workflow_dispatch` (manual), all running on the self-hosted runner:
+Seven workflows, all `workflow_dispatch` (manual), all running on the self-hosted runner:
 
 | Workflow                 | Picks                           | Runs                                 |
 |--------------------------|---------------------------------|--------------------------------------|
@@ -239,7 +307,10 @@ Five workflows, all `workflow_dispatch` (manual), all running on the self-hosted
 | `cloudflare-destroy.yml` | 15 cloudflare/ dirs             | `just destroy cloudflare <resource>` |
 | `proxmox-deploy.yml`     | 9 proxmox/ services             | `just deploy proxmox <resource>`     |
 | `proxmox-destroy.yml`    | 9 proxmox/ services             | `just destroy proxmox <resource>`    |
+| `github-deploy.yml`      | 2 github/ repos                 | `just deploy github <resource>`      |
+| `github-destroy.yml`     | 2 github/ repos                 | `just destroy github <resource>`     |
 | `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
+| `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 
 Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [
 `terraform/README.md`](terraform/README.md) and [`ansible/README.md`](ansible/README.md).
