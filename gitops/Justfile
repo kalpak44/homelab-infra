@@ -1,0 +1,98 @@
+# Homelab GitOps
+#
+# Usage:
+#   just bump-images        # point the public apps at the latest published image
+#   just list               # show what is tracked
+#
+# Env vars:
+#   GH_ADMIN_TOKEN (or GITHUB_TOKEN)   read the source repos' workflow runs + push the bump
+#
+# The tag comes from the head SHA of the latest *successful* publish run in the source
+# repo, not from the head of its default branch — that way we only ever point at an image
+# that actually finished building. Both publish workflows tag with a 7-char short SHA.
+
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+# gitops app dir | source repo | publish workflow
+apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml
+mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml"
+
+_help:
+    @just --list
+
+# Rewrite each app's image tag to the latest published one, then commit and push
+bump-images:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export GH_TOKEN="${GH_ADMIN_TOKEN:-${GITHUB_TOKEN:-}}"
+    if [ -z "$GH_TOKEN" ]; then
+        echo "GH_ADMIN_TOKEN (or GITHUB_TOKEN) must be set" >&2
+        exit 1
+    fi
+
+    cd "$(git rev-parse --show-toplevel)"
+    bumped=()
+
+    while IFS='|' read -r app repo workflow; do
+        [ -z "$app" ] && continue
+        file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
+        image="ghcr.io/${repo}"
+
+        # --event push --branch main matters: these workflows also run on pull_request,
+        # but the job that actually pushes the image is gated to pushes on the default
+        # branch. A successful PR run would otherwise hand us a SHA that was never
+        # published, and we would point the cluster at a tag that does not exist.
+        sha=$(gh run list --repo "$repo" --workflow "$workflow" \
+                --event push --branch main \
+                --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+        if [ -z "$sha" ]; then
+            echo "$app: no successful $workflow run in $repo — skipping" >&2
+            continue
+        fi
+        new="${sha:0:7}"
+
+        current=$(sed -nE "s|^ *image: ${image}:(.*)$|\1|p" "$file" | head -1)
+        if [ -z "$current" ]; then
+            echo "$app: no '${image}:<tag>' line in $file — skipping" >&2
+            continue
+        fi
+
+        if [ "$current" = "$new" ]; then
+            echo "$app: already on $new"
+            continue
+        fi
+
+        if [ "${DRY_RUN:-}" = "1" ]; then
+            echo "$app: would bump $current -> $new"
+            continue
+        fi
+
+        sed -i.bak -E "s|^( *image: ${image}:).*$|\1${new}|" "$file" && rm -f "${file}.bak"
+        echo "$app: $current -> $new"
+        bumped+=("$app")
+    done <<< '{{ apps }}'
+
+    if [ ${#bumped[@]} -eq 0 ]; then
+        echo "nothing to do"
+        exit 0
+    fi
+
+    git config user.name  "homelab-infra"
+    git config user.email "homelab-infra@users.noreply.github.com"
+    git add gitops/clusters/homelab/apps/public
+    git commit -m "bump $(IFS=', '; echo "${bumped[*]}") image tag(s)"
+    git push
+    echo "pushed — Flux will reconcile"
+
+# Show the apps whose image tags are tracked, and where they point today
+list:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "$(git rev-parse --show-toplevel)"
+    echo "Image tags bumped by 'just bump-images':"
+    while IFS='|' read -r app repo workflow; do
+        [ -z "$app" ] && continue
+        file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
+        tag=$(sed -nE "s|^ *image: ghcr.io/${repo}:(.*)$|\1|p" "$file" | head -1)
+        printf "  %-20s ghcr.io/%-30s now=%s  (from %s)\n" "$app" "$repo" "${tag:-?}" "$workflow"
+    done <<< '{{ apps }}'

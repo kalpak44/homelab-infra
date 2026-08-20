@@ -1,0 +1,28 @@
+name: GitOps - Bump images
+
+# Points the public apps at the newest image their source repo has successfully
+# published, then pushes. Flux picks the change up from Git and rolls the Deployment.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: gitops
+    env:
+      # Reads workflow runs in the source repos and pushes the bump commit back here,
+      # neither of which the job's own GITHUB_TOKEN can do.
+      GH_ADMIN_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+      - uses: extractions/setup-just@v2
+      - run: just bump-images
