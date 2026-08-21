@@ -330,3 +330,14 @@ cd terraform && just destroy proxmox adguard-lxc       # tear down
 ```
 
 Locally you need the same env vars listed in the workflow files (`~/.zshrc` or `~/.zshenv` works).
+
+## Security
+
+Never commit secrets - all credentials flow in as env vars (`TF_VAR_*`, Ansible `-e`) or through Vault → External
+Secrets Operator. To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
+
+## License
+
+MIT - free to use, copy, modify and redistribute, for any purpose, including commercially. The only condition is the
+standard MIT one: keep the license text and copyright notice with any copy or substantial portion. See
+[`LICENSE`](LICENSE).

@@ -62,6 +62,8 @@ See `gitops/README.md` for the in-cluster service list.
 homelab-infra/
 ├── README.md                       # Setup + service catalog (source of truth for infra services)
 ├── CLAUDE.md                       # This file
+├── LICENSE                         # MIT
+├── SECURITY.md                     # Vulnerability reporting + scope
 ├── terraform/
 │   ├── README.md
 │   ├── Justfile                    # just deploy | destroy | list
