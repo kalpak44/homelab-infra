@@ -4,7 +4,8 @@ metadata:
   name: capacity-planner
   namespace: public
 spec:
-  replicas: 0
+  # No `replicas` on purpose — Sablier owns the replica count. See the note in
+  # bunker-game-app/deployment.yaml.
   selector:
     matchLabels:
       app: capacity-planner

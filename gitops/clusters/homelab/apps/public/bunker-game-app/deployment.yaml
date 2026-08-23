@@ -4,7 +4,10 @@ metadata:
   name: bunker-game-app
   namespace: public
 spec:
-  replicas: 0
+  # No `replicas` on purpose. Sablier owns the replica count — it scales this up on the
+  # first request and back to 0 after the middleware's sessionDuration. Declaring it
+  # here would make kustomize-controller own the field under server-side apply and
+  # re-assert 0 on every reconcile (every 30s), killing the pod Sablier just started.
   selector:
     matchLabels:
       app: bunker-game-app
