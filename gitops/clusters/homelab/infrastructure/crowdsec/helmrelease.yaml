@@ -224,10 +224,15 @@ spec:
                 cscli allowlists add trusted_ips 46.10.148.46 -d "Trusted client IP" 2>/dev/null || true
                 cscli bouncers delete traefik 2>/dev/null || true
                 cscli bouncers add traefik --key "${BOUNCER_KEY_traefik}"
+                # --force is required for idempotency: without it, a machine
+                # that already exists makes this exit 1 every time, so the loop
+                # burns all 60 iterations (120s) on every LAPI start. postStart
+                # blocks the container from reaching Running, so that delay is
+                # pure LAPI downtime and is what crash-loops the appsec pods.
                 for i in $(seq 1 60); do
                   cscli machines add "${WEBUI_MACHINE_ID}" \
                     --password "${WEBUI_PASSWORD}" \
-                    -f /dev/null 2>/dev/null && break
+                    --force -f /dev/null 2>/dev/null && break
                   sleep 2
                 done
                 cscli console enroll "${ENROLLMENT_KEY}" || true
@@ -326,14 +331,19 @@ spec:
           default_remediation: ban
           inband_rules:
             - custom/block-php
-          # Scoped to the Sablier-backed apps only. Hooks from every loaded
-          # appsec config are appended into one global set, so this must remove
-          # the single named rule - filtering in on_match and allowing the
-          # request would also release virtual-patching matches on other hosts.
+          # Scoped to hosts that never legitimately serve PHP. Hooks from every
+          # loaded appsec config are appended into one global set, so this must
+          # remove the single named rule - filtering in on_match and allowing
+          # the request would also release virtual-patching matches elsewhere.
           # IsInBand guard: pre_eval also runs in the out-of-band phase, where
           # RemoveInBandRuleByName is a no-op that logs a warning per request.
           pre_eval:
-            - filter: 'IsInBand && req.Host not in ["bunker.pavel-usanli.online", "planner.pavel-usanli.online"]'
+            - filter: >-
+                IsInBand && req.Host not in [
+                "bunker.pavel-usanli.online",
+                "planner.pavel-usanli.online",
+                "pavel-usanli.online",
+                "www.pavel-usanli.online"]
               apply:
                 - RemoveInBandRuleByName("custom/block-php")
 
