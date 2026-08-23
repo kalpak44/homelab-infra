@@ -11,6 +11,11 @@ spec:
       updateIntervalSeconds: 60
       defaultDecisionSeconds: 60
       httpTimeoutSeconds: 10
+      # Never mark the decision stream unhealthy. The default (0) makes the
+      # very first failed LAPI poll flip the bouncer to fail-closed, which
+      # 403s every non-cached client until LAPI is back plus one poll
+      # interval. -1 keeps serving from the local decision cache instead.
+      updateMaxFailure: -1
       crowdsecMode: stream
       crowdsecLapiKeyFile: /run/secrets/crowdsec/bouncer-api-key
       crowdsecLapiHost: crowdsec-service.crowdsec.svc.cluster.local:8080
