@@ -31,9 +31,14 @@ spec:
           emptyDir: {}
       containers:
         - name: headlamp
-          image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
+          image: ghcr.io/headlamp-k8s/headlamp:v0.45.0
           args:
             - -in-cluster
+            # Drops the "paste a token" screen - every request is served with
+            # the pod's own ServiceAccount instead. That SA is cluster-admin and
+            # there is no gate in front, so this relies on the app being
+            # LAN-only. Requires Headlamp >= v0.43.0.
+            - -unsafe-use-service-account-token
             # Headlamp only loads plugins from an explicitly named dir.
             - -plugins-dir=/build/plugins
           volumeMounts:
@@ -52,6 +57,10 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
+              # Writes nothing but logs - the plugin bundle lives in the
+              # emptyDir, which counts against this container's allowance.
+              ephemeral-storage: 64Mi
             limits:
               cpu: 200m
               memory: 256Mi
+              ephemeral-storage: 512Mi
