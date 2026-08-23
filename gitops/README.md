@@ -15,7 +15,8 @@ gitops/clusters/homelab/
 │   ├── external-secrets-config/  # ClusterSecretStore pointing at Vault
 │   ├── traefik-config/   # Traefik ingress config, Cloudflare DNS-01 TLS, CrowdSec middleware
 │   ├── crowdsec/         # CrowdSec IDS + AppSec engine + web UI
-│   └── sablier/          # Sablier scale-on-demand (starts workloads on request, idles after inactivity)
+│   ├── sablier/          # Sablier scale-on-demand (starts workloads on request, idles after inactivity)
+│   └── trivy-operator/   # Container CVE scanning - reports surfaced in Headlamp
 └── apps/
     ├── public/
     │   ├── personal-web-page/     # Personal website
@@ -28,7 +29,7 @@ gitops/clusters/homelab/
     │   └── plugin-noco-tools/     # Noco Tools landing page (noco-ai-tools.pavel-usanli.online)
     └── private/
         ├── private-home-page/               # Internal services dashboard
-        ├── headlamp/                        # Kubernetes dashboard
+        ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
         ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
         ├── lex-bg-connector/                # Lex background connector (data preloader)
         ├── playwright-mcp/                  # Microsoft Playwright MCP server (browser automation)
@@ -151,3 +152,41 @@ Flux CD (polls GitHub every 1 min)
 - **MetalLB** assigns `192.168.1.120` to Traefik's `LoadBalancer` service
 - **Traefik** terminates TLS via Cloudflare DNS-01, routes traffic to apps, runs CrowdSec middleware
 - **CrowdSec** inspects requests via AppSec engine; decisions shared with Traefik bouncer
+- **Trivy Operator** discovers every workload image and writes scan results as CRDs (see below)
+
+## Container CVE scanning
+
+`infrastructure/trivy-operator/` runs [Trivy Operator](https://aquasecurity.github.io/trivy-operator/). It discovers
+images from the cluster itself — nothing here needs updating when an app is added under `apps/`.
+
+Results are Kubernetes objects, one per workload:
+
+```bash
+kubectl get vulnerabilityreports -A          # CVEs per workload
+kubectl get configauditreports -A            # misconfigurations
+kubectl get exposedsecretreports -A          # secrets baked into images
+kubectl get sbomreports -A                   # SBOM per workload
+kubectl get clustercompliancereports         # k8s-cis-1.23
+```
+
+**The board** is the Trivy plugin in Headlamp at `headlamp.internal.pavel-usanli.online` → *Trivy* in the sidebar.
+The plugin ships as an image; `apps/private/headlamp/deployment.yaml` has an initContainer that copies the bundle into
+an emptyDir that Headlamp reads via `-plugins-dir`. Bumping the plugin means bumping that initContainer's image tag.
+
+**Rescan cadence** is `operator.scannerReportTTL: 24h` — a report older than a day is regenerated, so the board is at
+most one day stale. Force an immediate rescan of one workload by deleting its report:
+
+```bash
+kubectl delete vulnerabilityreport -n public <report-name>
+```
+
+**Ad-hoc scan of an arbitrary image** — reuses the in-cluster DB server, so there is no database download:
+
+```bash
+kubectl -n trivy-system run trivy-adhoc --rm -it --restart=Never \
+  --image=mirror.gcr.io/aquasec/trivy:0.73.0 -- \
+  image --server http://trivy-service.trivy-system:4954 <image-ref>
+```
+
+**Tuning knobs** in `helmrelease.yaml`: `trivy.severity` (currently `MEDIUM,HIGH,CRITICAL`), and
+`trivy.ignoreUnfixed: true` if you want to hide CVEs with no upstream fix available.

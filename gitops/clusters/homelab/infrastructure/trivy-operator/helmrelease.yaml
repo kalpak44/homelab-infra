@@ -1,0 +1,94 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: trivy-operator
+  namespace: trivy-system
+spec:
+  interval: 30s
+  chart:
+    spec:
+      chart: trivy-operator
+      version: "0.35.x"
+      sourceRef:
+        kind: HelmRepository
+        name: aqua
+        namespace: flux-system
+  install:
+    crds: Create
+  upgrade:
+    crds: CreateReplace
+  values:
+    # Empty = every namespace. The operator discovers images itself, so nothing
+    # here needs updating when an app is added under apps/{public,private}.
+    targetNamespaces: ""
+
+    operator:
+      # Runs one long-lived trivy-server that owns the vulnerability DB; scan
+      # jobs become thin clients against it. Without this every scan job pulls
+      # trivy-db from the registry itself, and unauthenticated pulls get
+      # throttled well before a cluster-wide sweep finishes.
+      # Setting this also forces trivy.mode to ClientServer and wires
+      # trivy.serverURL to the in-cluster service - do not set them by hand.
+      builtInTrivyServer: true
+
+      # Single Proxmox node: a sweep must not starve the workloads it scans.
+      scanJobsConcurrentLimit: 2
+
+      # Rescan cadence. A report older than this is regenerated, which is the
+      # "one report per day per image" behaviour.
+      scannerReportTTL: "24h"
+
+      # Reap finished scan jobs instead of accumulating Completed pods.
+      scanJobTTL: "1h"
+
+      # Only the live ReplicaSet of each Deployment, not every old revision.
+      vulnerabilityScannerScanOnlyCurrentRevisions: true
+      configAuditScannerScanOnlyCurrentRevisions: true
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    trivy:
+      # emptyDir instead of the nfs StorageClass on purpose: trivy-db is a
+      # bbolt file that gets mmap'd, which is the one access pattern NFS
+      # handles badly. The server pod is long-lived, so the cost is a single
+      # DB download per pod restart.
+      storageClassEnabled: false
+
+      # LOW/UNKNOWN on a base image is thousands of rows of noise that never
+      # get acted on. Raise this later if the board ever looks too quiet.
+      severity: "MEDIUM,HIGH,CRITICAL"
+
+      # Without these a report row is a bare CVE id - no description, no CVSS,
+      # no link. They are what makes the Headlamp detail pane worth opening.
+      additionalVulnerabilityReportFields: "Description,Links,CVSS,Target,Class,PackagePath,PackageType"
+
+      # Per-scan-job limits. Thin clients in ClientServer mode, so modest.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 100M
+        limits:
+          cpu: 500m
+          memory: 500M
+
+      server:
+        replicas: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+
+    compliance:
+      # k8s-cis-1.23 alone. The other three specs each spawn their own periodic
+      # scan and largely restate the same findings on a single-node k3s box.
+      specs:
+        - k8s-cis-1.23

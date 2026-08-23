@@ -14,11 +14,32 @@ spec:
         app: headlamp
     spec:
       serviceAccountName: headlamp
+      # The plugin is distributed as an image whose only content is the built
+      # plugin bundle - it is copied into a shared emptyDir, not run.
+      initContainers:
+        - name: trivy-plugin
+          image: ghcr.io/kubebeam/trivy-headlamp-plugin:v0.3.2
+          command:
+            - /bin/sh
+            - -c
+            - mkdir -p /build/plugins && cp -r /plugins/* /build/plugins/
+          volumeMounts:
+            - name: headlamp-plugins
+              mountPath: /build/plugins
+      volumes:
+        - name: headlamp-plugins
+          emptyDir: {}
       containers:
         - name: headlamp
           image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
           args:
             - -in-cluster
+            # Headlamp only loads plugins from an explicitly named dir.
+            - -plugins-dir=/build/plugins
+          volumeMounts:
+            - name: headlamp-plugins
+              mountPath: /build/plugins
+              readOnly: true
           ports:
             - containerPort: 4466
           readinessProbe:

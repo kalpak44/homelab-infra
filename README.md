@@ -231,6 +231,7 @@ Highlights:
 - **External Secrets Operator** - syncs Vault → k8s secrets
 - **CrowdSec** - IDS/IPS + AppSec middleware
 - **NFS provisioner** - StorageClass `nfs` backed by `192.168.1.108:/srv/nfs/k8s`
+- **Trivy Operator** - container CVE / misconfig / SBOM scanning, board via the Trivy plugin in Headlamp
 
 ---
 
