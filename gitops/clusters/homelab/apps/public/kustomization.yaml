@@ -6,6 +6,6 @@ resources:
   - capacity-planner
 #  - shopify-gpt-assistant
   - bunker-game-app
-  - google-assistant-mcp
+#  - google-assistant-mcp
   - nocobase
   - plugin-noco-tools
