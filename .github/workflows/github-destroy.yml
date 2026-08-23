@@ -10,6 +10,7 @@ on:
         required: true
         type: choice
         options:
+          - bunker-party
           - code-viewer-bot
           - kalpak44
           - mac-calendar-mcp
