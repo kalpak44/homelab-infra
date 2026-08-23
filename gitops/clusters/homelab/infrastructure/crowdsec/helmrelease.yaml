@@ -157,11 +157,26 @@ spec:
         on_success: break
         ---
         name: php_probing_ban
+        # No Alert.Remediation check: AppSec builds its alerts without ever
+        # setting that field, so "Alert.Remediation == true" never matches a
+        # waf-kind alert and the ban would silently never be created.
         filters:
-          - Alert.Remediation == true && Alert.GetScenario() == "custom/block-php"
+          - Alert.GetScenario() == "custom/block-php"
         decisions:
           - type: ban
             duration: 24h
+        on_success: break
+        ---
+        name: appsec_vpatch_ban
+        # Virtual-patching hits are waf-kind alerts, so they never reach
+        # default_ip_remediation below (it requires Alert.Remediation, which
+        # AppSec never sets). Without this they only ever get a per-request
+        # 403 and the scanner is free to keep probing other paths.
+        filters:
+          - Alert.GetScenario() startsWith "crowdsecurity/vpatch-"
+        decisions:
+          - type: ban
+            duration: 4h
         on_success: break
         ---
         name: default_ip_remediation
@@ -315,8 +330,10 @@ spec:
           # appsec config are appended into one global set, so this must remove
           # the single named rule - filtering in on_match and allowing the
           # request would also release virtual-patching matches on other hosts.
+          # IsInBand guard: pre_eval also runs in the out-of-band phase, where
+          # RemoveInBandRuleByName is a no-op that logs a warning per request.
           pre_eval:
-            - filter: 'req.Host not in ["bunker.pavel-usanli.online", "planner.pavel-usanli.online"]'
+            - filter: 'IsInBand && req.Host not in ["bunker.pavel-usanli.online", "planner.pavel-usanli.online"]'
               apply:
                 - RemoveInBandRuleByName("custom/block-php")
 
