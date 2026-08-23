@@ -9,10 +9,12 @@
 #            same PR branch when it is safe to do so, waits for CI on the final head
 #            commit, and merges only when the final state is clearly safe.
 #
-#   Pass 2 — SonarCloud. Reads the project's quality gate and open issues, and when the
-#            gate is failing, prepares behavior-preserving fixes on a fresh branch and
-#            opens a PR with them. It never merges that PR itself — a source change
-#            authored by the agent gets human review.
+#   Pass 2 — SonarCloud. Reads the project's quality gate and open issues, and fixes
+#            what it can fix without changing behavior — on the head branch of the PR
+#            it is already processing, so the fixes merge with that PR. It never opens
+#            a PR and never creates a branch. With no PR to attach to, a hand-started
+#            run commits the fixes straight to the default branch; the nightly cron
+#            only reports.
 #
 # The policy lives in the prompt below, not in bash. There is no matrix or auto-merge.
 # The agent itself performs the review, repair, validation, CI gate, and merge.
@@ -90,7 +92,9 @@ jobs:
           node-version: "22"
 
       - name: Install Codex CLI
-        run: npm install -g @openai/codex
+        # Pinned version, and --ignore-scripts because nothing here needs a lifecycle
+        # script: the package has none and ships its binaries as optional deps.
+        run: npm install -g --ignore-scripts @openai/codex@0.149.0
 
       - name: Point Codex at DeepSeek
         run: |
@@ -274,10 +278,6 @@ jobs:
               (pom.xml, renovate.json, lockfiles) plus whatever the upgrade requires.
 
           A PR that satisfies neither is a human PR. NEVER operate on a human PR.
-
-          Also SKIP, in pass 1, any PR whose head branch begins with `sonar-fix/`.
-          Those are your own pass 2 output and are for human review, not for you to
-          merge.
 
           If a branch merely looks like `renovate/` but the diff is not a dependency
           update, treat it as out of scope and leave it alone.
@@ -716,10 +716,31 @@ jobs:
           PASS 2 — SONARCLOUD QUALITY GATE
           ======================================================================
 
-          Start this pass only after pass 1 is finished and the working tree is clean.
-
           The goal of this pass is that the SonarCloud quality gate for this project
           PASSES, achieved only through changes that DO NOT CHANGE BEHAVIOUR.
+
+          Read this before pass 1, because it changes how you finish a PR there.
+
+          The gate is fixed ON THE PULL REQUEST BRANCH YOU ARE ALREADY WORKING ON.
+
+          There is exactly one place Sonar fixes may go: the head branch of the
+          dependency PR you are processing in pass 1. You do not create a branch for
+          them and you do not open a pull request for them. The fixes travel with that
+          PR and land when it merges.
+
+          So, concretely:
+
+            - While processing PR <n> in pass 1, if the SonarCloud quality gate is one
+              of the things failing on it, apply the in-scope fixes below to PR <n>'s
+              head branch, alongside any compatibility fixes, and carry on with the
+              normal pass-1 flow: validate, commit, push, re-check CI, merge.
+
+            - If the gate is failing and there is no open PR to carry the fix, commit
+              the in-scope fixes DIRECTLY to the default branch. See section 23.
+
+          Either way: NEVER create a branch and NEVER open a PR.
+
+          A failing gate always gets fixed as far as it safely can be, on every run.
 
           ----------------------------------------------------------------------
           19. READ THE CURRENT SONAR STATE
@@ -768,14 +789,19 @@ jobs:
           20. FIX ONLY WHAT CAN BE FIXED WITHOUT CHANGING BEHAVIOUR
           ----------------------------------------------------------------------
 
-          Create ONE branch off the default branch for this work:
+          Sonar fixes go on the head branch of the PR you are processing — the same
+          branch that already carries the dependency bump and any compatibility fixes —
+          or, when there is no open PR, straight onto the default branch per section 23.
+          Never split them across branches. Never create a branch for them.
 
-            git checkout <default-branch>
-            git pull
-            git checkout -b sonar-fix/<short-topic>
+          Verify where you are before editing anything:
 
-          NEVER commit these fixes to the default branch, and never to somebody else's
-          PR branch.
+            git branch --show-current
+            git status
+
+          Never commit to a branch that does not belong to the PR you are currently
+          processing. The default branch is off limits except in the one case described
+          in section 23.
 
           A fix is in scope only when it is BEHAVIOUR-PRESERVING: the program does the
           same thing, for the same inputs, with the same outputs and side effects,
@@ -810,9 +836,20 @@ jobs:
               sonar-project properties or pom.xml
             - disabling a rule or editing the quality gate itself
 
-          If the only way to make a condition pass is out of scope, LEAVE IT and
-          explain it in the PR body. A partially fixed gate with an honest explanation
-          is the correct outcome — a green gate obtained by suppression is not.
+          If the only way to make a condition pass is out of scope, LEAVE IT and say so
+          in the PR comment and in your summary. An honestly reported partial fix is the
+          correct outcome — a green gate obtained by suppression is not.
+
+          A gate that still fails after the in-scope fixes means the PR does not merge.
+          That is the correct outcome too. Do not reach for a suppression to get it
+          through.
+
+          One category is out of your reach entirely: anything under
+          `.github/workflows/`. GitHub refuses a push to those paths from the Actions
+          token, which has no `workflows` permission. Do not spend a cycle preparing
+          such a fix — report the rule key, the file, and the fix you would have made,
+          and let a human apply it. `ai-pr-agent.yml` in particular is generated from
+          the homelab-infra repository and would be overwritten anyway.
 
           If the failing condition is coverage on new code, you MAY add tests that
           assert the CURRENT documented behaviour. Never change production code to
@@ -837,43 +874,85 @@ jobs:
 
           Then re-read your own diff:
 
-            git diff <default-branch>...HEAD
+            git diff <base-branch>...HEAD
 
           For every hunk, state to yourself which Sonar issue it addresses and why it
           cannot change behaviour. Drop any hunk that fails that test.
 
           ----------------------------------------------------------------------
-          22. OPEN A PR — DO NOT MERGE IT
+          22. NEVER OPEN A PULL REQUEST
           ----------------------------------------------------------------------
 
-          Push the branch and open one PR against the default branch:
+          You do not create pull requests. Not for Sonar fixes, not for anything.
 
-            git push -u origin sonar-fix/<short-topic>
-            gh pr create --repo "$REPO" --base <default-branch> \
-              --title "fix sonarcloud quality gate issues" --body "<body>"
+          `gh pr create` is not part of your job. Neither is `git checkout -b`.
 
-          The body must contain:
-            - the quality gate conditions that were failing
-            - a table or list of the issues addressed: rule key, file, what changed
-            - for each change, one line on why it is behaviour-preserving
-            - the issues deliberately NOT fixed, and why
-            - the validation you ran and its result
+          Your work always joins a pull request that already exists, and it gets there
+          by pushing to that PR's head branch:
 
-          Because this PR is created with the Actions token, GitHub will not start its
-          checks automatically. Start them, if PR_CHECK_WORKFLOW is non-empty:
+            git push
 
-            gh workflow run "$PR_CHECK_WORKFLOW" --repo "$REPO" --ref "sonar-fix/<short-topic>"
+          Then continue with the normal pass-1 flow: the new head SHA, the final
+          combined diff, CI on that SHA, the safety gate, and the merge. The Sonar
+          fixes are merged as part of that PR — never left behind on a branch.
 
-          Wait for that run and report its conclusion, including whether the SonarCloud
-          quality gate passed on the branch.
+          Note that the PR check runs the quality gate with
+          `-Dsonar.qualitygate.wait=true`, so a still-failing gate shows up as a failing
+          check and section 17 already forbids merging on a failing check. The gate is
+          therefore enforced automatically; you do not need a separate confirmation
+          step.
 
-          You MUST NOT merge this PR, and you must not merge it in a later run either —
-          section 1a already tells you to skip `sonar-fix/` branches. A human reviews
-          source changes you authored.
+          Mention the Sonar work in the PR's single final comment: which conditions were
+          failing, which rules you addressed, why each change preserves behaviour, and
+          anything you deliberately left alone.
 
-          If a run is already open from a previous day with the same fixes pending
-          review, do not open a second one. Update the existing branch instead, or
-          leave it alone and say so.
+          If the gate is failing and there is no open PR to attach a fix to, do NOT
+          invent one. Go to section 23.
+
+          ----------------------------------------------------------------------
+          23. NO OPEN PR — COMMIT TO THE DEFAULT BRANCH
+          ----------------------------------------------------------------------
+
+          This section applies when ALL of these hold:
+
+            - pass 1 found no open PR you were allowed to work on
+            - the quality gate is failing
+            - the fixes you have are in scope by section 20, i.e. behaviour-preserving
+
+          Work directly on the default branch:
+
+            git checkout <default-branch>
+            git pull --ff-only
+            git branch --show-current    # confirm before editing anything
+
+          Apply the in-scope fixes, then validate exactly as section 21 requires:
+
+            mvn -B fmt:format
+            mvn -B fmt:check
+            mvn -B verify
+
+          Every existing test must pass WITHOUT being modified. If one had to change,
+          the behaviour changed — revert that fix and leave the issue reported.
+
+          Re-read your diff and justify every hunk against a specific Sonar issue.
+          Drop any hunk you cannot justify.
+
+          Then commit and push:
+
+            git add <intended-files>
+            git commit -m "fix sonarcloud <rule> issues"
+            git push origin <default-branch>
+
+          Stage only intended files. NEVER force-push. Nothing under
+          `.github/workflows/` will push — do not try.
+
+          The push triggers the build workflow on the default branch. Wait for that run,
+          read its conclusion, and report whether the quality gate went green. If it did
+          not, report which conditions remain — do NOT keep pushing speculative commits
+          to the default branch chasing it. One considered attempt per run.
+
+          This is the ONLY circumstance in which you may write to the default branch.
+          When a PR is open to carry the fix, the fix goes there instead.
 
           ======================================================================
           HARD RULES
@@ -883,11 +962,15 @@ jobs:
 
           - NEVER merge a human-authored PR.
           - NEVER modify a human-authored PR.
-          - NEVER merge a PR whose head branch begins with `sonar-fix/`.
-          - NEVER commit directly to the default/base branch.
-          - NEVER push directly to the default/base branch.
-          - Dependency compatibility fixes go to the existing dependency PR head branch.
-          - Sonar fixes go to a fresh `sonar-fix/` branch and into a PR for review.
+          - NEVER create a pull request. You only ever finish existing ones.
+          - NEVER create a branch. Every commit goes either on a PR head branch that
+            already exists, or on the default branch under section 23.
+          - NEVER commit or push to the default branch, with exactly one exception:
+            there is no open PR and you are fixing a failing Sonar gate with
+            behaviour-preserving changes, per section 23.
+          - NEVER touch the base branch of a PR you are processing.
+          - Compatibility fixes AND Sonar fixes both go to the head branch of the PR
+            being processed, and merge with it.
           - NEVER force-push.
           - NEVER bypass branch protection.
           - NEVER use admin merge privileges to bypass protections.
@@ -897,7 +980,9 @@ jobs:
           - NEVER weaken security checks merely to make something pass.
           - NEVER delete or weaken tests merely to make something pass.
           - NEVER suppress, exclude, or mark-as-won't-fix a Sonar issue to pass the gate.
-          - NEVER change behaviour in pass 2.
+          - NEVER change behaviour with a Sonar fix.
+          - NEVER attempt to push a file under `.github/workflows/` — the Actions token
+            is not allowed to, so report the fix instead of trying it.
           - NEVER make unrelated refactors.
           - NEVER add unrelated features.
           - NEVER silently accept an unexplained breaking change.
@@ -920,15 +1005,20 @@ jobs:
             #124 — foo 7.2 → 8.0 — merged — fixes committed — migrated removed API; tests and final CI passed
             #125 — bar 3.1 → 4.0 — left open — no fixes — migration requires an architectural decision
 
-          Then exactly one line for pass 2:
+          Then exactly one line for the Sonar gate:
 
-            sonar — <gate status before> — <issues fixed>/<issues found> — <PR #n opened|no PR needed|skipped> — <reason>
+            sonar — <gate status> — <issues fixed>/<issues found> — <where the fixes went> — <reason>
 
           Examples:
 
-            sonar — OK — 0/0 — no PR needed — gate already passing
-            sonar — ERROR — 4/6 — PR #126 opened — 2 issues need a design decision
+            sonar — OK — 0/0 — nothing to do — gate already passing
+            sonar — ERROR — 4/6 — on PR #124 — 2 issues are in workflow files, needs a human
+            sonar — ERROR — 3/3 — on main — no open PR to carry the fixes; gate now OK
             sonar — unknown — 0/0 — skipped — SONAR_TOKEN not available
+
+          Then, if any issue needs a human, one line per issue:
+
+            needs-human — <rule key> — <file:line> — <the fix you would have made>
           AGENT_PROMPT
 
           codex exec \
