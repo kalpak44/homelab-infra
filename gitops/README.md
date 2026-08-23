@@ -173,8 +173,10 @@ kubectl get clustercompliancereports         # k8s-cis-1.23
 The plugin ships as an image; `apps/private/headlamp/deployment.yaml` has an initContainer that copies the bundle into
 an emptyDir that Headlamp reads via `-plugins-dir`. Bumping the plugin means bumping that initContainer's image tag.
 
-**Rescan cadence** is `operator.scannerReportTTL: 24h` — a report older than a day is regenerated, so the board is at
-most one day stale. Force an immediate rescan of one workload by deleting its report:
+**Rescan cadence** is `operator.scannerReportTTL: 720h` (30 days), and it only applies to images that have not
+changed. A new image tag changes the workload's pod-spec hash, which forces an immediate rescan regardless of the TTL —
+so anything `gitops-bump-images` touches is rescanned on every bump, and the 30 days is the floor for images that sit
+still. Force an immediate rescan of one workload by deleting its report:
 
 ```bash
 kubectl delete vulnerabilityreport -n public <report-name>
@@ -190,3 +192,8 @@ kubectl -n trivy-system run trivy-adhoc --rm -it --restart=Never \
 
 **Tuning knobs** in `helmrelease.yaml`: `trivy.severity` (currently `MEDIUM,HIGH,CRITICAL`), and
 `trivy.ignoreUnfixed: true` if you want to hide CVEs with no upstream fix available.
+
+> **Trap:** `operator.scanJobsConcurrentLimit` and `operator.scanJobTTL` are coupled. The operator counts scan jobs
+> without filtering on status, so `Completed`/`Failed` jobs hold a slot until they are reaped. A small limit plus a long
+> TTL stalls the sweep — symptom is a handful of reports, a few lingering `Complete` jobs, and an idle operator.
+> `kubectl delete jobs -n trivy-system --all` unblocks it immediately.

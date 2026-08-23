@@ -31,15 +31,25 @@ spec:
       # trivy.serverURL to the in-cluster service - do not set them by hand.
       builtInTrivyServer: true
 
-      # Single Proxmox node: a sweep must not starve the workloads it scans.
-      scanJobsConcurrentLimit: 2
+      # These two are coupled - do not raise scanJobTTL without raising this.
+      # The operator's limit check (pkg/operator/jobs/limit_checker.go) counts
+      # scan jobs with a plain List and no status filter, so Completed and
+      # Failed jobs occupy the budget until they are reaped. Pairing a small
+      # limit with a long TTL wedges the sweep: the first N jobs finish, and
+      # nothing else is scheduled until the TTL expires.
+      scanJobsConcurrentLimit: 4
 
-      # Rescan cadence. A report older than this is regenerated, which is the
-      # "one report per day per image" behaviour.
-      scannerReportTTL: "24h"
+      # Short on purpose, per the above - finished jobs must be reaped fast to
+      # free the budget. VulnerabilityReport CRs are the durable artifact, so
+      # nothing is lost; only the job's logs age out.
+      scanJobTTL: "2m"
 
-      # Reap finished scan jobs instead of accumulating Completed pods.
-      scanJobTTL: "1h"
+      # Rescan cadence: 30 days (Go duration, so no day unit - 720h).
+      # This only governs images that have not changed. A new image tag changes
+      # the workload's pod-spec hash, which forces an immediate rescan
+      # regardless of this TTL - so anything gitops-bump-images touches is
+      # still scanned on every bump, and this is the floor for stale images.
+      scannerReportTTL: "720h"
 
       # Only the live ReplicaSet of each Deployment, not every old revision.
       vulnerabilityScannerScanOnlyCurrentRevisions: true
