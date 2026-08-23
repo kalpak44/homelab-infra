@@ -9,13 +9,18 @@
 #
 # The tag comes from the head SHA of the latest *successful* publish run in the source
 # repo, not from the head of its default branch — that way we only ever point at an image
-# that actually finished building. Both publish workflows tag with a 7-char short SHA.
+# that actually finished building. Every publish workflow tags with a 7-char short SHA.
+#
+# The image is listed per app rather than derived from the repo, because the gitops dir
+# name, the source repo and the image name do not always agree — bunker-game-app is
+# built from bunker-party.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-# gitops app dir | source repo | publish workflow
-apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml
-mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml"
+# gitops app dir | source repo | publish workflow | image (no tag)
+apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml|ghcr.io/kalpak44/kalpak44
+mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
+bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party"
 
 _help:
     @just --list
@@ -33,10 +38,9 @@ bump-images:
     cd "$(git rev-parse --show-toplevel)"
     bumped=()
 
-    while IFS='|' read -r app repo workflow; do
+    while IFS='|' read -r app repo workflow image; do
         [ -z "$app" ] && continue
         file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
-        image="ghcr.io/${repo}"
 
         # --event push --branch main matters: these workflows also run on pull_request,
         # but the job that actually pushes the image is gated to pushes on the default
@@ -90,9 +94,9 @@ list:
     set -euo pipefail
     cd "$(git rev-parse --show-toplevel)"
     echo "Image tags bumped by 'just bump-images':"
-    while IFS='|' read -r app repo workflow; do
+    while IFS='|' read -r app repo workflow image; do
         [ -z "$app" ] && continue
         file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
-        tag=$(sed -nE "s|^ *image: ghcr.io/${repo}:(.*)$|\1|p" "$file" | head -1)
-        printf "  %-20s ghcr.io/%-30s now=%s  (from %s)\n" "$app" "$repo" "${tag:-?}" "$workflow"
+        tag=$(sed -nE "s|^ *image: ${image}:(.*)$|\1|p" "$file" | head -1)
+        printf "  %-20s %-40s now=%s  (from %s)\n" "$app" "$image" "${tag:-?}" "$workflow"
     done <<< '{{ apps }}'

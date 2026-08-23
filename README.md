@@ -243,7 +243,7 @@ layers.
 
 | Repo                          | Terraform dir               | What it manages                                                                    |
 |-------------------------------|-----------------------------|-------------------------------------------------------------------------------------|
-| `kalpak44/bunker-party`       | `github/bunker-party`       | same, plus a second agent pass that fixes SonarCloud issues behaviour-preservingly and opens a PR; PR check is the repo's own `build.yml` |
+| `kalpak44/bunker-party`       | `github/bunker-party`       | same, plus a second agent pass that fixes SonarCloud issues behaviour-preservingly; PR check is the repo's own `build.yml`, which also publishes `ghcr.io/kalpak44/bunker-party` |
 | `kalpak44/code-viewer-bot`    | `github/code-viewer-bot`    | same as below, but no `pull_request` workflow - agent reviews and comments without merging |
 | `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, AI PR agent workflow |
 | `kalpak44/mac-calendar-mcp`   | `github/mac-calendar-mcp`   | same - but the repo has no `pull_request` workflow, so the agent reviews and comments without ever merging |
