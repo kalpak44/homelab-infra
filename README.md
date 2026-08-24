@@ -298,45 +298,111 @@ matter.
 ### Release agent
 
 `kubectl-awscli` and `postgres-awscli` are container-image repos rather than applications, so they get a different
-agent. Terraform pushes `.github/workflows/release.yml` into each. It runs **monthly at 05:00 UTC on the 1st**
-(`schedule`), on demand (`workflow_dispatch`, with a `force_release` input), and on every push to `main`.
+agent. Terraform pushes `.github/workflows/release.yml` into each. It runs **weekly at 05:00 UTC on Mondays**
+(`schedule`), on demand (`workflow_dispatch`, with `force_release` and `security_policy` inputs), and on every push to
+`main`.
 
-Two jobs:
+One job, because every step needs the tree the step before it produced, and because nothing reaches the registry until
+the whole chain has passed:
 
-**`check-versions`** - skipped on push. Codex + DeepSeek resolves the latest upstream releases (kubectl from
+```
+resolve upstream (AI)  ->  build  ->  smoke  ->  scan  ->  remediate  ->  rescan
+                                                                            |
+                          publish  <-  commit  <-  version  <-  policy  <---+
+```
+
+**Resolve** - skipped on push. Codex + DeepSeek resolves the latest upstream releases (kubectl from
 `dl.k8s.io/release/stable.txt`, Alpine from the Docker Hub tag list), edits the pins **in the Dockerfile itself**,
 builds the result to prove it works, and prepends a `CHANGELOG.md` entry with a from/to table plus a short prose
-paragraph. The workflow - not the agent - then commits to `main`. If nothing moved, the agent leaves the files alone
-and the run stops there.
+paragraph. It writes `## vNEXT` - it does not pick the version number.
 
-**`release`** - builds the multi-arch image, pushes `latest` / `<version>` / `<short-sha>` to GHCR with
-`org.opencontainers.image.*` + `io.homelab.tools.*` labels, generates an SPDX SBOM with **syft**, scans it with
-**grype**, uploads the SARIF to the Security tab, and cuts a GitHub release (notes = the new CHANGELOG section + a
-resolved-versions table + the digest, with the SBOM and scan report attached) whenever the version moved.
+**Build, smoke, scan** - the candidate is built for amd64 with `--no-cache` and is **not pushed**. It must first pass
+the compatibility contract: every binary the image promises, the real entrypoint, the uid, the TLS trust store, and -
+for `postgres-awscli` - the MODE dispatch plus both scripts' refusal to run without their variables. Then syft + grype
+scan it.
+
+**Remediate** - see below. **Publish** - only after the policy gate; the multi-arch push reuses the amd64 layers from
+the candidate build via the gha cache, so the bytes published are the bytes that were scanned.
 
 **There is no versions file.** The Dockerfile is the source of truth for what goes in the image, and the newest
 `## vX.Y.Z` heading in `CHANGELOG.md` is the version that gets tagged and published. Two files, both human-readable,
 no third place to drift.
 
-**The agent is not trusted.** Four deterministic gates sit between it and the commit, all in bash:
+**The agent is not trusted.** Deterministic gates sit between it and the commit, all in bash:
 
 | Gate | Catches |
 |------------|---------------------------------------------------------------------------------------------|
-| scope      | anything changed outside `Dockerfile` and `CHANGELOG.md`                                     |
+| scope      | anything changed outside `Dockerfile` and `CHANGELOG.md`, or a missing `## vNEXT` heading    |
 | provenance | a version that does not exist upstream, a package that does not resolve, a pin moving backwards, an exact `=version` apk pin |
-| build      | a bump that does not build, or builds but whose tools do not run                             |
-| version    | a `CHANGELOG` heading that is missing, unchanged, backwards, or a major bump                 |
+| smoke      | a build whose tools, entrypoint, scripts or Python imports no longer work                    |
+| policy     | an image measurably more vulnerable than the one already published                           |
 
 The provenance gate is the important one: it re-resolves every pin against the registry and upstream independently of
 the agent, so a hallucinated version cannot reach `main` even if the model is confident about it. The prompt says
 "never guess"; the gate is what makes that true.
 
-**Why one workflow and not two.** A push made with `GITHUB_TOKEN` does not trigger another workflow run, so the agent's
-bump commit cannot re-fire `on: push`. The build is a dependent job in the same run instead.
+**Why one job and not two.** A push made with `GITHUB_TOKEN` does not trigger another workflow run, so the agent's bump
+commit cannot re-fire `on: push`. Everything happens in one run, and one commit carries the whole result.
 
-**Why the scan never blocks.** Most findings are unfixed CVEs in the Alpine base. Failing on them would freeze the
-monthly rebuild waiting on upstream, so grype is report-only - the report goes to the step summary, the Security tab
-and the release assets.
+**The build and scan run every week**, even when no version moved. A quiet week still refreshes the vulnerability
+report and the SARIF upload; it just does not publish.
+
+#### Security policy
+
+Critical and High are acted on. A finding is **fixable** when grype knows a fixed version exists; **unfixable** when
+there is no upstream fix at all. A third case is reported separately and matters most in practice: a fix exists
+upstream but Alpine has not packaged it yet, so nothing the pipeline can do will reach it.
+
+When any Critical/High remains, remediation is attempted. Each attempt is built, smoke-tested and rescanned, and is
+kept **only** if Criticals do not rise, Critical+High strictly falls, every smoke check still passes, and no shipped
+tool's major version moved. Otherwise it is reverted whole. Levers: move the Alpine tag (newest first), move kubectl to
+current stable, drop a genuinely unneeded package - then one AI round that may propose one more minimal change through
+the identical gate.
+
+Publication is decided against the image on `:latest`, **rescanned in the same run with the same grype database** so
+the comparison reflects the change rather than a week of database growth:
+
+| `security_policy` | Behaviour |
+|-------------------|-----------|
+| `enforce` (default) | Block if the candidate has more Criticals, or more Critical+High, than the published image. Findings remediation could not reach do **not** block - refusing to publish would pin consumers to an older image with the same CVEs *plus* the ones already fixed. |
+| `strict`            | Additionally block while any fixable Critical/High remains. |
+| `report-only`       | Never block. Break-glass, for shipping a rebuild while a scanner or feed problem is sorted out. |
+
+What is deliberately **not** done, because it trades a working image for a green scanner: exact `=version` apk pins,
+`edge`/`testing` repositories, pip-installing over the Python libraries Alpine's `aws-cli` package owns, and moving the
+PostgreSQL client major (`pg_dump` refuses to read a newer server).
+
+`apk upgrade` is **not** a lever and must not be re-added: it was measured on both images and changes nothing, because
+the official `alpine:X.Y` tag already carries the newest patch level and `apk add --no-cache` already fetches current
+packages.
+
+The base bump is also **not** a blind `+1`. On `kubectl-awscli`, stepping 3.22 → 3.23 raised Criticals from 8 to 10
+while 3.22 → 3.24 cut them to 2; a one-step loop would propose the regression, measure it, revert, and repeat for ever.
+The search walks candidate tags newest-first, which is safe precisely because each one is built, smoke-tested and
+rescanned before it is kept.
+
+#### Versioning
+
+Releases follow SemVer, and the workflow - not the agent - computes the number from what actually changed between the
+published image and the candidate:
+
+| Observed change | Level |
+|-----------------|-------|
+| a shipped tool's **major** moved, an apk package was dropped, or entrypoint/command/user/workdir changed | breaking |
+| the Alpine minor moved, or a shipped tool's **minor** moved | feature |
+| anything else that changes the image - tool patch levels, package revisions, a security remediation | fix |
+
+Mapped to a component, honouring SemVer's pre-1.0 clause (§4 - anything may change in `0.y.z`):
+
+| | `0.y.z` | `1.y.z` and up |
+|---|---|---|
+| breaking | minor | major |
+| feature | minor | minor |
+| fix | patch | patch |
+
+Previous tool versions come from the `io.homelab.tools.*` labels the last release wrote onto `:latest`, so the
+comparison is against what was really published. A PostgreSQL client major move therefore lands as a minor bump today
+and as a major bump once the image reaches 1.0.0.
 
 **Pinned vs recorded.** Only what can be reliably pinned is pinned: the Alpine tag, and `KUBECTL_VERSION` in
 `kubectl-awscli` (dl.k8s.io keeps every release). `aws-cli` and the PostgreSQL client are installed *unversioned* from

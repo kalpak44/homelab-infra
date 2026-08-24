@@ -16,7 +16,7 @@ resource "github_repository" "this" {
   visibility = "public"
 
   # GHCR shows the source repo's description on the package page — keep it accurate.
-  description = "Alpine-based image with the PostgreSQL client and the AWS CLI plus backup/restore scripts, rebuilt monthly against the latest upstream releases."
+  description = "Alpine-based image with the PostgreSQL client and the AWS CLI plus backup/restore scripts, rebuilt weekly against the latest upstream releases, scanned for CVEs before publication."
 
   has_issues   = true
   has_wiki     = true
@@ -57,9 +57,9 @@ resource "github_actions_variable" "deepseek_model" {
 }
 
 # --- The release workflow -----------------------------------------------------------
-# This layer owns the workflow; the repo owns its own content. The agent edits
-# versions.env / Dockerfile / CHANGELOG.md inside the repo — none of those are
-# managed here, so a bump never fights Terraform.
+# This layer owns the workflow; the repo owns its own content. The agents edit
+# Dockerfile and CHANGELOG.md inside the repo — neither is managed here, so a bump
+# never fights Terraform.
 
 resource "github_repository_file" "release_workflow" {
   repository          = github_repository.this.name

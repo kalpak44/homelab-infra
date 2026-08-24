@@ -17,7 +17,7 @@ variable "deepseek_api_key" {
 }
 
 variable "deepseek_model" {
-  description = "DeepSeek model the monthly release agent runs against"
+  description = "DeepSeek model the weekly release agent runs against"
   type        = string
   default     = "deepseek-v4-flash"
 }

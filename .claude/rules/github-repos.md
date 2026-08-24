@@ -35,28 +35,73 @@ dropped from state, left in the repo. Use that pattern rather than deleting the 
 the file, and with no green check the agent would stop merging.
 
 **Exception — the container-image repos.** `kubectl-awscli` and `postgres-awscli` get `workflows/release.yml` instead
-of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow because the agent and the build cannot be
-separated: a push made with `GITHUB_TOKEN` does not trigger another workflow run, so the agent's bump commit would
-never fire a push-triggered build. Job one (`check-versions`, skipped on push) has Codex resolve the latest upstream
-kubectl / Alpine releases, edit the pins in the Dockerfile and prepend a `CHANGELOG.md` entry; job two (`release`)
-builds the multi-arch image, runs syft + grype, publishes to GHCR and cuts a release. These repos have no
+of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow, and now one **job**, because every step needs
+the working tree the step before it produced and because nothing may reach the registry until the whole chain has
+passed: resolve upstream (AI) → build → smoke → scan → remediate → rescan → version → commit → publish. It also has to
+be one run because a push made with `GITHUB_TOKEN` does not trigger another workflow run, so the agent's commit would
+never fire a push-triggered build. It runs weekly (Mondays 05:00 UTC), on dispatch, and on push. These repos have no
 `PR_CHECK_WORKFLOW` and no PR agent.
+
+**The build and the scan run on every trigger, including quiet weeks.** A week where no version moved still rebuilds,
+rescans, and refreshes the SARIF; it just does not publish. Do not add an early exit that skips the scan when the agent
+found nothing — the vulnerability picture changes without the pins changing, and that is the whole point of a weekly
+run.
 
 **No versions file.** The Dockerfile holds the pins; the newest `## vX.Y.Z` heading in `CHANGELOG.md` is the published
 version. Do not reintroduce a `versions.env` — it was tried and removed. It only duplicated what the Dockerfile already
 states, and gave the agent a second place to write a number that the build would then not actually use.
+
+**The agent does not choose the version number.** It writes the literal `## vNEXT`; the workflow computes the real
+number from measured facts (see below) and substitutes it. Do not hand that decision back to the prompt — it was the
+one number the agent had no way to verify against anything.
+
+**Versioning is SemVer, computed in bash.** A shipped tool's *major* moving, an apk package being dropped, or an
+entrypoint/command/user/workdir change is breaking; the Alpine minor or a tool *minor* moving is a feature; everything
+else that changes the image is a fix. Mapped through SemVer's pre-1.0 clause (§4), so at `0.y.z` breaking and feature
+both bump the minor, and only past 1.0.0 does breaking bump the major. Previous tool versions come from the
+`io.homelab.tools.*` labels on `:latest`, which is why those labels must keep being written.
 
 **Never pin an apk package to an exact version.** `postgresql-client` and `aws-cli` are installed unversioned on
 purpose: an `=version` pin breaks the moment Alpine drops that package from its repo, and `postgresql-client` without a
 number already resolves to whichever major the release ships (18 on Alpine 3.23 and 3.24). The provenance gate rejects
 an `=` in the package list for exactly this reason. Bumping the Alpine tag is what moves these tools.
 
-**The prompt says "never guess"; four bash gates are what make it true.** Between the agent and the commit: scope (only
-`Dockerfile` and `CHANGELOG.md` may change), provenance (every pin re-resolved against the registry and upstream, no
-backwards moves, no exact apk pins), build (it compiles and its tools run), version (CHANGELOG heading is valid semver,
-moved forward, not a major bump). The bump reaches `main` with no human review, so these must stay in bash — never
-relax one into a prompt instruction. Terraform owns the workflow only; it never manages `Dockerfile` or `CHANGELOG.md`,
-so a bump never fights it.
+**`apk upgrade` is a no-op here — do not re-add it.** Measured on both images on 2026-08-24: identical Critical/High
+counts with and without it. The official `alpine:X.Y` tag is rebuilt at the newest patch level and `apk add --no-cache`
+already fetches current packages. It buys a layer and the appearance of hardening.
+
+**Security remediation may jump more than one Alpine minor; the version agent may not.** Measured on `kubectl-awscli`:
+3.22 → 3.23 *raised* Criticals from 8 to 10, while 3.22 → 3.24 cut them to 2. A remediation loop capped at one step
+would propose the regression, measure it, revert, and repeat every week for ever. The search therefore walks candidate
+tags newest-first, which is safe because every candidate is built, smoke-tested and rescanned before it is kept — the
+evidence the one-step rule approximates is produced directly. The version agent keeps its one-step climb; that is about
+deliberate, attributable tooling movement, which is a different question.
+
+**The smoke suite is the compatibility contract, and it must have teeth.** It checks every binary the image promises,
+the real entrypoint, the uid, the TLS trust store, and for `postgres-awscli` the MODE dispatch plus both scripts'
+refusal to run without their variables. It also imports `awscli`, `awscli.botocore`, `jmespath`, `urllib3` and
+`cryptography` and compiles the exact JMESPath expression `backup.sh` hands to `aws s3api --query` — that last one is
+what stops a remediation from "fixing" the two `py3-jmespath` Criticals by removing the package the retention policy
+depends on. Verified to fail on a deliberately broken image; a gate that cannot fail is not a gate.
+
+**The publish policy is explicit and must stay non-deadlocking.** Blocking on every Critical/High would freeze both
+images for ever: on the newest Alpine, all the residual findings are either unfixed upstream or fixed upstream but not
+packaged by Alpine. So `enforce` blocks only a measured regression against `:latest` — rescanned in the same run with
+the same grype database, so database growth is never mistaken for a regression. `strict` and `report-only` exist as
+dispatch inputs. Refusing to publish an image whose remaining CVEs cannot be reached would pin consumers to an older
+image carrying the same CVEs *plus* the ones already fixed.
+
+**The prompt says "never guess"; the bash gates are what make it true.** Between the agents and the commit: scope (only
+`Dockerfile` and `CHANGELOG.md` may change, and a Dockerfile change needs a `## vNEXT`), provenance (every pin
+re-resolved against the registry and upstream, no backwards moves, no exact apk pins), smoke (the contract above),
+accept-or-revert on every remediation (Criticals must not rise, Critical+High must strictly fall, no tool major may
+move), and the publish policy. Everything reaches `main` with no human review, so these must stay in bash — never relax
+one into a prompt instruction. Terraform owns the workflow only; it never manages `Dockerfile` or `CHANGELOG.md`, so a
+bump never fights it.
+
+**Roll a rejected attempt back with a saved copy, not `git checkout -- Dockerfile`.** The version agent's edits are
+uncommitted working-tree changes, so checking out from `HEAD` silently discards the base bump the run just made and
+validated. The remediation steps snapshot the Dockerfile to `/tmp/sec/Dockerfile.incumbent` and restore from that.
 
 ## Non-negotiables
 

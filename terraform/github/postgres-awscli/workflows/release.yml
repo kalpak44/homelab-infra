@@ -1,34 +1,149 @@
 # Managed by homelab-infra — terraform/github/postgres-awscli/workflows/release.yml
 # Edits made here in the target repo are overwritten by `just deploy github postgres-awscli`.
 #
-# One workflow, two entry points:
+# One job, because every step needs the working tree the step before it produced, and
+# because nothing may reach the registry until the whole chain has passed:
 #
-#   * monthly cron / manual dispatch — Codex CLI driving DeepSeek resolves the latest
-#     Alpine release, edits the pin in the Dockerfile directly, writes a CHANGELOG
-#     entry, and commits to main. If nothing moved, the run stops.
+#   resolve upstream (AI)  ->  build  ->  smoke  ->  scan  ->  remediate  ->  rescan
+#                                                                              |
+#                            publish  <-  commit  <-  version  <-  policy  <---+
 #
-#   * push to main — skips the agent and just builds, scans and publishes.
+# Two entry points:
 #
-# There is no versions file. The Dockerfile IS the source of truth, and the release
-# version is the newest `## vX.Y.Z` heading in CHANGELOG.md.
+#   * weekly cron / manual dispatch — Codex CLI driving DeepSeek resolves the latest
+#     Alpine release and edits the pin in the Dockerfile.
+#
+#   * push to main — skips the agent; builds, scans, remediates and publishes.
+#
+# The build and the scan run on EVERY trigger, including quiet weeks where nothing
+# moved. A week with no version change still refreshes the vulnerability report and
+# the SARIF upload; it just does not publish.
+#
+# There is no version file. The Dockerfile IS the source of truth, and the release
+# version is computed by this workflow (see SEMVER below) rather than chosen by the
+# agent — the agent writes `## vNEXT` and step `version` resolves it.
 #
 # The PostgreSQL client and aws-cli are installed unversioned from the Alpine package
 # repository, so the Alpine tag is the only pin — bumping it is what moves them.
 #
-# The agent is not trusted on any of it. Between the agent and the commit sit four
-# deterministic gates, in bash:
+# ---------------------------------------------------------------------------------
+# SECURITY POLICY — when does an image get published?
+# ---------------------------------------------------------------------------------
 #
-#   1. scope      — only Dockerfile and CHANGELOG.md may have changed
-#   2. provenance — the Alpine tag is re-resolved against the registry, every package
-#                   the Dockerfile installs is proven to exist in it, and neither may
-#                   move backwards; a hallucinated version cannot survive this
-#   3. build      — the image builds for amd64 and its tools actually run
-#   4. version    — CHANGELOG's top heading is valid semver and greater than the
-#                   newest existing release tag
+# Severities acted on: Critical and High. Everything else is reported only.
+#
+# A finding is FIXABLE when grype knows a fixed version exists (fix.state == fixed).
+# It is UNFIXABLE when there is no upstream fix at all (not-fixed / wont-fix /
+# unknown). A third case matters here and is reported separately: a fix exists
+# upstream, but Alpine has not packaged it yet, so nothing this pipeline can do will
+# reach it.
+#
+#   1. The candidate is built and NOT pushed. It must pass the compatibility contract
+#      in the smoke step before anything else happens — every binary the backup and
+#      restore scripts call, the entrypoint's MODE dispatch, and both scripts' refusal
+#      to run without their required variables. A failing smoke test is a hard stop.
+#
+#   2. If any Critical/High remains, remediation is attempted (see REMEDIATION). Each
+#      attempt is built, smoke-tested and rescanned. An attempt is kept ONLY when it
+#      leaves Critical no higher AND Critical+High strictly lower, with every smoke
+#      check still passing and no shipped tool's major version moved. Otherwise it is
+#      reverted whole.
+#
+#   3. Publication is then decided against the image currently on :latest, rescanned
+#      in this same run with this same grype database, so the comparison reflects the
+#      change and not a week of database drift:
+#
+#        enforce (default) — BLOCK if the candidate has more Criticals, or more
+#                            Critical+High, than the published image. Remaining
+#                            findings that remediation could not reach do NOT block:
+#                            refusing to publish would pin consumers to an older
+#                            image carrying the same CVEs plus the ones already
+#                            fixed, which is strictly worse.
+#        strict            — additionally BLOCK while any FIXABLE Critical/High
+#                            remains, whether or not it is reachable.
+#        report-only       — never block. Break-glass, for shipping a rebuild while a
+#                            scanner or feed problem is being sorted out.
+#
+#   4. Whatever remains is reported in the step summary, the release notes, the
+#      uploaded SARIF and the `security-report` artifact, split into the three classes
+#      above so "we could not fix this" is never confused with "we did not try".
+#
+# What is deliberately NOT done, because it trades a working image for a green
+# scanner: pinning apk packages to exact versions, pulling from edge/testing, and
+# pip-installing over the Python libraries that Alpine's aws-cli package owns.
+#
+# The single most consequential thing that can break this image is the PostgreSQL
+# client major moving: pg_dump refuses to operate against a server newer than itself.
+# A security remediation is therefore forbidden from moving it. Only the version
+# agent's deliberate, one-step base bump may, and it must say so in the changelog.
+#
+# ---------------------------------------------------------------------------------
+# REMEDIATION — the levers, and what was measured
+# ---------------------------------------------------------------------------------
+#
+# Measured on 2026-08-24 against the real image, amd64, on alpine 3.24 (the newest
+# release at the time): 2 Critical / 7 High, of which 3 have a fix published upstream
+# that Alpine has not packaged. Every smoke check passed.
+#
+# Two things follow, and both are load-bearing:
+#
+#   * `apk upgrade --no-cache` is a NO-OP here and must not be re-added. The official
+#     alpine:X.Y tag is rebuilt at the newest patch level and `apk add --no-cache`
+#     already fetches current packages. It was measured: identical finding counts with
+#     and without it. It only adds a layer and an illusion of hardening.
+#
+#   * the base bump must NOT be a blind +1. On the sibling kubectl-awscli image,
+#     stepping one minor forward measurably raised the Critical count while a two-step
+#     jump cut it by three quarters. A remediation loop capped at one minor would
+#     propose the regression, measure it, revert, and repeat for ever. So the search
+#     walks candidate tags NEWEST FIRST and takes the first that measurably improves.
+#     A longer jump is safe here precisely because every candidate is built,
+#     smoke-tested and rescanned before it is kept.
+#
+# The version agent still climbs one minor per run — that is about deliberate,
+# attributable tooling movement, and it is a different question from "this image has
+# a Critical in it today".
+#
+# Levers, in the order the search tries them:
+#
+#   1. the Alpine tag -> the newest tag that improves, newest first, rejecting any
+#      that moves the PostgreSQL client or aws-cli major
+#   2. reverting an Alpine bump this very run made, if it made things worse and
+#      nothing forward is better (never below the tag :latest was built from)
+#   3. an AI round: Codex is shown what is left and may propose one more minimal
+#      Dockerfile change, which goes through the identical accept-or-revert gate
+#
+# ---------------------------------------------------------------------------------
+# SEMVER — how the version number is chosen
+# ---------------------------------------------------------------------------------
+#
+# Computed in bash from what actually changed between the published image and the
+# candidate, never from the agent's judgment:
+#
+#   BREAKING  a shipped tool's MAJOR moved, an apk package was dropped, or the
+#             entrypoint / command / user / workdir changed
+#   FEATURE   the Alpine minor moved, or a shipped tool's MINOR moved
+#   FIX       anything else that changes the image — tool patch levels, package
+#             revisions, or a security remediation
+#
+# Mapped to a component, honoring SemVer's pre-1.0 clause (§4: anything may change
+# in 0.y.z, so a breaking change bumps the minor):
+#
+#            0.y.z      1.y.z and up
+#   BREAKING minor      major
+#   FEATURE  minor      minor
+#   FIX      patch      patch
+#
+# A PostgreSQL client major move therefore lands as a minor bump today and as a major
+# bump once this image reaches 1.0.0 — which is the correct reading of SemVer, and it
+# replaces the old rule that called it a minor unconditionally.
+#
+# Previous tool versions come from the io.homelab.tools.* labels the last release
+# wrote onto :latest, so the comparison is against what was really published.
 #
 # NOTE: a push made with GITHUB_TOKEN does not trigger another workflow run, so the
-# build cannot rely on the agent's commit re-firing `on: push`. That is why `release`
-# is a dependent job in the SAME run rather than a separate push-triggered workflow.
+# commit this job makes cannot be relied on to re-fire `on: push`. Everything,
+# therefore, happens in this one run.
 #
 # DeepSeek serves the OpenAI Responses API directly, so Codex talks to it without a
 # proxy in between.
@@ -37,13 +152,21 @@ name: Release
 
 on:
   schedule:
-    - cron: "0 5 1 * *" # 05:00 UTC on the 1st of every month
+    - cron: "0 5 * * 1" # 05:00 UTC every Monday
   workflow_dispatch:
     inputs:
       force_release:
         description: Build and publish even when no version changed
         type: boolean
         default: false
+      security_policy:
+        description: Publish policy for Critical/High findings
+        type: choice
+        default: enforce
+        options:
+          - enforce
+          - strict
+          - report-only
   push:
     branches: ["main"]
 
@@ -60,30 +183,33 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/kalpak44/postgres-awscli
+  SYFT_VERSION: v1.29.1
+  GRYPE_VERSION: v0.98.0
+  # Each remediation attempt is a full build + smoke + scan. Four is enough to walk
+  # from any supported Alpine tag to the newest one; the cap is reported when hit.
+  REMEDIATION_MAX_ATTEMPTS: "4"
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1. Resolve upstream versions, verify them, commit the bump
-  # ---------------------------------------------------------------------------
-  check-versions:
-    if: github.event_name != 'push'
+  release:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    outputs:
-      bumped: ${{ steps.commit.outputs.bumped }}
-      version: ${{ steps.commit.outputs.version }}
+    timeout-minutes: 90
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+      SECURITY_POLICY: ${{ inputs.security_policy || 'enforce' }}
       REPO: ${{ github.repository }}
 
     steps:
+      # =======================================================================
+      # Setup
+      # =======================================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # `main`, not github.sha — a scheduled run must see the tip of the branch.
           ref: main
           fetch-depth: 0
           persist-credentials: true
@@ -95,15 +221,232 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Record the starting commit
+        # Everything downstream diffs against this. The agent only edits the working
+        # tree, so HEAD stays put until the commit step near the end.
+        id: base
+        run: |
+          set -euo pipefail
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "alpine=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        # Early, because the policy step has to pull and rescan the image currently on
+        # :latest. Nothing is pushed until the publication gate has passed.
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install syft and grype
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
+          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
+
+          syft version
+          grype version
+
+      - name: Write the scan helpers
+        # Sourced by every step that scans, so "Critical/High" means one thing in this
+        # workflow and the classification is written once.
+        run: |
+          set -euo pipefail
+
+          mkdir -p /tmp/sec
+
+          cat > /tmp/sec/lib.sh <<'LIB'
+          # scan <image-ref> <prefix> — writes <prefix>.sbom.json, .grype.json,
+          # .grype.sarif, .grype.txt and .ch.json (the normalised Critical/High set).
+          scan() {
+            syft "$1" -o json > "$2.sbom.json"
+            grype "sbom:$2.sbom.json" \
+              -o "json=$2.grype.json" \
+              -o "sarif=$2.grype.sarif" \
+              -o "table=$2.grype.txt"
+
+            jq '[.matches[]
+                 | select(.vulnerability.severity == "Critical"
+                       or .vulnerability.severity == "High")
+                 | {id:        .vulnerability.id,
+                    severity:  .vulnerability.severity,
+                    package:   .artifact.name,
+                    version:   .artifact.version,
+                    ecosystem: .artifact.type,
+                    state:     (.vulnerability.fix.state // "unknown"),
+                    fixed_in:  (.vulnerability.fix.versions // [])}]
+                | unique_by([.id, .package, .version])
+                | sort_by(.severity, .package, .id)' "$2.grype.json" > "$2.ch.json"
+          }
+
+          n_crit()    { jq '[.[] | select(.severity == "Critical")] | length' "$1"; }
+          n_high()    { jq '[.[] | select(.severity == "High")]     | length' "$1"; }
+          n_total()   { jq 'length' "$1"; }
+          n_fixable() { jq '[.[] | select(.state == "fixed" and (.fixed_in | length) > 0)] | length' "$1"; }
+
+          # A one-line score used for logging and for the accept/reject decision.
+          score() { printf '%s Critical / %s High (%s fixable)' \
+                      "$(n_crit "$1")" "$(n_high "$1")" "$(n_fixable "$1")"; }
+
+          # Keep a remediation only if it does not trade Criticals for Highs.
+          improves() { # $1 = candidate ch.json, $2 = incumbent ch.json
+            local cc ch ic ih
+            cc=$(n_crit "$1"); ch=$(n_high "$1")
+            ic=$(n_crit "$2"); ih=$(n_high "$2")
+            [ "$cc" -le "$ic" ] && [ $((cc + ch)) -lt $((ic + ih)) ]
+          }
+
+          # Markdown table of a ch.json, split by what can actually be done about it.
+          md_findings() {
+            jq -r '
+              def cls:
+                if .state == "fixed" and (.fixed_in | length) > 0
+                then "fix available upstream"
+                else "no upstream fix" end;
+              if length == 0 then "_None._"
+              else
+                (["| severity | id | package | installed | fixed in | status |",
+                  "|---|---|---|---|---|---|"] +
+                 (map("| \(.severity) | \(.id) | \(.package) | \(.version) | "
+                    + "\((.fixed_in | if length == 0 then ["—"] else . end) | join(", "))"
+                    + " | \(cls) |"))) | .[]
+              end' "$1"
+          }
+
+          major() { printf '%s\n' "${1#v}" | cut -d. -f1; }
+          minor() { printf '%s\n' "${1#v}" | cut -d. -f2; }
+          LIB
+
+          cat > /tmp/sec/probe.sh <<'PROBE'
+          # probe <image> — prints the versions of every tool this image promises to
+          # ship, as `name=version` lines. Used for the stability guard and for the
+          # SemVer decision. The real ENTRYPOINT dispatches on MODE and dials a
+          # database, so these go through `sh`.
+          probe() {
+            local img="$1" psql_v pgdump_v aws_v
+            psql_v=$(docker run --rm --entrypoint sh "$img" -c 'psql --version'    | awk '{print $3}')
+            pgdump_v=$(docker run --rm --entrypoint sh "$img" -c 'pg_dump --version' | awk '{print $3}')
+            aws_v=$(docker run --rm --entrypoint sh "$img" -c 'aws --version 2>&1' \
+                    | head -1 | awk '{print $1}' | cut -d/ -f2)
+            printf 'psql=%s\npgdump=%s\nawscli=%s\n' "$psql_v" "$pgdump_v" "$aws_v"
+          }
+          PROBE
+
+      - name: Write the compatibility contract
+        # The smoke suite. This is the definition of "did not break the utilities":
+        # every remediation and every publish must leave all of it passing. It goes on
+        # disk rather than inline so the remediation loop can re-run it per attempt.
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/sec/smoke.sh <<'SMOKE'
+          #!/usr/bin/env bash
+          set -uo pipefail
+
+          IMG="${1:?usage: smoke.sh <image>}"
+          FAILED=0
+
+          pass() { printf '  ok    %-40s %s\n' "$1" "$(printf '%s' "${2-}" | head -1 | cut -c1-64)"; }
+          fail() { printf '  FAIL  %-40s %s\n' "$1" "$(printf '%s' "${2-}" | head -3 | tr '\n' ' ' | cut -c1-160)"; FAILED=1; }
+
+          # Output is captured before it is inspected: piping a command straight into
+          # grep under `set -o pipefail` reports the command's status, not the match.
+          check() {
+            local what="$1"; shift
+            local out status
+            out=$("$@" 2>&1); status=$?
+            if [ "$status" -eq 0 ]; then pass "$what" "$out"; else fail "$what" "$out"; fi
+          }
+
+          # Requires a non-zero exit AND an expected message — these prove the image
+          # still refuses bad input, which is as much a part of the contract as
+          # accepting good input.
+          check_rejects() {
+            local what="$1" needle="$2"; shift 2
+            local out status
+            out=$("$@" 2>&1); status=$?
+            if [ "$status" -eq 0 ]; then
+              fail "$what" "expected a non-zero exit, got 0"
+            elif printf '%s' "$out" | grep -q -- "$needle"; then
+              pass "$what" "$out"
+            else
+              fail "$what" "$out"
+            fi
+          }
+
+          sh_c() { docker run --rm --entrypoint sh "$IMG" -c "$1"; }
+
+          echo "smoke: $IMG"
+
+          # Every binary backup.sh and restore.sh actually call.
+          check "psql runs"                sh_c 'psql --version'
+          check "pg_dump runs"             sh_c 'pg_dump --version'
+          check "pg_restore runs"          sh_c 'pg_restore --version'
+          check "pg_dumpall runs"          sh_c 'pg_dumpall --version'
+          check "aws runs"                 sh_c 'aws --version'
+          check "bash runs"                sh_c 'bash --version'
+          check "coreutils date -u works"  sh_c 'date -u +%Y%m%dT%H%M%SZ'
+          check "mktemp works"             sh_c 'mktemp /tmp/smoke.XXXXXX'
+          check "gzip/gunzip round-trip"   sh_c 'printf smoke | gzip -9 -c | gunzip -c | grep -qx smoke && echo gzip-ok'
+          check "scripts are executable"   sh_c '[ -x /app/backup.sh ] && [ -x /app/restore.sh ] && [ -x /app/entrypoint.sh ] && echo exec-ok'
+          check "scripts parse"            sh_c 'sh -n /app/backup.sh && sh -n /app/restore.sh && sh -n /app/entrypoint.sh && echo parse-ok'
+          check "CA bundle present"        sh_c '[ -s /etc/ssl/certs/ca-certificates.crt ] && echo ca-ok'
+          check "pg_dump reports errors"   sh_c 'pg_dump --host=127.0.0.1 --port=1 --dbname=x 2>&1 | grep -q . && echo errors-ok'
+
+          # The entrypoint contract.
+          check_rejects "entrypoint rejects unknown MODE" 'Unknown MODE' \
+            docker run --rm -e MODE=definitely-not-a-mode "$IMG"
+          check_rejects "backup mode validates env" 'Missing required environment variable' \
+            docker run --rm -e MODE=backup "$IMG"
+          check_rejects "restore mode validates env" 'Missing required environment variable' \
+            docker run --rm -e MODE=restore "$IMG"
+
+          # aws-cli on Alpine is the Python build and vendors botocore inside the
+          # `awscli` package rather than shipping it as a top-level module. Importing
+          # the real names proves a package-level remediation did not quietly gut the
+          # CLI. The JMESPath expression is the exact one backup.sh hands to
+          # `aws s3api --query`, so this is what proves dropping or downgrading
+          # py3-jmespath would break the retention policy.
+          out=$(docker run --rm -i --entrypoint python3 "$IMG" - <<'PY' 2>&1
+          import awscli, awscli.botocore, jmespath, urllib3, cryptography
+          jmespath.compile("reverse(sort_by(Contents || `[]`, &LastModified))[].Key")
+          print("py-ok", awscli.__version__, "jmespath", jmespath.__version__)
+          PY
+          )
+          if [ $? -eq 0 ]; then pass "aws python deps + JMESPath" "$out"; else fail "aws python deps + JMESPath" "$out"; fi
+
+          exit "$FAILED"
+          SMOKE
+
+          chmod +x /tmp/sec/smoke.sh
+
+      # =======================================================================
+      # 1. Resolve upstream versions (AI), then gate what it did
+      # =======================================================================
+
       - name: Setup Node.js
+        if: github.event_name != 'push'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install Codex CLI
+        if: github.event_name != 'push'
         run: npm install -g @openai/codex
 
       - name: Point Codex at DeepSeek
+        if: github.event_name != 'push'
         run: |
           set -euo pipefail
 
@@ -128,6 +471,7 @@ jobs:
       - name: Smoke-test the model
         # One cheap call so credential/model/API issues fail immediately instead of
         # halfway through a bump.
+        if: github.event_name != 'push'
         run: |
           set -euo pipefail
 
@@ -146,6 +490,7 @@ jobs:
           fi
 
       - name: Run the version agent
+        if: github.event_name != 'push'
         run: |
           set -euo pipefail
 
@@ -159,6 +504,10 @@ jobs:
 
           You do NOT tag, push, publish or release anything, and you do NOT commit.
           Later steps in this same workflow run do all of that. You only edit files.
+
+          You also do NOT choose the release version number. Later steps compute it
+          from what actually changed. Write the literal placeholder `vNEXT` where the
+          version goes and they will substitute it.
 
           ----------------------------------------------------------------------
           WHERE THE VERSIONS LIVE
@@ -198,7 +547,7 @@ jobs:
           output, use that exact string.
 
           If a lookup fails, times out, or returns something you did not expect:
-          change nothing, and report the failure. A skipped month is completely
+          change nothing, and report the failure. A skipped week is completely
           harmless. A wrong version is not.
 
           Later steps re-verify the pin against upstream and fail the run if it does
@@ -219,9 +568,14 @@ jobs:
 
           Move forward by at most ONE minor release per run (3.23 to 3.24, never 3.20
           straight to 3.24). Stepping one release at a time keeps any regression
-          attributable to a single change, and next month's run continues the climb.
+          attributable to a single change, and next week's run continues the climb.
 
           Never move backwards. Never use `edge`, `latest`, or a release candidate.
+
+          A later step in this run scans the built image for CVEs and is allowed to
+          move the base further than you did if it measures that doing so removes
+          Critical or High findings. That is deliberate and it is not your job. Do not
+          try to pre-empt it, and do not reason about CVEs at all — resolve versions.
 
           ----------------------------------------------------------------------
           2. FIND OUT WHAT THE NEW ALPINE ACTUALLY SHIPS
@@ -241,7 +595,8 @@ jobs:
           A PostgreSQL client major moving is the most consequential thing that can
           happen here: pg_dump refuses to operate against a server newer than itself,
           and dumps are not always readable by an older client. If the major changed,
-          the bump is still fine to make — but say so explicitly in the prose.
+          the bump is still fine to make — but say so explicitly in the prose. The
+          workflow will classify the release accordingly.
 
           If any package fails to resolve, the bump is not viable. Change nothing and
           report it.
@@ -259,8 +614,9 @@ jobs:
             - do not touch CHANGELOG.md
             - report that the image is already current, and stop
 
-          Leaving the files untouched is how you signal "no release". A later step
-          detects it by diffing the working tree.
+          Leaving the files untouched is how you signal "no version bump". A later
+          step detects it by diffing the working tree. The image is still rebuilt,
+          scanned and reported on; it just is not republished.
 
           ----------------------------------------------------------------------
           4. EDIT THE DOCKERFILE
@@ -270,6 +626,10 @@ jobs:
           "improve" or otherwise rewrite the Dockerfile. Do not add or remove
           packages, stages, users, entrypoints or commands. A reviewer reading your
           diff should see one changed value and nothing else.
+
+          Never add `apk upgrade`. It has been measured on this image and does
+          nothing: the official alpine:X.Y tag already carries the newest patch level
+          and `apk add --no-cache` already fetches current packages.
 
           The single exception: if the new Alpine genuinely requires a corresponding
           change to keep building — a package renamed, dropped, or moved between
@@ -295,38 +655,22 @@ jobs:
           clearly caused by the bump — or revert your edits with `git checkout --`
           and report that the bump is not currently viable.
 
-          Never commit a state you have not built. A later step builds it again and
-          will fail the run, but that is a backstop, not your excuse to skip this.
+          Never leave a state you have not built. A later step builds it again, runs a
+          much larger compatibility suite against it, and will fail the run — but that
+          is a backstop, not your excuse to skip this.
 
           ----------------------------------------------------------------------
           6. WRITE THE CHANGELOG ENTRY
           ----------------------------------------------------------------------
 
-          CHANGELOG.md is also where the release version lives. Its newest
-          `## vX.Y.Z` heading is what the workflow tags and publishes, so this step
-          is not decoration.
-
-          Read the current newest version:
+          Read the current newest version for context:
 
             head -20 CHANGELOG.md
-
-          Choose the next one by semver:
-
-            - patch  — the Alpine patch content moved but no tool version changed
-            - minor  — the Alpine tag moved, or any tool version changed
-            - major  — reserved for deliberate breaking changes to this image's
-                       interface: entrypoint, command, or the arguments the scripts
-                       accept. You must NEVER bump the major version. A PostgreSQL
-                       client major change is still a MINOR bump here — call it out
-                       in the prose instead.
-
-          Bump exactly once, even when several things moved — take the highest
-          applicable level.
 
           Prepend a new section directly beneath the file's `# Changelog` title and
           above the previous entry, in exactly this shape:
 
-            ## v<VERSION> — <YYYY-MM-DD>
+            ## vNEXT — <YYYY-MM-DD>
 
             | tool | from | to |
             |------|------|----|
@@ -335,6 +679,10 @@ jobs:
             | aws-cli | 2.34.63 | 2.35.1 |
 
             <one short paragraph of prose>
+
+          Write `vNEXT` literally. Do NOT invent a version number — the workflow
+          computes it from what changed and substitutes it for you. A heading with a
+          real number in it where `vNEXT` belongs will fail the run.
 
           Get the date from the environment — `date -u +%F` — never from memory.
 
@@ -360,8 +708,9 @@ jobs:
           - NEVER write a version you did not obtain from a command you ran.
           - NEVER move a version backwards.
           - NEVER move Alpine more than one minor release in a single run.
+          - NEVER write a release version number; the heading is `## vNEXT`.
+          - NEVER add `apk upgrade` to the Dockerfile.
           - NEVER add a version number to an apk package name.
-          - NEVER bump the major component of the image version.
           - Edit ONLY Dockerfile and CHANGELOG.md.
           - NEVER edit backup.sh, restore.sh or entrypoint.sh.
           - NEVER edit anything under .github/ — that directory is managed by the
@@ -381,16 +730,15 @@ jobs:
 
           Then one final line:
 
-            RESULT: <bumped to vX.Y.Z|no change>
+            RESULT: <bumped|no change>
           AGENT_PROMPT
 
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
-            --output-last-message /tmp/summary.md \
+            --output-last-message /tmp/version-agent.md \
             "$(cat /tmp/prompt.md)"
 
-      # --- Gate 1: scope --------------------------------------------------------
       - name: Gate — the agent stayed in scope
         run: |
           set -euo pipefail
@@ -415,18 +763,19 @@ jobs:
             exit 1
           fi
 
-      # --- Gate 2: provenance ---------------------------------------------------
+          if ! git diff --quiet -- Dockerfile; then
+            if ! grep -qE '^## vNEXT' CHANGELOG.md; then
+              echo "::error::Dockerfile changed but CHANGELOG.md has no '## vNEXT' heading."
+              exit 1
+            fi
+          fi
+
       - name: Gate — the pin resolves upstream
         # The strongest guard against a hallucinated version: re-resolve the tag
         # independently of the agent, prove every package still exists in it, and
         # refuse anything that does not.
         run: |
           set -euo pipefail
-
-          if git diff --quiet -- Dockerfile; then
-            echo "Dockerfile unchanged — nothing to verify."
-            exit 0
-          fi
 
           ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
 
@@ -471,8 +820,8 @@ jobs:
             exit 1
           fi
 
-          # The pin may not move backwards.
-          OLD_ALPINE=$(git show HEAD:Dockerfile | grep -m1 -E '^FROM alpine:' | cut -d: -f2 | tr -d '[:space:]')
+          # The pin may not move backwards relative to where this run started.
+          OLD_ALPINE="${{ steps.base.outputs.alpine }}"
 
           if [ "$(printf '%s\n%s\n' "$OLD_ALPINE" "$ALPINE" | sort -V | head -1)" != "$OLD_ALPINE" ]; then
             echo "::error::alpine moved backwards: ${OLD_ALPINE} -> ${ALPINE}"
@@ -481,187 +830,796 @@ jobs:
 
           echo "Pin verified."
 
-      # --- Gate 3: it builds ----------------------------------------------------
-      - name: Gate — the bumped image builds and runs
+      # =======================================================================
+      # 2. Build the candidate — and do not publish it
+      # =======================================================================
+
+      - name: Build the candidate image
+        # --no-cache so apk really re-resolves: a cached layer would hand the scanner
+        # last week's packages and make the whole exercise meaningless. The gha cache
+        # is written, not read, so the multi-arch push at the end reuses these exact
+        # amd64 layers and publishes the bytes that were scanned.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          no-cache: true
+          tags: candidate:local
+          cache-to: type=gha,mode=max
+
+      - name: Gate — the candidate honours the compatibility contract
+        run: /tmp/sec/smoke.sh candidate:local
+
+      - name: Scan the candidate
+        id: scan
         run: |
           set -euo pipefail
+          source /tmp/sec/lib.sh
 
-          if git diff --quiet -- Dockerfile; then
-            echo "Dockerfile unchanged — skipping validation build."
+          scan candidate:local /tmp/sec/candidate
+
+          echo "candidate: $(score /tmp/sec/candidate.ch.json)"
+          md_findings /tmp/sec/candidate.ch.json
+
+          {
+            echo "crit=$(n_crit /tmp/sec/candidate.ch.json)"
+            echo "high=$(n_high /tmp/sec/candidate.ch.json)"
+            echo "fixable=$(n_fixable /tmp/sec/candidate.ch.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Scan the image currently on :latest
+        # Rescanned here, in this run, with this grype database. Comparing against a
+        # count recorded a week ago would report database growth as a regression.
+        id: published
+        run: |
+          set -euo pipefail
+          source /tmp/sec/lib.sh
+
+          if ! docker pull -q "${IMAGE}:latest" > /dev/null 2>&1; then
+            echo "No published :latest yet — nothing to compare against."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          docker build --load --platform linux/amd64 -t candidate:local .
+          scan "${IMAGE}:latest" /tmp/sec/published
 
-          docker run --rm --entrypoint sh candidate:local \
-            -c 'psql --version && pg_dump --version && pg_restore --version && aws --version'
+          echo "published: $(score /tmp/sec/published.ch.json)"
 
-      # --- Gate 4: the version moved -------------------------------------------
-      - name: Gate — CHANGELOG names a new version
+          {
+            echo "exists=true"
+            echo "crit=$(n_crit /tmp/sec/published.ch.json)"
+            echo "high=$(n_high /tmp/sec/published.ch.json)"
+            echo "fixable=$(n_fixable /tmp/sec/published.ch.json)"
+          } >> "$GITHUB_OUTPUT"
+
+          # The labels the previous release wrote are how the SemVer step knows what
+          # was actually shipped last time.
+          docker inspect --format '{{json .Config.Labels}}' "${IMAGE}:latest" \
+            > /tmp/sec/published-labels.json || echo '{}' > /tmp/sec/published-labels.json
+
+      # =======================================================================
+      # 3. Remediate Critical/High — mechanically, then with one AI round
+      # =======================================================================
+
+      - name: Remediate Critical/High findings
+        id: remediate
+        run: |
+          set -euo pipefail
+          source /tmp/sec/lib.sh
+          source /tmp/sec/probe.sh
+
+          applied=false
+          attempts=0
+          truncated=false
+          : > /tmp/sec/remediation-log.md
+
+          note() { echo "$*" | tee -a /tmp/sec/remediation-log.md; }
+
+          CUR_ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
+          BASE_ALPINE="${{ steps.base.outputs.alpine }}"
+
+          if [ "$(n_total /tmp/sec/candidate.ch.json)" = "0" ]; then
+            note "No Critical or High findings — nothing to remediate."
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The versions this run must not regress. The PostgreSQL client major is the
+          # one that really matters: pg_dump refuses to operate against a server newer
+          # than itself, so moving it to clear a CVE would trade a scanner finding for
+          # broken backups.
+          probe candidate:local > /tmp/sec/candidate-tools.env
+          CUR_PSQL_MAJOR=$(major "$(grep '^psql=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
+          CUR_AWSCLI_MAJOR=$(major "$(grep '^awscli=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
+
+          # --- assemble the candidate list ------------------------------------
+          # Newest Alpine first: a blind +1 step is measurably worse on the sibling
+          # image (see the header), and every entry is proven by build + smoke +
+          # rescan before it is kept, so a longer jump is safe.
+          #
+          # Built in a file rather than a shell variable: a multi-line string assembled
+          # inside a YAML block scalar carries the block's indentation into every line
+          # after the first, and the tag would come back padded.
+          TAGS=$(curl -fsSL 'https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100' \
+                 | jq -r '.results[].name' | grep -E '^3\.[0-9]+$' | sort -Vr || true)
+
+          : > /tmp/sec/candidates.txt
+
+          for t in $TAGS; do
+            if [ "$(printf '%s\n%s\n' "$CUR_ALPINE" "$t" | sort -V | head -1)" = "$CUR_ALPINE" ] \
+               && [ "$t" != "$CUR_ALPINE" ]; then
+              printf '%s\n' "$t" >> /tmp/sec/candidates.txt
+            fi
+          done
+
+          # Undo an Alpine bump made earlier in THIS run, if everything forward is
+          # worse. Never below the tag :latest was built from.
+          if [ "$BASE_ALPINE" != "$CUR_ALPINE" ]; then
+            printf '%s\n' "$BASE_ALPINE" >> /tmp/sec/candidates.txt
+          fi
+
+          TOTAL=$(wc -l < /tmp/sec/candidates.txt | tr -d ' ')
+
+          if [ "$TOTAL" -eq 0 ]; then
+            note "Already on the newest Alpine release — no mechanical lever available."
+            note ""
+            note "Remaining findings are in packages Alpine has not shipped a fix for."
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          note "Incumbent: alpine ${CUR_ALPINE} — $(score /tmp/sec/candidate.ch.json)"
+          note ""
+
+          cp /tmp/sec/candidate.ch.json /tmp/sec/incumbent.ch.json
+
+          # The state a rejected attempt is rolled back to. NOT `git checkout --`:
+          # the version agent's edits are uncommitted, so checking out from HEAD would
+          # silently throw away the base bump this run just made and validated.
+          cp Dockerfile /tmp/sec/Dockerfile.incumbent
+
+          # --- try them --------------------------------------------------------
+          while IFS= read -r try_alpine <&3; do
+            [ -n "$try_alpine" ] || continue
+
+            if [ "$attempts" -ge "${REMEDIATION_MAX_ATTEMPTS}" ]; then
+              truncated=true
+              note "Attempt cap of ${REMEDIATION_MAX_ATTEMPTS} reached — ${TOTAL} candidates existed, $((TOTAL - attempts)) not tried."
+              break
+            fi
+            attempts=$((attempts + 1))
+
+            note "### attempt ${attempts}: alpine ${try_alpine}"
+
+            sed -i -E "s|^FROM alpine:.*|FROM alpine:${try_alpine}|" Dockerfile
+
+            if ! docker buildx build --load --platform linux/amd64 --no-cache \
+                   -t remediation:local . > /tmp/sec/attempt-build.log 2>&1; then
+              note "- rejected: does not build"
+              tail -20 /tmp/sec/attempt-build.log
+              cp /tmp/sec/Dockerfile.incumbent Dockerfile
+              continue
+            fi
+
+            if ! /tmp/sec/smoke.sh remediation:local; then
+              note "- rejected: breaks the compatibility contract"
+              cp /tmp/sec/Dockerfile.incumbent Dockerfile
+              continue
+            fi
+
+            probe remediation:local > /tmp/sec/attempt-tools.env
+            try_psql_major=$(major "$(grep '^psql=' /tmp/sec/attempt-tools.env | cut -d= -f2)")
+            try_awscli_major=$(major "$(grep '^awscli=' /tmp/sec/attempt-tools.env | cut -d= -f2)")
+
+            if [ "$try_psql_major" != "$CUR_PSQL_MAJOR" ]; then
+              note "- rejected: would move the PostgreSQL client major (${CUR_PSQL_MAJOR} -> ${try_psql_major}). pg_dump will not read a newer server, so this is a breaking change and not an acceptable way to clear a CVE. The version agent may make this move deliberately; a security remediation may not."
+              cp /tmp/sec/Dockerfile.incumbent Dockerfile
+              continue
+            fi
+
+            if [ "$try_awscli_major" != "$CUR_AWSCLI_MAJOR" ]; then
+              note "- rejected: would move the aws-cli major (${CUR_AWSCLI_MAJOR} -> ${try_awscli_major})."
+              cp /tmp/sec/Dockerfile.incumbent Dockerfile
+              continue
+            fi
+
+            scan remediation:local /tmp/sec/attempt
+
+            if improves /tmp/sec/attempt.ch.json /tmp/sec/incumbent.ch.json; then
+              note "- ACCEPTED: $(score /tmp/sec/incumbent.ch.json) -> $(score /tmp/sec/attempt.ch.json)"
+              cp /tmp/sec/attempt.ch.json /tmp/sec/incumbent.ch.json
+              applied=true
+              echo "alpine=${try_alpine}" >> "$GITHUB_OUTPUT"
+              break
+            fi
+
+            note "- rejected: no improvement ($(score /tmp/sec/attempt.ch.json) vs $(score /tmp/sec/incumbent.ch.json))"
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+          done 3< /tmp/sec/candidates.txt
+
+          note ""
+          if [ "$applied" = "true" ]; then
+            note "Mechanical remediation applied."
+          else
+            note "No mechanical remediation improved on the candidate; Dockerfile left untouched."
+          fi
+
+          {
+            echo "applied=${applied}"
+            echo "attempts=${attempts}"
+            echo "truncated=${truncated}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: AI remediation round
+        # Runs only when something fixable is still there after the mechanical search,
+        # and only when the agent is available at all. Whatever it proposes goes
+        # through the identical accept-or-revert gate: build, smoke, rescan, improve or
+        # be thrown away. It cannot lower the bar, only find a lever the search did not
+        # model.
+        id: ai_remediate
+        if: github.event_name != 'push'
+        run: |
+          set -euo pipefail
+          source /tmp/sec/lib.sh
+          source /tmp/sec/probe.sh
+
+          echo "applied=false" >> "$GITHUB_OUTPUT"
+
+          # The mechanical step exits early without writing this when there is nothing
+          # to do.
+          [ -f /tmp/sec/incumbent.ch.json ] || cp /tmp/sec/candidate.ch.json /tmp/sec/incumbent.ch.json
+
+          if [ "$(n_fixable /tmp/sec/incumbent.ch.json)" = "0" ]; then
+            echo "Nothing fixable remains — skipping the AI round."
+            exit 0
+          fi
+
+          md_findings /tmp/sec/incumbent.ch.json > /tmp/sec/remaining.md
+          cp /tmp/sec/incumbent.ch.json /tmp/sec/remaining.json
+
+          # Refreshed here: the mechanical step may have accepted a change, and a
+          # rejected AI proposal must roll back to that, not to HEAD.
+          cp Dockerfile /tmp/sec/Dockerfile.incumbent
+
+          cat > /tmp/sec/prompt.md <<'AGENT_PROMPT'
+          You are the security remediation agent for this container image repository.
+
+          A candidate image has already been built from the Dockerfile in the working
+          tree, smoke-tested, and scanned. A mechanical search has already tried the
+          obvious lever — moving the Alpine base tag forward — and kept whatever
+          helped.
+
+          What is left is in /tmp/sec/remaining.md (a table) and
+          /tmp/sec/remaining.json (the same data). Read both, and read
+          /tmp/sec/remediation-log.md to see what has already been tried.
+
+          Your job: decide whether ONE more minimal Dockerfile change could remove any
+          of the remaining Critical or High findings WITHOUT breaking the image, and
+          if so, make it. You only edit the Dockerfile. You do not commit, tag, push
+          or release, and you do not touch CHANGELOG.md.
+
+          Most of the time the correct answer is TO CHANGE NOTHING. That is a real
+          result, not a failure. Say so and stop.
+
+          ----------------------------------------------------------------------
+          WHAT THIS IMAGE IS FOR — do not break it
+          ----------------------------------------------------------------------
+
+          It runs /app/backup.sh and /app/restore.sh, which between them use: pg_dump,
+          psql, pg_restore, gzip, gunzip, mktemp, date, tr, printf, and the AWS CLI —
+          including `aws s3api list-objects-v2 --query`, whose JMESPath expression is
+          evaluated by py3-jmespath. Two of the remaining Criticals are against
+          py3-jmespath. Removing it would silently break the retention policy. Do not.
+
+          ----------------------------------------------------------------------
+          WHAT YOU MAY DO
+          ----------------------------------------------------------------------
+
+          - Remove an apk package that this image genuinely does not need, if a
+            finding is against that package and nothing else depends on it. Prove it:
+
+              docker run --rm alpine:<TAG> sh -c 'apk add --no-cache --simulate <rest of the list>'
+
+            and confirm the removed package does not come back as a dependency.
+
+          - Replace a package with a smaller equivalent that Alpine ships, if that
+            genuinely drops a vulnerable dependency and every tool still works.
+
+          - Move the Alpine tag, if you can show the mechanical search missed a tag
+            that helps. It tried newest-first; check the log before assuming it did.
+
+          ----------------------------------------------------------------------
+          WHAT YOU MAY NOT DO — these break images
+          ----------------------------------------------------------------------
+
+          - NEVER move the PostgreSQL client to a new major. pg_dump refuses to
+            operate against a server newer than itself and dumps are not always
+            readable by an older client. A broken backup is far worse than a High.
+          - NEVER pin an apk package to an exact version with `=`. It breaks the
+            moment Alpine drops that package.
+          - NEVER add `apk upgrade`. It has been measured on this image and changes
+            nothing; the alpine:X.Y tag already carries the newest patch level.
+          - NEVER add edge, testing or community repositories from another release.
+            Mixing branches breaks musl and every dynamically linked tool with it.
+          - NEVER pip install, pip upgrade, or hand-replace a Python library that the
+            `aws-cli` apk package owns. Several remaining findings are against
+            `cryptography` and `py3-jmespath`, whose fixed versions Alpine has not
+            packaged. Overwriting them out of band is how you get an aws-cli that
+            imports but fails at runtime. Leave them and report them.
+          - NEVER remove postgresql-client, aws-cli, bash, ca-certificates or
+            coreutils. They are the point of this image.
+          - NEVER change ENTRYPOINT, CMD, USER, WORKDIR, ENV or the COPY of the
+            scripts.
+          - NEVER edit anything except the Dockerfile.
+
+          ----------------------------------------------------------------------
+          HOW YOUR WORK IS JUDGED
+          ----------------------------------------------------------------------
+
+          After you finish, the workflow rebuilds the image, runs the full
+          compatibility suite against it — every binary above, the entrypoint's MODE
+          dispatch, and both scripts' refusal to run without their variables — and
+          rescans it. Your change is kept ONLY if Criticals do not increase AND
+          Critical+High strictly decreases AND every smoke check still passes.
+          Otherwise it is reverted and the run continues without it. You cannot make
+          the image worse, so there is no reason to gamble — but there is also no
+          credit for a change that does not measurably help.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          A short report, in this shape:
+
+            CHANGED: <yes|no>
+            <if yes: one line saying exactly what you changed and which finding ids it targets>
+
+            For each remaining Critical/High finding, one line:
+              <id> — <package> — <why it cannot be safely fixed here>
+
+          Be specific about "why". "No upstream fix exists", "fixed in cryptography
+          48.0.1 but Alpine 3.24 ships 47.0.0", and "only fixable by removing the
+          JMESPath support the retention policy needs" are useful. "Cannot be fixed"
+          is not.
+          AGENT_PROMPT
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message /tmp/sec/ai-remediation.md \
+            "$(cat /tmp/sec/prompt.md)" || true
+
+          # --- gate whatever it did -------------------------------------------
+          CHANGED=$(git status --porcelain | awk '{print $NF}')
+          OUT_OF_SCOPE=$(echo "$CHANGED" | grep -vE '^(Dockerfile|CHANGELOG\.md)$' || true)
+
+          if [ -n "$OUT_OF_SCOPE" ]; then
+            echo "::error::AI remediation touched files outside its scope:"
+            echo "$OUT_OF_SCOPE"
+            exit 1
+          fi
+
+          if ! echo "$CHANGED" | grep -q '^Dockerfile$'; then
+            echo "AI round proposed no Dockerfile change."
+            exit 0
+          fi
+
+          echo "--- proposed diff ---"
+          git diff -- Dockerfile
+
+          if grep -nE '^[[:space:]]+[a-z0-9][a-z0-9._+-]*=[0-9]' Dockerfile; then
+            echo "::warning::AI remediation pinned an apk package to an exact version — reverting."
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+            exit 0
+          fi
+
+          if git diff -- Dockerfile | grep -qE '^\+.*(apk upgrade|edge|/testing|pip install|pip3 install)'; then
+            echo "::warning::AI remediation used a forbidden lever — reverting."
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+            exit 0
+          fi
+
+          if git diff -- Dockerfile | grep -qE '^[-+](ENTRYPOINT|CMD|USER|WORKDIR|ENV|EXPOSE|VOLUME|COPY)'; then
+            echo "::warning::AI remediation changed the image interface — reverting."
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+            exit 0
+          fi
+
+          if ! docker buildx build --load --platform linux/amd64 --no-cache \
+                 -t ai-remediation:local . > /tmp/sec/ai-build.log 2>&1; then
+            echo "::warning::AI remediation does not build — reverting."
+            tail -20 /tmp/sec/ai-build.log
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+            exit 0
+          fi
+
+          if ! /tmp/sec/smoke.sh ai-remediation:local; then
+            echo "::warning::AI remediation breaks the compatibility contract — reverting."
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+            exit 0
+          fi
+
+          probe ai-remediation:local > /tmp/sec/ai-tools.env
+          AI_PSQL_MAJOR=$(major "$(grep '^psql=' /tmp/sec/ai-tools.env | cut -d= -f2)")
+          CUR_PSQL_MAJOR=$(major "$(grep '^psql=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
+
+          if [ "$AI_PSQL_MAJOR" != "$CUR_PSQL_MAJOR" ]; then
+            echo "::warning::AI remediation moved the PostgreSQL client major — reverting."
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+            exit 0
+          fi
+
+          scan ai-remediation:local /tmp/sec/ai-attempt
+
+          if improves /tmp/sec/ai-attempt.ch.json /tmp/sec/incumbent.ch.json; then
+            echo "AI remediation ACCEPTED: $(score /tmp/sec/incumbent.ch.json) -> $(score /tmp/sec/ai-attempt.ch.json)"
+            cp /tmp/sec/ai-attempt.ch.json /tmp/sec/incumbent.ch.json
+            echo "applied=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::AI remediation did not improve the scan — reverting."
+            cp /tmp/sec/Dockerfile.incumbent Dockerfile
+          fi
+
+      - name: Rebuild the remediated image
+        # Only when something was actually accepted. This is also what puts the final
+        # amd64 layers into the gha cache, so the multi-arch push publishes exactly
+        # what was scanned and smoke-tested.
+        if: steps.remediate.outputs.applied == 'true' || steps.ai_remediate.outputs.applied == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          no-cache: true
+          tags: candidate:local
+          cache-to: type=gha,mode=max
+
+      - name: Rescan after remediation
+        if: steps.remediate.outputs.applied == 'true' || steps.ai_remediate.outputs.applied == 'true'
+        run: |
+          set -euo pipefail
+          source /tmp/sec/lib.sh
+
+          /tmp/sec/smoke.sh candidate:local
+
+          scan candidate:local /tmp/sec/candidate
+
+          echo "after remediation: $(score /tmp/sec/candidate.ch.json)"
+          md_findings /tmp/sec/candidate.ch.json
+
+      # =======================================================================
+      # 4. Decide the version, decide whether to publish
+      # =======================================================================
+
+      - name: Resolve the SemVer version
         id: version
         run: |
           set -euo pipefail
+          source /tmp/sec/lib.sh
+          source /tmp/sec/probe.sh
 
-          if git diff --quiet -- Dockerfile; then
-            echo "Dockerfile unchanged — no version needed."
-            exit 0
-          fi
+          BASE_SHA="${{ steps.base.outputs.sha }}"
 
-          NEXT=$(grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md \
-                 | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
-
-          if [ -z "$NEXT" ]; then
-            echo "::error::CHANGELOG.md has no '## vX.Y.Z' heading — the agent must add one."
-            exit 1
-          fi
-
-          PREV=$(git show HEAD:CHANGELOG.md 2>/dev/null \
+          PREV=$(git show "${BASE_SHA}:CHANGELOG.md" \
                  | grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' \
                  | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
+          PREV=${PREV:-v0.0.0}
 
-          echo "CHANGELOG version: ${PREV:-none} -> ${NEXT}"
+          DOCKERFILE_CHANGED=false
+          git diff --quiet -- Dockerfile || DOCKERFILE_CHANGED=true
 
-          if [ "$NEXT" = "$PREV" ]; then
-            echo "::error::The Dockerfile changed but the CHANGELOG version did not."
-            exit 1
+          REMEDIATED=false
+          if [ "${{ steps.remediate.outputs.applied }}" = "true" ] \
+             || [ "${{ steps.ai_remediate.outputs.applied }}" = "true" ]; then
+            REMEDIATED=true
           fi
 
-          if [ -n "$PREV" ]; then
-            LOWEST=$(printf '%s\n%s\n' "${PREV#v}" "${NEXT#v}" | sort -V | head -1)
-            if [ "$LOWEST" != "${PREV#v}" ]; then
-              echo "::error::Version moved backwards: ${PREV} -> ${NEXT}"
-              exit 1
-            fi
+          # --- what changed, in SemVer terms -----------------------------------
+          LEVEL=none
 
-            PREV_MAJOR=${PREV#v}; PREV_MAJOR=${PREV_MAJOR%%.*}
-            NEXT_MAJOR=${NEXT#v}; NEXT_MAJOR=${NEXT_MAJOR%%.*}
-            if [ "$NEXT_MAJOR" != "$PREV_MAJOR" ]; then
-              echo "::error::Refusing a major version bump: ${PREV} -> ${NEXT}"
-              exit 1
-            fi
+          if [ "$DOCKERFILE_CHANGED" = "true" ] || [ "$REMEDIATED" = "true" ] \
+             || [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.force_release }}" = "true" ]; then
+            LEVEL=fix
           fi
 
-          echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+          probe candidate:local > /tmp/sec/final-tools.env
+          NEW_PSQL=$(grep '^psql=' /tmp/sec/final-tools.env | cut -d= -f2)
+          NEW_AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)
+          NEW_ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
 
-      - name: Commit and push the bump
-        id: commit
-        run: |
-          set -euo pipefail
+          OLD_PSQL=""; OLD_AWSCLI=""; OLD_ALPINE=""
+          if [ "${{ steps.published.outputs.exists }}" = "true" ]; then
+            OLD_PSQL=$(jq   -r '."io.homelab.tools.postgresql-client" // ""' /tmp/sec/published-labels.json)
+            OLD_AWSCLI=$(jq -r '."io.homelab.tools.aws-cli" // ""'           /tmp/sec/published-labels.json)
+            OLD_ALPINE=$(jq -r '."io.homelab.tools.alpine"  // ""'           /tmp/sec/published-labels.json)
+          fi
 
-          if git diff --quiet -- Dockerfile; then
-            echo "Nothing to release."
-            echo "bumped=false" >> "$GITHUB_OUTPUT"
-            git checkout -- . || true
+          echo "shipped now : postgresql-client=${NEW_PSQL} aws-cli=${NEW_AWSCLI} alpine=${NEW_ALPINE}"
+          echo "shipped last: postgresql-client=${OLD_PSQL:-?} aws-cli=${OLD_AWSCLI:-?} alpine=${OLD_ALPINE:-?}"
+
+          feature() { [ "$LEVEL" = "breaking" ] || LEVEL=feature; }
+
+          if [ -z "$OLD_PSQL" ] || [ -z "$OLD_AWSCLI" ] || [ -z "$OLD_ALPINE" ]; then
+            # No labels to compare against — treat as a feature release rather than
+            # silently calling a possibly-large change a patch.
+            if [ "$LEVEL" != "none" ]; then
+              echo "Previous tool labels unavailable — defaulting to a feature-level bump."
+              feature
+            fi
+          else
+            [ "$NEW_ALPINE" = "$OLD_ALPINE" ]                       || feature
+            [ "$(minor "$NEW_PSQL")"   = "$(minor "$OLD_PSQL")"   ] || feature
+            [ "$(minor "$NEW_AWSCLI")" = "$(minor "$OLD_AWSCLI")" ] || feature
+            [ "$(major "$NEW_PSQL")"   = "$(major "$OLD_PSQL")"   ] || LEVEL=breaking
+            [ "$(major "$NEW_AWSCLI")" = "$(major "$OLD_AWSCLI")" ] || LEVEL=breaking
+          fi
+
+          # An apk package disappearing changes what the image ships.
+          OLD_PKGS=$(git show "${BASE_SHA}:Dockerfile" | grep -cE '^[[:space:]]+[a-z0-9][a-z0-9._+-]*;?[[:space:]]*\\?$' || true)
+          NEW_PKGS=$(grep -cE '^[[:space:]]+[a-z0-9][a-z0-9._+-]*;?[[:space:]]*\\?$' Dockerfile || true)
+          if [ "${NEW_PKGS:-0}" -lt "${OLD_PKGS:-0}" ]; then
+            echo "An apk package was removed (${OLD_PKGS} -> ${NEW_PKGS})."
+            LEVEL=breaking
+          fi
+
+          # The image interface is off limits to both agents; a change here means a
+          # human edited it, and it is a breaking change by definition.
+          if git diff "${BASE_SHA}" -- Dockerfile | grep -qE '^[-+](ENTRYPOINT|CMD|USER|WORKDIR|ENV|EXPOSE|VOLUME|COPY)'; then
+            echo "The image interface changed."
+            LEVEL=breaking
+          fi
+
+          # --- map to a component, honouring SemVer's pre-1.0 clause ------------
+          PREV_MAJOR=$(major "$PREV")
+
+          case "$LEVEL" in
+            none)     COMPONENT=none ;;
+            fix)      COMPONENT=patch ;;
+            feature)  COMPONENT=minor ;;
+            breaking) if [ "$PREV_MAJOR" = "0" ]; then COMPONENT=minor; else COMPONENT=major; fi ;;
+          esac
+
+          echo "change level: ${LEVEL} -> ${COMPONENT} bump from ${PREV}"
+
+          bump() {
+            local v=${1#v} c=$2 M m p rest
+            M=${v%%.*}; rest=${v#*.}; m=${rest%%.*}; p=${rest#*.}
+            case "$c" in
+              major) M=$((M + 1)); m=0; p=0 ;;
+              minor) m=$((m + 1)); p=0 ;;
+              patch) p=$((p + 1)) ;;
+            esac
+            printf 'v%s.%s.%s\n' "$M" "$m" "$p"
+          }
+
+          if [ "$COMPONENT" = "none" ]; then
+            echo "Nothing changed — no new version."
+            {
+              echo "release=false"
+              echo "version=${PREV}"
+              echo "previous=${PREV}"
+              echo "level=none"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          VERSION="${{ steps.version.outputs.version }}"
+          NEXT=$(bump "$PREV" "$COMPONENT")
+          echo "version: ${PREV} -> ${NEXT}"
 
-          echo "--- Dockerfile diff ---"
-          git diff -- Dockerfile
+          # --- write it into the CHANGELOG -------------------------------------
+          TODAY=$(date -u +%F)
 
-          git add Dockerfile CHANGELOG.md
-          git commit -m "bump tooling to ${VERSION}"
-          git push origin main
+          if grep -qE '^## vNEXT' CHANGELOG.md; then
+            # The version agent wrote the section; only the placeholder needs filling.
+            # A plain global substitution rather than a `0,/re/` range: that address
+            # form is a GNU extension, and there must be exactly one placeholder
+            # anyway — more than one means the agent wrote a section it should not
+            # have, which is worth failing on rather than papering over.
+            PLACEHOLDERS=$(grep -c '^## vNEXT' CHANGELOG.md)
 
-          echo "bumped=true" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "## Version check"
-            echo
-            if [ -f /tmp/summary.md ]; then
-              cat /tmp/summary.md
-            else
-              echo "Agent did not produce a summary."
+            if [ "$PLACEHOLDERS" -ne 1 ]; then
+              echo "::error::Expected exactly one '## vNEXT' heading, found ${PLACEHOLDERS}."
+              exit 1
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
 
-  # ---------------------------------------------------------------------------
-  # 2. Build, scan, publish, release
-  # ---------------------------------------------------------------------------
-  release:
-    needs: [check-versions]
-    # Runs when: someone pushed to main, or the agent bumped something, or a
-    # dispatch explicitly forced it. `!cancelled()` is what lets this job run even
-    # though `check-versions` is skipped on push events.
-    if: >-
-      !cancelled()
-      && needs.check-versions.result != 'failure'
-      && (github.event_name == 'push'
-          || needs.check-versions.outputs.bumped == 'true'
-          || inputs.force_release)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+            sed -i -E "s|^## vNEXT.*|## ${NEXT} — ${TODAY}|" CHANGELOG.md
 
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            # The agent wrote its from/to table before the scan ran, so a remediation
+            # that moved the base further leaves that table describing a version that
+            # was never published. Record what actually shipped underneath it rather
+            # than trying to rewrite the agent's rows.
+            if [ "$REMEDIATED" = "true" ]; then
+              {
+                echo
+                echo "Security remediation was applied after the table above was written. The image"
+                echo "published for this version is alpine ${NEW_ALPINE}, PostgreSQL client ${NEW_PSQL}," \
+                     "aws-cli ${NEW_AWSCLI}, scanning as $(n_crit /tmp/sec/candidate.ch.json) Critical" \
+                     "and $(n_high /tmp/sec/candidate.ch.json) High. The release notes list what remains."
+                echo
+              } > /tmp/sec/secnote.md
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          # `main`, not github.sha — on a scheduled run the agent has just pushed a
-          # commit that the workflow's own ref predates.
-          ref: main
-          fetch-depth: 0
+              SECOND=$(grep -n '^## ' CHANGELOG.md | sed -n '2p' | cut -d: -f1 || true)
 
-      - name: Read version and pins
-        id: ver
+              if [ -n "$SECOND" ]; then
+                head -n "$((SECOND - 1))" CHANGELOG.md > /tmp/sec/CHANGELOG.new
+                cat /tmp/sec/secnote.md                >> /tmp/sec/CHANGELOG.new
+                tail -n "+${SECOND}" CHANGELOG.md      >> /tmp/sec/CHANGELOG.new
+                mv /tmp/sec/CHANGELOG.new CHANGELOG.md
+              else
+                cat /tmp/sec/secnote.md >> CHANGELOG.md
+              fi
+            fi
+          else
+            # A remediation-only or push-triggered release: the version agent never
+            # ran, or ran and found nothing, so there is no section to rename.
+            # `if` rather than `[ ] && echo`: a false test as the last command of a
+            # group under `set -e` would end the step.
+            {
+              echo "## ${NEXT} — ${TODAY}"
+              echo
+              echo "| tool | from | to |"
+              echo "|------|------|----|"
+              if [ -n "$OLD_ALPINE" ] && [ "$NEW_ALPINE" != "$OLD_ALPINE" ]; then
+                echo "| alpine | ${OLD_ALPINE} | ${NEW_ALPINE} |"
+              fi
+              if [ -n "$OLD_PSQL" ] && [ "$NEW_PSQL" != "$OLD_PSQL" ]; then
+                echo "| postgresql-client | ${OLD_PSQL} | ${NEW_PSQL} |"
+              fi
+              if [ -n "$OLD_AWSCLI" ] && [ "$NEW_AWSCLI" != "$OLD_AWSCLI" ]; then
+                echo "| aws-cli | ${OLD_AWSCLI} | ${NEW_AWSCLI} |"
+              fi
+              echo
+              if [ "$REMEDIATED" = "true" ]; then
+                PUB_C=$([ -f /tmp/sec/published.ch.json ] && n_crit /tmp/sec/published.ch.json || echo '?')
+                PUB_H=$([ -f /tmp/sec/published.ch.json ] && n_high /tmp/sec/published.ch.json || echo '?')
+                echo "Security rebuild. The previous image scanned as ${PUB_C} Critical and ${PUB_H} High;" \
+                     "this one scans as $(n_crit /tmp/sec/candidate.ch.json) Critical and" \
+                     "$(n_high /tmp/sec/candidate.ch.json) High. The release notes list what remains and why."
+              else
+                echo "Rebuild against current Alpine packages. No pinned version changed."
+              fi
+              echo
+            } > /tmp/sec/newsection.md
+
+            # Insert directly above the newest existing entry, so the file's preamble
+            # stays where it is.
+            FIRST=$(grep -n '^## v' CHANGELOG.md | head -1 | cut -d: -f1 || true)
+
+            if [ -n "$FIRST" ]; then
+              head -n "$((FIRST - 1))" CHANGELOG.md   > /tmp/sec/CHANGELOG.new
+              cat /tmp/sec/newsection.md             >> /tmp/sec/CHANGELOG.new
+              tail -n "+${FIRST}" CHANGELOG.md       >> /tmp/sec/CHANGELOG.new
+            else
+              cat CHANGELOG.md /tmp/sec/newsection.md > /tmp/sec/CHANGELOG.new
+            fi
+
+            mv /tmp/sec/CHANGELOG.new CHANGELOG.md
+          fi
+
+          {
+            echo "release=true"
+            echo "version=${NEXT}"
+            echo "previous=${PREV}"
+            echo "level=${COMPONENT}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Security policy decision
+        id: policy
+        run: |
+          set -euo pipefail
+          source /tmp/sec/lib.sh
+
+          CAND_CRIT=$(n_crit /tmp/sec/candidate.ch.json)
+          CAND_HIGH=$(n_high /tmp/sec/candidate.ch.json)
+          CAND_FIX=$(n_fixable /tmp/sec/candidate.ch.json)
+
+          echo "policy: ${SECURITY_POLICY}"
+          echo "candidate: ${CAND_CRIT} Critical / ${CAND_HIGH} High (${CAND_FIX} with an upstream fix)"
+
+          BLOCK=false
+          REASON=""
+
+          if [ "${{ steps.published.outputs.exists }}" = "true" ]; then
+            PUB_CRIT="${{ steps.published.outputs.crit }}"
+            PUB_HIGH="${{ steps.published.outputs.high }}"
+            echo "published: ${PUB_CRIT} Critical / ${PUB_HIGH} High"
+
+            if [ "$CAND_CRIT" -gt "$PUB_CRIT" ]; then
+              BLOCK=true
+              REASON="the candidate has more Critical findings than the published image (${PUB_CRIT} -> ${CAND_CRIT})"
+            elif [ $((CAND_CRIT + CAND_HIGH)) -gt $((PUB_CRIT + PUB_HIGH)) ]; then
+              BLOCK=true
+              REASON="the candidate has more Critical+High findings than the published image ($((PUB_CRIT + PUB_HIGH)) -> $((CAND_CRIT + CAND_HIGH)))"
+            fi
+          else
+            echo "published: none yet"
+          fi
+
+          if [ "$SECURITY_POLICY" = "strict" ] && [ "$CAND_FIX" -gt 0 ]; then
+            BLOCK=true
+            REASON="strict policy: ${CAND_FIX} Critical/High finding(s) still have an upstream fix"
+          fi
+
+          if [ "$SECURITY_POLICY" = "report-only" ] && [ "$BLOCK" = "true" ]; then
+            echo "::warning::report-only policy — publishing despite: ${REASON}"
+            BLOCK=false
+            REASON=""
+          fi
+
+          {
+            echo "block=${BLOCK}"
+            echo "reason=${REASON}"
+            echo "crit=${CAND_CRIT}"
+            echo "high=${CAND_HIGH}"
+            echo "fixable=${CAND_FIX}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Gate — the publish policy
+        if: steps.policy.outputs.block == 'true'
+        run: |
+          echo "::error::Refusing to publish — ${{ steps.policy.outputs.reason }}."
+          echo "Re-run with security_policy=report-only to publish anyway, or fix the finding."
+          exit 1
+
+      - name: Commit the release
+        # One commit for the whole run: the version agent's pin, any accepted
+        # remediation, and the resolved version number.
+        id: commit
+        if: steps.version.outputs.release == 'true'
         run: |
           set -euo pipefail
 
-          VERSION=$(grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md \
-                    | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          if git diff --quiet -- Dockerfile CHANGELOG.md; then
+            echo "Nothing to commit."
+            exit 0
+          fi
 
-          : "${VERSION:?CHANGELOG.md has no '## vX.Y.Z' heading}"
+          echo "--- diff ---"
+          git diff -- Dockerfile CHANGELOG.md
+
+          git add Dockerfile CHANGELOG.md
+          git commit -m "release ${{ steps.version.outputs.version }}"
+          git push origin main
+
+      # =======================================================================
+      # 5. Publish
+      # =======================================================================
+
+      - name: Read the build metadata
+        id: meta
+        # `always()` so a blocked publish still produces a usable summary. hashFiles
+        # cannot be used to guard this: it only sees paths inside the workspace.
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ ! -f /tmp/sec/final-tools.env ]; then
+            echo "No probe data — the run stopped before the image was measured."
+            exit 0
+          fi
 
           {
-            echo "VERSION=${VERSION}"
             echo "ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')"
+            echo "PSQL=$(grep '^psql=' /tmp/sec/final-tools.env | cut -d= -f2)"
+            echo "PGDUMP=$(grep '^pgdump=' /tmp/sec/final-tools.env | cut -d= -f2)"
+            echo "AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)"
             echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)"
             echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Probe build
-        # Single-arch build first, so the labels below can state the versions that
-        # actually landed rather than restating the pin. The multi-arch build that
-        # follows reuses these layers from cache.
-        id: probe
-        run: |
-          set -euo pipefail
-
-          # --load is required: setup-buildx-action made the docker-container driver
-          # the default, and that driver leaves the result in the build cache rather
-          # than the local image store, so `docker run` below would not find it.
-          docker build --load --platform linux/amd64 -t probe:local .
-
-          PSQL=$(docker run --rm --entrypoint sh probe:local -c 'psql --version' | awk '{print $3}')
-          PGDUMP=$(docker run --rm --entrypoint sh probe:local -c 'pg_dump --version' | awk '{print $3}')
-          AWSCLI=$(docker run --rm --entrypoint sh probe:local -c 'aws --version 2>&1' | head -1 | awk '{print $1}' | cut -d/ -f2)
-
-          echo "PSQL=${PSQL}" >> "$GITHUB_OUTPUT"
-          echo "PGDUMP=${PGDUMP}" >> "$GITHUB_OUTPUT"
-          echo "AWSCLI=${AWSCLI}" >> "$GITHUB_OUTPUT"
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push
         id: build
+        if: steps.version.outputs.release == 'true'
+        # `cache-from: gha` reuses the exact amd64 layers the candidate build wrote,
+        # so the amd64 image published here is the one that was scanned and smoke
+        # tested. arm64 is built fresh; the Dockerfile's own RUN steps assert that
+        # psql, pg_dump and aws run on it, so a broken arm64 fails the build before
+        # any push.
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -670,129 +1628,166 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.VERSION }}
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.SHORT_SHA }}
+            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.SHORT_SHA }}
           labels: |
             org.opencontainers.image.title=postgres-awscli
-            org.opencontainers.image.description=Alpine ${{ steps.ver.outputs.ALPINE }} with the PostgreSQL ${{ steps.probe.outputs.PSQL }} client, aws-cli ${{ steps.probe.outputs.AWSCLI }} and backup/restore scripts
-            org.opencontainers.image.version=${{ steps.ver.outputs.VERSION }}
+            org.opencontainers.image.description=Alpine ${{ steps.meta.outputs.ALPINE }} with the PostgreSQL ${{ steps.meta.outputs.PSQL }} client, aws-cli ${{ steps.meta.outputs.AWSCLI }} and backup/restore scripts
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.created=${{ steps.ver.outputs.BUILD_DATE }}
-            org.opencontainers.image.base.name=docker.io/library/alpine:${{ steps.ver.outputs.ALPINE }}
-            io.homelab.tools.postgresql-client=${{ steps.probe.outputs.PSQL }}
-            io.homelab.tools.aws-cli=${{ steps.probe.outputs.AWSCLI }}
-            io.homelab.tools.alpine=${{ steps.ver.outputs.ALPINE }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.BUILD_DATE }}
+            org.opencontainers.image.base.name=docker.io/library/alpine:${{ steps.meta.outputs.ALPINE }}
+            io.homelab.tools.postgresql-client=${{ steps.meta.outputs.PSQL }}
+            io.homelab.tools.aws-cli=${{ steps.meta.outputs.AWSCLI }}
+            io.homelab.tools.alpine=${{ steps.meta.outputs.ALPINE }}
+            io.homelab.security.critical=${{ steps.policy.outputs.crit }}
+            io.homelab.security.high=${{ steps.policy.outputs.high }}
+            io.homelab.security.scanned-by=grype ${{ env.GRYPE_VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Install syft and grype
+      # =======================================================================
+      # 6. Report
+      # =======================================================================
+
+      - name: Assemble the security report
+        if: always()
         run: |
           set -euo pipefail
+          source /tmp/sec/lib.sh 2>/dev/null || exit 0
+          [ -f /tmp/sec/candidate.ch.json ] || exit 0
 
-          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin v1.29.1
-          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin v0.98.0
+          {
+            echo "### Vulnerability report — linux/amd64"
+            echo
+            echo "Scanned with grype \`${GRYPE_VERSION}\` before publication. Policy: \`${SECURITY_POLICY}\`."
+            echo
+            echo "**${{ steps.policy.outputs.crit }} Critical · ${{ steps.policy.outputs.high }} High**"
+            echo " (${{ steps.policy.outputs.fixable }} of which have a fix published upstream)"
+            echo
+            md_findings /tmp/sec/candidate.ch.json
+            echo
+            echo "\`fix available upstream\` means a fixed version exists somewhere — it does"
+            echo "not mean Alpine has packaged it. Where it has not, the only routes left are"
+            echo "pip-installing over an apk-owned library, dropping the JMESPath support the"
+            echo "retention policy needs, or moving the PostgreSQL client major. All three"
+            echo "break the image, so the finding stays and is reported here instead."
+          } > /tmp/sec/report.md
 
-          syft version
-          grype version
+          if [ -f /tmp/sec/remediation-log.md ]; then
+            {
+              echo
+              echo "<details><summary>Remediation attempts</summary>"
+              echo
+              cat /tmp/sec/remediation-log.md
+              echo
+              echo "</details>"
+            } >> /tmp/sec/report.md
+          fi
 
-      - name: Generate SBOM
-        run: |
-          set -euo pipefail
+          if [ -f /tmp/sec/ai-remediation.md ]; then
+            {
+              echo
+              echo "<details><summary>Agent triage of what remains</summary>"
+              echo
+              cat /tmp/sec/ai-remediation.md
+              echo
+              echo "</details>"
+            } >> /tmp/sec/report.md
+          fi
 
-          syft "${IMAGE}:${{ steps.ver.outputs.SHORT_SHA }}" -o spdx-json > sbom.spdx.json
-          syft "${IMAGE}:${{ steps.ver.outputs.SHORT_SHA }}" -o table      > sbom.txt
-
-      - name: Scan for vulnerabilities
-        # Report-only, deliberately. Most findings here are unfixed base-image CVEs;
-        # blocking on them would freeze the monthly rebuild waiting on Alpine.
-        run: |
-          set -euo pipefail
-
-          grype sbom:sbom.spdx.json -o table > grype.txt
-          grype sbom:sbom.spdx.json -o sarif > grype.sarif
-          grype sbom:sbom.spdx.json -o json  > grype.json
-
-          for sev in Critical High Medium Low; do
-            COUNT=$(jq --arg s "$sev" '[.matches[] | select(.vulnerability.severity == $s)] | length' grype.json)
-            echo "${sev}=${COUNT}" >> "$GITHUB_ENV"
-          done
+          # The SARIF upload needs the file inside the workspace.
+          cp /tmp/sec/candidate.grype.sarif "${GITHUB_WORKSPACE}/grype.sarif" 2>/dev/null || true
 
       - name: Upload SARIF
+        # Copied into the workspace by the step above: both `hashFiles` and
+        # upload-sarif resolve paths relative to GITHUB_WORKSPACE and cannot reach
+        # /tmp. This happens after the commit, so the untracked file is never staged.
+        if: always() && hashFiles('grype.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: grype.sarif
           category: grype
 
       - name: Upload SBOM and scan
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-and-scan-${{ steps.ver.outputs.SHORT_SHA }}
+          name: security-report-${{ github.run_id }}
           path: |
-            sbom.spdx.json
-            sbom.txt
-            grype.txt
-            grype.json
+            /tmp/sec/candidate.sbom.json
+            /tmp/sec/candidate.grype.json
+            /tmp/sec/candidate.grype.txt
+            /tmp/sec/candidate.ch.json
+            /tmp/sec/report.md
+            /tmp/sec/remediation-log.md
+            /tmp/sec/ai-remediation.md
+            /tmp/version-agent.md
+          if-no-files-found: warn
           retention-days: 90
 
-      - name: Assemble report
+      - name: Step summary
+        if: always()
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           {
+            echo "## postgres-awscli"
+            echo
+            if [ "${{ steps.version.outputs.release }}" = "true" ]; then
+              echo "**${{ steps.version.outputs.previous }} → ${{ steps.version.outputs.version }}**" \
+                   "(\`${{ steps.version.outputs.level }}\` bump)"
+            else
+              echo "**No release** — nothing changed. The image was still rebuilt and rescanned."
+            fi
+            echo
             echo "| tool | version |"
             echo "|------|---------|"
-            echo "| psql | ${{ steps.probe.outputs.PSQL }} |"
-            echo "| pg_dump | ${{ steps.probe.outputs.PGDUMP }} |"
-            echo "| aws-cli | ${{ steps.probe.outputs.AWSCLI }} |"
-            echo "| alpine | ${{ steps.ver.outputs.ALPINE }} |"
+            echo "| psql | ${{ steps.meta.outputs.PSQL }} |"
+            echo "| pg_dump | ${{ steps.meta.outputs.PGDUMP }} |"
+            echo "| aws-cli | ${{ steps.meta.outputs.AWSCLI }} |"
+            echo "| alpine | ${{ steps.meta.outputs.ALPINE }} |"
             echo
-            echo "**Vulnerabilities:** ${Critical} critical · ${High} high · ${Medium} medium · ${Low} low"
-          } > tools.md
-
-          {
-            echo "## postgres-awscli ${{ steps.ver.outputs.VERSION }}"
+            [ -f /tmp/sec/report.md ] && cat /tmp/sec/report.md
             echo
-            cat tools.md
-            echo
-            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
-            echo
-            echo "**Tags:** \`latest\`, \`${{ steps.ver.outputs.VERSION }}\`, \`${{ steps.ver.outputs.SHORT_SHA }}\`"
-            echo
-            echo "<details><summary>Vulnerability report</summary>"
-            echo
-            echo '```'
-            head -100 grype.txt
-            echo '```'
-            echo
-            echo "</details>"
+            if [ -f /tmp/version-agent.md ]; then
+              echo "<details><summary>Version agent</summary>"
+              echo
+              cat /tmp/version-agent.md
+              echo
+              echo "</details>"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create GitHub release
-        # Only when the version actually moved — a plain push to main republishes the
-        # image but does not cut a release.
-        if: needs.check-versions.outputs.bumped == 'true'
+        if: steps.version.outputs.release == 'true' && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
 
-          TAG="${{ steps.ver.outputs.VERSION }}"
+          TAG="${{ steps.version.outputs.version }}"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists — skipping."
             exit 0
           fi
 
-          # Prose comes from the CHANGELOG section the agent just wrote: everything
-          # from the newest `## ` heading up to the next one.
+          # Prose comes from the CHANGELOG section this run wrote: everything from the
+          # newest `## ` heading up to the next one.
           awk '/^## /{n++} n==1' CHANGELOG.md > notes.md
 
           {
             echo
             echo "### Contents"
             echo
-            cat tools.md
+            echo "| tool | version |"
+            echo "|------|---------|"
+            echo "| psql | ${{ steps.meta.outputs.PSQL }} |"
+            echo "| pg_dump | ${{ steps.meta.outputs.PGDUMP }} |"
+            echo "| aws-cli | ${{ steps.meta.outputs.AWSCLI }} |"
+            echo "| alpine | ${{ steps.meta.outputs.ALPINE }} |"
+            echo
+            cat /tmp/sec/report.md
             echo
             echo "### Image"
             echo
@@ -806,5 +1801,5 @@ jobs:
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file notes.md \
-            sbom.spdx.json \
-            grype.txt
+            /tmp/sec/candidate.sbom.json \
+            /tmp/sec/candidate.grype.txt
