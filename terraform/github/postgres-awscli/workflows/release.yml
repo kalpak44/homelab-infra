@@ -131,7 +131,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
+          CODE=$(curl -sS -o /tmp/smoke.json -w '%{http_code}' \
             https://api.deepseek.com/v1/responses \
             -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
             -H "Content-Type: application/json" \
@@ -140,7 +140,7 @@ jobs:
           echo "HTTP $CODE"
 
           if [ "$CODE" != "200" ]; then
-            head -c 500 smoke.json
+            head -c 500 /tmp/smoke.json
             echo
             exit 1
           fi
@@ -387,7 +387,7 @@ jobs:
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
-            --output-last-message summary.md \
+            --output-last-message /tmp/summary.md \
             "$(cat /tmp/prompt.md)"
 
       # --- Gate 1: scope --------------------------------------------------------
@@ -395,7 +395,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGED=$(git status --porcelain | awk '{print $NF}' | grep -v '^summary\.md$' || true)
+          # No exclusions on purpose: every scratch file this job writes goes to
+          # /tmp, so anything showing up here came from the agent.
+          CHANGED=$(git status --porcelain | awk '{print $NF}')
 
           if [ -z "$CHANGED" ]; then
             echo "No files changed."
@@ -546,8 +548,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          rm -f summary.md.tmp
-
           if git diff --quiet -- Dockerfile; then
             echo "Nothing to release."
             echo "bumped=false" >> "$GITHUB_OUTPUT"
@@ -573,8 +573,8 @@ jobs:
           {
             echo "## Version check"
             echo
-            if [ -f summary.md ]; then
-              cat summary.md
+            if [ -f /tmp/summary.md ]; then
+              cat /tmp/summary.md
             else
               echo "Agent did not produce a summary."
             fi
