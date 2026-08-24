@@ -99,6 +99,20 @@ move), and the publish policy. Everything reaches `main` with no human review, s
 one into a prompt instruction. Terraform owns the workflow only; it never manages `Dockerfile` or `CHANGELOG.md`, so a
 bump never fights it.
 
+**A push only cuts a release when it changed something that ends up in the image.**
+Terraform re-syncs `release.yml` into the repo on every `just deploy github <repo>`, and that push runs the workflow. A
+push touching only `CHANGELOG.md`, `README.md`, `LICENSE`, `SECURITY.md`, `.gitignore` or `.github/` rebuilds and
+rescans but does not publish. Without this, every `terraform apply` minted a version for an image nobody changed — it
+did, twice, before the rule existed. A remediation still publishes on such a push, because that genuinely changes the
+image.
+
+**Every release reports what it fixed and what it ships.** `resolved()` diffs the published image's scan against the
+candidate's to list the Critical/High findings this release actually removed, grouped by package with their ids;
+`inventory()` probes the built image for every tool and its version. Both go into the CHANGELOG entry, the release
+notes and the run summary. The inventory is probed from the image about to ship — never restated from the pins, which
+is the whole point: `aws-cli` and the PostgreSQL client have no pin to restate. Read package versions with
+`apk list -I <pkg>`, not `apk info -v <pkg>` — the latter prints the description, not the version.
+
 **Roll a rejected attempt back with a saved copy, not `git checkout -- Dockerfile`.** The version agent's edits are
 uncommitted working-tree changes, so checking out from `HEAD` silently discards the base bump the run just made and
 validated. The remediation steps snapshot the Dockerfile to `/tmp/sec/Dockerfile.incumbent` and restore from that.

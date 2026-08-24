@@ -324,6 +324,34 @@ jobs:
               end' "$1"
           }
 
+          # Findings that were in the published image and are gone from the candidate:
+          # what this release actually fixed. Keyed on id+package, so the same CVE
+          # against two packages counts once per package.
+          resolved() { # $1 = published ch.json, $2 = candidate ch.json
+            jq -n --slurpfile was "$1" --slurpfile now "$2" '
+              ($now[0] | map("\(.id)@\(.package)")) as $n
+              | $was[0] | map(select(("\(.id)@\(.package)") as $k | ($n | index($k)) | not))'
+          }
+
+          # One bullet per package, with the ids it no longer carries.
+          md_resolved() {
+            jq -r '
+              if length == 0 then "_Nothing newly resolved._"
+              else
+                group_by(.package)
+                | map("- **\(.[0].package)** \(.[0].version) — "
+                    + (group_by(.severity) | map("\(length) \(.[0].severity)") | join(", "))
+                    + ": " + (map(.id) | unique | join(", ")))
+                | .[]
+              end' "$1"
+          }
+
+          # The tooling inventory as a markdown table.
+          md_tools() { # $1 = name<TAB>version file
+            printf '| tool | version |\n|------|---------|\n'
+            awk -F'\t' '{ printf "| %s | %s |\n", $1, ($2 == "" ? "—" : $2) }' "$1"
+          }
+
           major() { printf '%s\n' "${1#v}" | cut -d. -f1; }
           minor() { printf '%s\n' "${1#v}" | cut -d. -f2; }
           LIB
@@ -340,6 +368,28 @@ jobs:
             aws_v=$(docker run --rm --entrypoint sh "$img" -c 'aws --version 2>&1' \
                     | head -1 | awk '{print $1}' | cut -d/ -f2)
             printf 'psql=%s\npgdump=%s\nawscli=%s\n' "$psql_v" "$pgdump_v" "$aws_v"
+          }
+
+          # inventory <image> — every tool this image ships and its version, as
+          # `name<TAB>version` lines. Reported at release time so the changelog, the
+          # release notes and the run summary all state what actually went out.
+          inventory() {
+            docker run --rm -i --entrypoint sh "$1" -s <<'INV'
+          v() { printf '%s\t%s\n' "$1" "$2"; }
+                    v alpine          "$(cat /etc/alpine-release 2>/dev/null)"
+            v psql            "$(psql --version 2>/dev/null | awk '{print $3}')"
+            v pg_dump         "$(pg_dump --version 2>/dev/null | awk '{print $3}')"
+            v pg_restore      "$(pg_restore --version 2>/dev/null | awk '{print $3}')"
+            v pg_dumpall      "$(pg_dumpall --version 2>/dev/null | awk '{print $3}')"
+            v aws-cli         "$(aws --version 2>&1 | head -1 | awk '{print $1}' | cut -d/ -f2)"
+            v bash            "$(bash --version 2>/dev/null | head -1 | awk '{print $4}' | cut -d'(' -f1)"
+            v coreutils       "$(date --version 2>/dev/null | head -1 | awk '{print $4}')"
+            v python3         "$(python3 --version 2>&1 | awk '{print $2}')"
+          apkv() { apk list -I "$1" 2>/dev/null | head -1 | awk '{print $1}' | sed "s/^$1-//"; }
+          v musl            "$(apkv musl)"
+          v openssl         "$(apkv libssl3)"
+          v ca-certificates "$(apkv ca-certificates)"
+          INV
           }
           PROBE
 
@@ -1323,11 +1373,43 @@ jobs:
           LEVEL=none
 
           if [ "$DOCKERFILE_CHANGED" = "true" ] || [ "$REMEDIATED" = "true" ] \
-             || [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.force_release }}" = "true" ]; then
+             || [ "${{ inputs.force_release }}" = "true" ]; then
             LEVEL=fix
           fi
 
+          # A push only counts when it changed something that ends up IN the image.
+          # Terraform re-syncs this workflow file on every apply, and a docs or CI
+          # commit must not cut a release for an image nobody touched. The build and
+          # the scan still run — only the publish is skipped.
+          if [ "${{ github.event_name }}" = "push" ] && [ "$LEVEL" = "none" ]; then
+            PUSHED=$(git diff --name-only "${{ github.event.before }}" "${BASE_SHA}" 2>/dev/null || echo UNKNOWN)
+
+            if [ "$PUSHED" = "UNKNOWN" ]; then
+              echo "Cannot diff the push range — assuming the image changed."
+              LEVEL=fix
+            elif printf '%s\n' "$PUSHED" \
+                 | grep -qvE '^(CHANGELOG\.md|README\.md|LICENSE|SECURITY\.md|\.gitignore|\.github/)'; then
+              echo "Push changed image content:"
+              printf '%s\n' "$PUSHED" | sed 's/^/  /'
+              LEVEL=fix
+            else
+              echo "Push touched only docs/CI — rebuilt and rescanned, but not republished."
+            fi
+          fi
+
           probe candidate:local > /tmp/sec/final-tools.env
+
+          # Everything this image ships, and what this release removed. Both are
+          # reported in the changelog entry, the release notes and the run summary.
+          inventory candidate:local > /tmp/sec/inventory.tsv
+
+          if [ -f /tmp/sec/published.ch.json ]; then
+            resolved /tmp/sec/published.ch.json /tmp/sec/candidate.ch.json > /tmp/sec/resolved.json
+          else
+            echo '[]' > /tmp/sec/resolved.json
+          fi
+
+          echo "resolved by this release: $(jq 'length' /tmp/sec/resolved.json) Critical/High finding(s)"
           NEW_PSQL=$(grep '^psql=' /tmp/sec/final-tools.env | cut -d= -f2)
           NEW_AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)
           NEW_ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
@@ -1429,41 +1511,51 @@ jobs:
 
             sed -i -E "s|^## vNEXT.*|## ${NEXT} — ${TODAY}|" CHANGELOG.md
 
-            # The agent wrote its from/to table before the scan ran, so a remediation
-            # that moved the base further leaves that table describing a version that
-            # was never published. Record what actually shipped underneath it rather
-            # than trying to rewrite the agent's rows.
-            if [ "$REMEDIATED" = "true" ]; then
-              {
-                echo
+            # Two things get appended to whatever the agent wrote: the tooling
+            # inventory probed from the image that is actually about to ship, and the
+            # findings this release removed. When a remediation moved the base further
+            # than the agent's table says, that is recorded here too rather than by
+            # rewriting the agent's rows.
+            {
+              echo
+              if [ "$REMEDIATED" = "true" ]; then
                 echo "Security remediation was applied after the table above was written. The image"
                 echo "published for this version is alpine ${NEW_ALPINE}, PostgreSQL client ${NEW_PSQL}," \
                      "aws-cli ${NEW_AWSCLI}, scanning as $(n_crit /tmp/sec/candidate.ch.json) Critical" \
-                     "and $(n_high /tmp/sec/candidate.ch.json) High. The release notes list what remains."
+                     "and $(n_high /tmp/sec/candidate.ch.json) High."
                 echo
-              } > /tmp/sec/secnote.md
-
-              SECOND=$(grep -n '^## ' CHANGELOG.md | sed -n '2p' | cut -d: -f1 || true)
-
-              if [ -n "$SECOND" ]; then
-                head -n "$((SECOND - 1))" CHANGELOG.md > /tmp/sec/CHANGELOG.new
-                cat /tmp/sec/secnote.md                >> /tmp/sec/CHANGELOG.new
-                tail -n "+${SECOND}" CHANGELOG.md      >> /tmp/sec/CHANGELOG.new
-                mv /tmp/sec/CHANGELOG.new CHANGELOG.md
-              else
-                cat /tmp/sec/secnote.md >> CHANGELOG.md
               fi
+              if [ "$(jq 'length' /tmp/sec/resolved.json)" != "0" ]; then
+                echo "### Fixed"
+                echo
+                md_resolved /tmp/sec/resolved.json
+                echo
+              fi
+              echo "### Contents"
+              echo
+              md_tools /tmp/sec/inventory.tsv
+              echo
+            } > /tmp/sec/secnote.md
+
+            SECOND=$(grep -n '^## ' CHANGELOG.md | sed -n '2p' | cut -d: -f1 || true)
+
+            if [ -n "$SECOND" ]; then
+              head -n "$((SECOND - 1))" CHANGELOG.md > /tmp/sec/CHANGELOG.new
+              cat /tmp/sec/secnote.md                >> /tmp/sec/CHANGELOG.new
+              tail -n "+${SECOND}" CHANGELOG.md      >> /tmp/sec/CHANGELOG.new
+              mv /tmp/sec/CHANGELOG.new CHANGELOG.md
+            else
+              cat /tmp/sec/secnote.md >> CHANGELOG.md
             fi
           else
             # A remediation-only or push-triggered release: the version agent never
             # ran, or ran and found nothing, so there is no section to rename.
-            # `if` rather than `[ ] && echo`: a false test as the last command of a
-            # group under `set -e` would end the step.
+            #
+            # The rows are built first so a plain rebuild — where nothing was pinned
+            # differently — does not emit a table with a header and no rows. `if`
+            # rather than `[ ] && echo`, because a false test as the last command of
+            # a group under `set -e` would end the step.
             {
-              echo "## ${NEXT} — ${TODAY}"
-              echo
-              echo "| tool | from | to |"
-              echo "|------|------|----|"
               if [ -n "$OLD_ALPINE" ] && [ "$NEW_ALPINE" != "$OLD_ALPINE" ]; then
                 echo "| alpine | ${OLD_ALPINE} | ${NEW_ALPINE} |"
               fi
@@ -1473,7 +1565,17 @@ jobs:
               if [ -n "$OLD_AWSCLI" ] && [ "$NEW_AWSCLI" != "$OLD_AWSCLI" ]; then
                 echo "| aws-cli | ${OLD_AWSCLI} | ${NEW_AWSCLI} |"
               fi
+            } > /tmp/sec/rows.md
+
+            {
+              echo "## ${NEXT} — ${TODAY}"
               echo
+              if [ -s /tmp/sec/rows.md ]; then
+                echo "| tool | from | to |"
+                echo "|------|------|----|"
+                cat /tmp/sec/rows.md
+                echo
+              fi
               if [ "$REMEDIATED" = "true" ]; then
                 PUB_C=$([ -f /tmp/sec/published.ch.json ] && n_crit /tmp/sec/published.ch.json || echo '?')
                 PUB_H=$([ -f /tmp/sec/published.ch.json ] && n_high /tmp/sec/published.ch.json || echo '?')
@@ -1483,6 +1585,16 @@ jobs:
               else
                 echo "Rebuild against current Alpine packages. No pinned version changed."
               fi
+              echo
+              if [ "$(jq 'length' /tmp/sec/resolved.json)" != "0" ]; then
+                echo "### Fixed"
+                echo
+                md_resolved /tmp/sec/resolved.json
+                echo
+              fi
+              echo "### Contents"
+              echo
+              md_tools /tmp/sec/inventory.tsv
               echo
             } > /tmp/sec/newsection.md
 
@@ -1668,6 +1780,12 @@ jobs:
             echo
             md_findings /tmp/sec/candidate.ch.json
             echo
+            if [ -f /tmp/sec/resolved.json ] && [ "$(jq 'length' /tmp/sec/resolved.json)" != "0" ]; then
+              echo "#### Fixed in this release"
+              echo
+              md_resolved /tmp/sec/resolved.json
+              echo
+            fi
             echo "\`fix available upstream\` means a fixed version exists somewhere — it does"
             echo "not mean Alpine has packaged it. Where it has not, the only routes left are"
             echo "pip-installing over an apk-owned library, dropping the JMESPath support the"
@@ -1731,6 +1849,7 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
+          source /tmp/sec/lib.sh 2>/dev/null || true
 
           {
             echo "## postgres-awscli"
@@ -1742,12 +1861,9 @@ jobs:
               echo "**No release** — nothing changed. The image was still rebuilt and rescanned."
             fi
             echo
-            echo "| tool | version |"
-            echo "|------|---------|"
-            echo "| psql | ${{ steps.meta.outputs.PSQL }} |"
-            echo "| pg_dump | ${{ steps.meta.outputs.PGDUMP }} |"
-            echo "| aws-cli | ${{ steps.meta.outputs.AWSCLI }} |"
-            echo "| alpine | ${{ steps.meta.outputs.ALPINE }} |"
+            if [ -f /tmp/sec/inventory.tsv ]; then
+              md_tools /tmp/sec/inventory.tsv
+            fi
             echo
             [ -f /tmp/sec/report.md ] && cat /tmp/sec/report.md
             echo
@@ -1764,6 +1880,7 @@ jobs:
         if: steps.version.outputs.release == 'true' && steps.build.outcome == 'success'
         run: |
           set -euo pipefail
+          source /tmp/sec/lib.sh
 
           TAG="${{ steps.version.outputs.version }}"
 
@@ -1780,12 +1897,9 @@ jobs:
             echo
             echo "### Contents"
             echo
-            echo "| tool | version |"
-            echo "|------|---------|"
-            echo "| psql | ${{ steps.meta.outputs.PSQL }} |"
-            echo "| pg_dump | ${{ steps.meta.outputs.PGDUMP }} |"
-            echo "| aws-cli | ${{ steps.meta.outputs.AWSCLI }} |"
-            echo "| alpine | ${{ steps.meta.outputs.ALPINE }} |"
+            if [ -f /tmp/sec/inventory.tsv ]; then
+              md_tools /tmp/sec/inventory.tsv
+            fi
             echo
             cat /tmp/sec/report.md
             echo
