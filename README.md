@@ -237,7 +237,8 @@ Highlights:
 
 ## Managed GitHub repos
 
-`terraform/github/<repo>/` manages the settings of a GitHub repository and installs a DeepSeek-backed PR agent into it.
+`terraform/github/<repo>/` manages the settings of a GitHub repository and installs a DeepSeek-backed agent into it -
+either the [PR agent](#what-the-agent-does) or, for the container-image repos, the [release agent](#release-agent).
 One directory per repo, one R2 state file each (`homelab/github/<repo>.tfstate`) - same per-resource model as the other
 layers.
 
@@ -246,13 +247,19 @@ layers.
 | `kalpak44/bunker-party`       | `github/bunker-party`       | same, plus a second agent pass that fixes SonarCloud issues behaviour-preservingly; PR check is the repo's own `build.yml`, which also publishes `ghcr.io/kalpak44/bunker-party` |
 | `kalpak44/code-viewer-bot`    | `github/code-viewer-bot`    | same as below, but no `pull_request` workflow - agent reviews and comments without merging |
 | `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, AI PR agent workflow |
+| `kalpak44/kubectl-awscli`     | `github/kubectl-awscli`     | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
 | `kalpak44/mac-calendar-mcp`   | `github/mac-calendar-mcp`   | same - but the repo has no `pull_request` workflow, so the agent reviews and comments without ever merging |
 | `kalpak44/mite-assistant-mcp` | `github/mite-assistant-mcp` | same                                                        |
 | `kalpak44/plugin-noco-tools`  | `github/plugin-noco-tools`  | same; PR check is the repo's own `build.yml`                |
+| `kalpak44/postgres-awscli`    | `github/postgres-awscli`    | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
 
 **CI stays with the repo.** This layer ships the agent and points it at the repo's own check via the
 `PR_CHECK_WORKFLOW` variable (`publish-frontend.yml` / `pr-check.yml`) - it does not manage the check itself. A repo
 with no `pull_request` workflow will never have a green check, so the agent will never merge anything there.
+
+The two `*-awscli` container-image repos are the exception: their build workflow *is* managed here, because the agent
+that bumps the tool versions and the workflow that publishes the resulting image are the same file. See
+[Release agent](#release-agent) below.
 
 Deploy: `just deploy github <repo>` (or the **GitHub - Deploy** workflow).
 
@@ -287,6 +294,55 @@ speaks - `wire_api = "chat"` was removed upstream. They talk directly, with no p
 **Both secret stores.** The key is written to the Actions *and* Dependabot stores. Runs triggered from a Dependabot PR
 read from the Dependabot store, so a key present only in the Actions store would be empty on exactly the PRs that
 matter.
+
+### Release agent
+
+`kubectl-awscli` and `postgres-awscli` are container-image repos rather than applications, so they get a different
+agent. Terraform pushes `.github/workflows/release.yml` into each. It runs **monthly at 05:00 UTC on the 1st**
+(`schedule`), on demand (`workflow_dispatch`, with a `force_release` input), and on every push to `main`.
+
+Two jobs:
+
+**`check-versions`** - skipped on push. Codex + DeepSeek resolves the latest upstream releases (kubectl from
+`dl.k8s.io/release/stable.txt`, Alpine from the Docker Hub tag list), edits the pins **in the Dockerfile itself**,
+builds the result to prove it works, and prepends a `CHANGELOG.md` entry with a from/to table plus a short prose
+paragraph. The workflow - not the agent - then commits to `main`. If nothing moved, the agent leaves the files alone
+and the run stops there.
+
+**`release`** - builds the multi-arch image, pushes `latest` / `<version>` / `<short-sha>` to GHCR with
+`org.opencontainers.image.*` + `io.homelab.tools.*` labels, generates an SPDX SBOM with **syft**, scans it with
+**grype**, uploads the SARIF to the Security tab, and cuts a GitHub release (notes = the new CHANGELOG section + a
+resolved-versions table + the digest, with the SBOM and scan report attached) whenever the version moved.
+
+**There is no versions file.** The Dockerfile is the source of truth for what goes in the image, and the newest
+`## vX.Y.Z` heading in `CHANGELOG.md` is the version that gets tagged and published. Two files, both human-readable,
+no third place to drift.
+
+**The agent is not trusted.** Four deterministic gates sit between it and the commit, all in bash:
+
+| Gate | Catches |
+|------------|---------------------------------------------------------------------------------------------|
+| scope      | anything changed outside `Dockerfile` and `CHANGELOG.md`                                     |
+| provenance | a version that does not exist upstream, a package that does not resolve, a pin moving backwards, an exact `=version` apk pin |
+| build      | a bump that does not build, or builds but whose tools do not run                             |
+| version    | a `CHANGELOG` heading that is missing, unchanged, backwards, or a major bump                 |
+
+The provenance gate is the important one: it re-resolves every pin against the registry and upstream independently of
+the agent, so a hallucinated version cannot reach `main` even if the model is confident about it. The prompt says
+"never guess"; the gate is what makes that true.
+
+**Why one workflow and not two.** A push made with `GITHUB_TOKEN` does not trigger another workflow run, so the agent's
+bump commit cannot re-fire `on: push`. The build is a dependent job in the same run instead.
+
+**Why the scan never blocks.** Most findings are unfixed CVEs in the Alpine base. Failing on them would freeze the
+monthly rebuild waiting on upstream, so grype is report-only - the report goes to the step summary, the Security tab
+and the release assets.
+
+**Pinned vs recorded.** Only what can be reliably pinned is pinned: the Alpine tag, and `KUBECTL_VERSION` in
+`kubectl-awscli` (dl.k8s.io keeps every release). `aws-cli` and the PostgreSQL client are installed *unversioned* from
+the Alpine package repo, because an exact `=version` apk pin breaks the moment Alpine drops that package - and
+`postgresql-client` without a number resolves to whichever major the release ships. Their versions are read back out of
+the built image and recorded in the labels and release notes instead. Bumping the Alpine tag is what moves them.
 
 ### `GH_ADMIN_TOKEN` scopes
 

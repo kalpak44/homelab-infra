@@ -34,6 +34,30 @@ No `github_repository_ruleset`. One was tried and removed — see the last non-n
 dropped from state, left in the repo. Use that pattern rather than deleting the resource: a plain delete would remove
 the file, and with no green check the agent would stop merging.
 
+**Exception — the container-image repos.** `kubectl-awscli` and `postgres-awscli` get `workflows/release.yml` instead
+of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow because the agent and the build cannot be
+separated: a push made with `GITHUB_TOKEN` does not trigger another workflow run, so the agent's bump commit would
+never fire a push-triggered build. Job one (`check-versions`, skipped on push) has Codex resolve the latest upstream
+kubectl / Alpine releases, edit the pins in the Dockerfile and prepend a `CHANGELOG.md` entry; job two (`release`)
+builds the multi-arch image, runs syft + grype, publishes to GHCR and cuts a release. These repos have no
+`PR_CHECK_WORKFLOW` and no PR agent.
+
+**No versions file.** The Dockerfile holds the pins; the newest `## vX.Y.Z` heading in `CHANGELOG.md` is the published
+version. Do not reintroduce a `versions.env` — it was tried and removed. It only duplicated what the Dockerfile already
+states, and gave the agent a second place to write a number that the build would then not actually use.
+
+**Never pin an apk package to an exact version.** `postgresql-client` and `aws-cli` are installed unversioned on
+purpose: an `=version` pin breaks the moment Alpine drops that package from its repo, and `postgresql-client` without a
+number already resolves to whichever major the release ships (18 on Alpine 3.23 and 3.24). The provenance gate rejects
+an `=` in the package list for exactly this reason. Bumping the Alpine tag is what moves these tools.
+
+**The prompt says "never guess"; four bash gates are what make it true.** Between the agent and the commit: scope (only
+`Dockerfile` and `CHANGELOG.md` may change), provenance (every pin re-resolved against the registry and upstream, no
+backwards moves, no exact apk pins), build (it compiles and its tools run), version (CHANGELOG heading is valid semver,
+moved forward, not a major bump). The bump reaches `main` with no human review, so these must stay in bash — never
+relax one into a prompt instruction. Terraform owns the workflow only; it never manages `Dockerfile` or `CHANGELOG.md`,
+so a bump never fights it.
+
 ## Non-negotiables
 
 - **Adopt, never create.** Existing repos come in via an `import` block, not a fresh `github_repository`. The import

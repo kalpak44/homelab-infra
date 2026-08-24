@@ -1,0 +1,810 @@
+# Managed by homelab-infra — terraform/github/postgres-awscli/workflows/release.yml
+# Edits made here in the target repo are overwritten by `just deploy github postgres-awscli`.
+#
+# One workflow, two entry points:
+#
+#   * monthly cron / manual dispatch — Codex CLI driving DeepSeek resolves the latest
+#     Alpine release, edits the pin in the Dockerfile directly, writes a CHANGELOG
+#     entry, and commits to main. If nothing moved, the run stops.
+#
+#   * push to main — skips the agent and just builds, scans and publishes.
+#
+# There is no versions file. The Dockerfile IS the source of truth, and the release
+# version is the newest `## vX.Y.Z` heading in CHANGELOG.md.
+#
+# The PostgreSQL client and aws-cli are installed unversioned from the Alpine package
+# repository, so the Alpine tag is the only pin — bumping it is what moves them.
+#
+# The agent is not trusted on any of it. Between the agent and the commit sit four
+# deterministic gates, in bash:
+#
+#   1. scope      — only Dockerfile and CHANGELOG.md may have changed
+#   2. provenance — the Alpine tag is re-resolved against the registry, every package
+#                   the Dockerfile installs is proven to exist in it, and neither may
+#                   move backwards; a hallucinated version cannot survive this
+#   3. build      — the image builds for amd64 and its tools actually run
+#   4. version    — CHANGELOG's top heading is valid semver and greater than the
+#                   newest existing release tag
+#
+# NOTE: a push made with GITHUB_TOKEN does not trigger another workflow run, so the
+# build cannot rely on the agent's commit re-firing `on: push`. That is why `release`
+# is a dependent job in the SAME run rather than a separate push-triggered workflow.
+#
+# DeepSeek serves the OpenAI Responses API directly, so Codex talks to it without a
+# proxy in between.
+
+name: Release
+
+on:
+  schedule:
+    - cron: "0 5 1 * *" # 05:00 UTC on the 1st of every month
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: Build and publish even when no version changed
+        type: boolean
+        default: false
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write # commit the bump, create the release
+  packages: write # push to GHCR
+  security-events: write # upload the grype SARIF
+
+# Never let two runs bump or publish the same repository at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/kalpak44/postgres-awscli
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Resolve upstream versions, verify them, commit the bump
+  # ---------------------------------------------------------------------------
+  check-versions:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      bumped: ${{ steps.commit.outputs.bumped }}
+      version: ${{ steps.commit.outputs.version }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure Git identity
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the required secret store?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        # One cheap call so credential/model/API issues fail immediately instead of
+        # halfway through a bump.
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 smoke.json
+            echo
+            exit 1
+          fi
+
+      - name: Run the version agent
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/prompt.md <<'AGENT_PROMPT'
+          You are the release agent for this container image repository.
+
+          `git`, `docker`, `curl`, `jq` and the `gh` CLI are installed and authenticated.
+
+          Your job is to decide whether this image should be rebuilt against newer
+          upstream tooling and, if so, to make that change in the Dockerfile itself.
+
+          You do NOT tag, push, publish or release anything, and you do NOT commit.
+          Later steps in this same workflow run do all of that. You only edit files.
+
+          ----------------------------------------------------------------------
+          WHERE THE VERSIONS LIVE
+          ----------------------------------------------------------------------
+
+          There is no versions file. The Dockerfile is the source of truth. Read it
+          before you do anything else:
+
+            cat Dockerfile
+
+          It contains exactly one pin:
+
+            FROM alpine:<tag>
+
+          Everything else — the PostgreSQL client, aws-cli, bash, coreutils — is
+          installed unversioned from the Alpine package repository. That is
+          deliberate: an exact apk pin breaks the moment Alpine drops the old
+          package, and `postgresql-client` without a number resolves to whichever
+          major that Alpine release ships. Do not add version numbers to any apk
+          package name.
+
+          So the Alpine tag is your only lever. Moving it is what moves the
+          PostgreSQL client and aws-cli.
+
+          The repository also contains backup.sh, restore.sh and entrypoint.sh. They
+          are application code and none of your business.
+
+          ----------------------------------------------------------------------
+          THE ONE RULE THAT MATTERS: NEVER GUESS
+          ----------------------------------------------------------------------
+
+          Every version you write into the Dockerfile must come from a command you
+          actually ran in this session and whose output you actually read.
+
+          Not from memory. Not from what looks plausible. Not from a pattern like
+          "the next minor after this one probably exists". Run the command, read the
+          output, use that exact string.
+
+          If a lookup fails, times out, or returns something you did not expect:
+          change nothing, and report the failure. A skipped month is completely
+          harmless. A wrong version is not.
+
+          Later steps re-verify the pin against upstream and fail the run if it does
+          not resolve. You cannot smuggle a guess past them, so do not try.
+
+          ----------------------------------------------------------------------
+          1. RESOLVE ALPINE
+          ----------------------------------------------------------------------
+
+          List the available 3.x tags and take the highest:
+
+            curl -fsSL 'https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100' \
+              | jq -r '.results[].name' | grep -E '^3\.[0-9]+$' | sort -V | tail -1
+
+          Then confirm the tag really exists in the registry:
+
+            docker manifest inspect alpine:<TAG> > /dev/null && echo ok
+
+          Move forward by at most ONE minor release per run (3.23 to 3.24, never 3.20
+          straight to 3.24). Stepping one release at a time keeps any regression
+          attributable to a single change, and next month's run continues the climb.
+
+          Never move backwards. Never use `edge`, `latest`, or a release candidate.
+
+          ----------------------------------------------------------------------
+          2. FIND OUT WHAT THE NEW ALPINE ACTUALLY SHIPS
+          ----------------------------------------------------------------------
+
+          Before changing anything, confirm every package the Dockerfile installs
+          still resolves in the candidate release, and see which versions you would
+          get:
+
+            docker run --rm alpine:<NEW_TAG> sh -c \
+              'apk add --no-cache --simulate postgresql-client aws-cli bash ca-certificates coreutils'
+
+          Read that output carefully. It prints the concrete package versions that
+          would be installed — including which `postgresqlNN-client` the unversioned
+          name resolves to. Those are the numbers to put in the changelog.
+
+          A PostgreSQL client major moving is the most consequential thing that can
+          happen here: pg_dump refuses to operate against a server newer than itself,
+          and dumps are not always readable by an older client. If the major changed,
+          the bump is still fine to make — but say so explicitly in the prose.
+
+          If any package fails to resolve, the bump is not viable. Change nothing and
+          report it.
+
+          ----------------------------------------------------------------------
+          3. DECIDE WHETHER ANYTHING CHANGED
+          ----------------------------------------------------------------------
+
+          Compare the resolved Alpine tag against what the Dockerfile currently pins.
+
+          If it would not change:
+
+            - change NOTHING
+            - do not touch the Dockerfile
+            - do not touch CHANGELOG.md
+            - report that the image is already current, and stop
+
+          Leaving the files untouched is how you signal "no release". A later step
+          detects it by diffing the working tree.
+
+          ----------------------------------------------------------------------
+          4. EDIT THE DOCKERFILE
+          ----------------------------------------------------------------------
+
+          Change ONLY the pinned tag. Do not reformat, reorder, restructure,
+          "improve" or otherwise rewrite the Dockerfile. Do not add or remove
+          packages, stages, users, entrypoints or commands. A reviewer reading your
+          diff should see one changed value and nothing else.
+
+          The single exception: if the new Alpine genuinely requires a corresponding
+          change to keep building — a package renamed, dropped, or moved between
+          repositories — then make that change too, keep it as small as possible, and
+          explain it in the changelog prose. You will already know from step 2
+          whether this applies. Never add a version number to a package name.
+
+          ----------------------------------------------------------------------
+          5. PROVE IT BUILDS
+          ----------------------------------------------------------------------
+
+          You must build the image yourself before you are done:
+
+            docker build -t candidate:local .
+
+          Then confirm the tools in it actually run:
+
+            docker run --rm --entrypoint sh candidate:local \
+              -c 'psql --version && pg_dump --version && pg_restore --version && aws --version'
+
+          If the build fails, or a tool does not run, do not leave the repository in
+          a broken state. Either fix the cause — if the fix is small, obvious and
+          clearly caused by the bump — or revert your edits with `git checkout --`
+          and report that the bump is not currently viable.
+
+          Never commit a state you have not built. A later step builds it again and
+          will fail the run, but that is a backstop, not your excuse to skip this.
+
+          ----------------------------------------------------------------------
+          6. WRITE THE CHANGELOG ENTRY
+          ----------------------------------------------------------------------
+
+          CHANGELOG.md is also where the release version lives. Its newest
+          `## vX.Y.Z` heading is what the workflow tags and publishes, so this step
+          is not decoration.
+
+          Read the current newest version:
+
+            head -20 CHANGELOG.md
+
+          Choose the next one by semver:
+
+            - patch  — the Alpine patch content moved but no tool version changed
+            - minor  — the Alpine tag moved, or any tool version changed
+            - major  — reserved for deliberate breaking changes to this image's
+                       interface: entrypoint, command, or the arguments the scripts
+                       accept. You must NEVER bump the major version. A PostgreSQL
+                       client major change is still a MINOR bump here — call it out
+                       in the prose instead.
+
+          Bump exactly once, even when several things moved — take the highest
+          applicable level.
+
+          Prepend a new section directly beneath the file's `# Changelog` title and
+          above the previous entry, in exactly this shape:
+
+            ## v<VERSION> — <YYYY-MM-DD>
+
+            | tool | from | to |
+            |------|------|----|
+            | alpine | 3.23 | 3.24 |
+            | postgresql-client | 18.6 | 18.7 |
+            | aws-cli | 2.34.63 | 2.35.1 |
+
+            <one short paragraph of prose>
+
+          Get the date from the environment — `date -u +%F` — never from memory.
+
+          The table is the machine-readable part. Include the Alpine row plus a row
+          for every tool whose version actually changed, using the numbers you read
+          from the apk simulation in step 2 and from the built image in step 5. Never
+          write a number you did not read from a command.
+
+          The prose is the human part. In two to four sentences, say what moved and
+          why someone pulling this image would care. If the PostgreSQL client major
+          changed, say so plainly and mention what it means for existing dumps. Be
+          concrete and factual.
+
+          Do not pad it. Do not speculate about changes you have not verified. If you
+          have nothing substantive to add beyond the table, one sentence is right.
+
+          ----------------------------------------------------------------------
+          HARD RULES
+          ----------------------------------------------------------------------
+
+          These override everything else.
+
+          - NEVER write a version you did not obtain from a command you ran.
+          - NEVER move a version backwards.
+          - NEVER move Alpine more than one minor release in a single run.
+          - NEVER add a version number to an apk package name.
+          - NEVER bump the major component of the image version.
+          - Edit ONLY Dockerfile and CHANGELOG.md.
+          - NEVER edit backup.sh, restore.sh or entrypoint.sh.
+          - NEVER edit anything under .github/ — that directory is managed by the
+            homelab-infra repository and your changes there would be overwritten.
+          - NEVER run git commit, git push, git tag, docker push, or gh release.
+          - NEVER restructure the Dockerfile; change the pinned tag only.
+          - NEVER leave the working tree in a state you have not successfully built.
+          - If any upstream lookup fails, change nothing and report it.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line per tool you considered:
+
+            <tool> — <old> -> <new> — <changed|already current>
+
+          Then one final line:
+
+            RESULT: <bumped to vX.Y.Z|no change>
+          AGENT_PROMPT
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message summary.md \
+            "$(cat /tmp/prompt.md)"
+
+      # --- Gate 1: scope --------------------------------------------------------
+      - name: Gate — the agent stayed in scope
+        run: |
+          set -euo pipefail
+
+          CHANGED=$(git status --porcelain | awk '{print $NF}' | grep -v '^summary\.md$' || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "No files changed."
+            exit 0
+          fi
+
+          echo "Agent changed:"
+          echo "$CHANGED"
+
+          UNEXPECTED=$(echo "$CHANGED" | grep -vE '^(Dockerfile|CHANGELOG\.md)$' || true)
+
+          if [ -n "$UNEXPECTED" ]; then
+            echo "::error::Agent modified files outside its allowed scope:"
+            echo "$UNEXPECTED"
+            exit 1
+          fi
+
+      # --- Gate 2: provenance ---------------------------------------------------
+      - name: Gate — the pin resolves upstream
+        # The strongest guard against a hallucinated version: re-resolve the tag
+        # independently of the agent, prove every package still exists in it, and
+        # refuse anything that does not.
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Dockerfile unchanged — nothing to verify."
+            exit 0
+          fi
+
+          ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
+
+          echo "Dockerfile pins: alpine=${ALPINE}"
+
+          if [ -z "$ALPINE" ]; then
+            echo "::error::Could not read the alpine tag out of the Dockerfile."
+            exit 1
+          fi
+
+          if ! echo "$ALPINE" | grep -qE '^3\.[0-9]+$'; then
+            echo "::error::Refusing alpine tag '${ALPINE}' — expected a 3.x release tag."
+            exit 1
+          fi
+
+          if ! docker manifest inspect "alpine:${ALPINE}" > /dev/null 2>&1; then
+            echo "::error::alpine:${ALPINE} does not exist in the registry."
+            exit 1
+          fi
+
+          # No apk package name may carry a version number, and every package the
+          # Dockerfile installs must resolve in the new base.
+          PKGS=$(sed -n '/apk add/,/;/p' Dockerfile \
+                 | grep -oE '^[[:space:]]+[a-z0-9][a-z0-9._+=-]*;?[[:space:]]*\\?$' \
+                 | tr -d ' ;\\' | grep -v '^$' || true)
+
+          if [ -z "$PKGS" ]; then
+            echo "::error::Could not read the apk package list out of the Dockerfile."
+            exit 1
+          fi
+
+          echo "Packages: $(echo "$PKGS" | tr '\n' ' ')"
+
+          if echo "$PKGS" | grep -qE '='; then
+            echo "::error::An apk package is pinned to an exact version — that breaks when Alpine drops it."
+            exit 1
+          fi
+
+          if ! docker run --rm "alpine:${ALPINE}" sh -c \
+                 "apk add --no-cache --simulate $(echo "$PKGS" | tr '\n' ' ')"; then
+            echo "::error::Not every package resolves in alpine:${ALPINE}."
+            exit 1
+          fi
+
+          # The pin may not move backwards.
+          OLD_ALPINE=$(git show HEAD:Dockerfile | grep -m1 -E '^FROM alpine:' | cut -d: -f2 | tr -d '[:space:]')
+
+          if [ "$(printf '%s\n%s\n' "$OLD_ALPINE" "$ALPINE" | sort -V | head -1)" != "$OLD_ALPINE" ]; then
+            echo "::error::alpine moved backwards: ${OLD_ALPINE} -> ${ALPINE}"
+            exit 1
+          fi
+
+          echo "Pin verified."
+
+      # --- Gate 3: it builds ----------------------------------------------------
+      - name: Gate — the bumped image builds and runs
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Dockerfile unchanged — skipping validation build."
+            exit 0
+          fi
+
+          docker build --load --platform linux/amd64 -t candidate:local .
+
+          docker run --rm --entrypoint sh candidate:local \
+            -c 'psql --version && pg_dump --version && pg_restore --version && aws --version'
+
+      # --- Gate 4: the version moved -------------------------------------------
+      - name: Gate — CHANGELOG names a new version
+        id: version
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Dockerfile unchanged — no version needed."
+            exit 0
+          fi
+
+          NEXT=$(grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md \
+                 | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
+
+          if [ -z "$NEXT" ]; then
+            echo "::error::CHANGELOG.md has no '## vX.Y.Z' heading — the agent must add one."
+            exit 1
+          fi
+
+          PREV=$(git show HEAD:CHANGELOG.md 2>/dev/null \
+                 | grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' \
+                 | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
+
+          echo "CHANGELOG version: ${PREV:-none} -> ${NEXT}"
+
+          if [ "$NEXT" = "$PREV" ]; then
+            echo "::error::The Dockerfile changed but the CHANGELOG version did not."
+            exit 1
+          fi
+
+          if [ -n "$PREV" ]; then
+            LOWEST=$(printf '%s\n%s\n' "${PREV#v}" "${NEXT#v}" | sort -V | head -1)
+            if [ "$LOWEST" != "${PREV#v}" ]; then
+              echo "::error::Version moved backwards: ${PREV} -> ${NEXT}"
+              exit 1
+            fi
+
+            PREV_MAJOR=${PREV#v}; PREV_MAJOR=${PREV_MAJOR%%.*}
+            NEXT_MAJOR=${NEXT#v}; NEXT_MAJOR=${NEXT_MAJOR%%.*}
+            if [ "$NEXT_MAJOR" != "$PREV_MAJOR" ]; then
+              echo "::error::Refusing a major version bump: ${PREV} -> ${NEXT}"
+              exit 1
+            fi
+          fi
+
+          echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push the bump
+        id: commit
+        run: |
+          set -euo pipefail
+
+          rm -f summary.md.tmp
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Nothing to release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            git checkout -- . || true
+            exit 0
+          fi
+
+          VERSION="${{ steps.version.outputs.version }}"
+
+          echo "--- Dockerfile diff ---"
+          git diff -- Dockerfile
+
+          git add Dockerfile CHANGELOG.md
+          git commit -m "bump tooling to ${VERSION}"
+          git push origin main
+
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Version check"
+            echo
+            if [ -f summary.md ]; then
+              cat summary.md
+            else
+              echo "Agent did not produce a summary."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 2. Build, scan, publish, release
+  # ---------------------------------------------------------------------------
+  release:
+    needs: [check-versions]
+    # Runs when: someone pushed to main, or the agent bumped something, or a
+    # dispatch explicitly forced it. `!cancelled()` is what lets this job run even
+    # though `check-versions` is skipped on push events.
+    if: >-
+      !cancelled()
+      && needs.check-versions.result != 'failure'
+      && (github.event_name == 'push'
+          || needs.check-versions.outputs.bumped == 'true'
+          || inputs.force_release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # `main`, not github.sha — on a scheduled run the agent has just pushed a
+          # commit that the workflow's own ref predates.
+          ref: main
+          fetch-depth: 0
+
+      - name: Read version and pins
+        id: ver
+        run: |
+          set -euo pipefail
+
+          VERSION=$(grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md \
+                    | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+
+          : "${VERSION:?CHANGELOG.md has no '## vX.Y.Z' heading}"
+
+          {
+            echo "VERSION=${VERSION}"
+            echo "ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')"
+            echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)"
+            echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Probe build
+        # Single-arch build first, so the labels below can state the versions that
+        # actually landed rather than restating the pin. The multi-arch build that
+        # follows reuses these layers from cache.
+        id: probe
+        run: |
+          set -euo pipefail
+
+          # --load is required: setup-buildx-action made the docker-container driver
+          # the default, and that driver leaves the result in the build cache rather
+          # than the local image store, so `docker run` below would not find it.
+          docker build --load --platform linux/amd64 -t probe:local .
+
+          PSQL=$(docker run --rm --entrypoint sh probe:local -c 'psql --version' | awk '{print $3}')
+          PGDUMP=$(docker run --rm --entrypoint sh probe:local -c 'pg_dump --version' | awk '{print $3}')
+          AWSCLI=$(docker run --rm --entrypoint sh probe:local -c 'aws --version 2>&1' | head -1 | awk '{print $1}' | cut -d/ -f2)
+
+          echo "PSQL=${PSQL}" >> "$GITHUB_OUTPUT"
+          echo "PGDUMP=${PGDUMP}" >> "$GITHUB_OUTPUT"
+          echo "AWSCLI=${AWSCLI}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.VERSION }}
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.SHORT_SHA }}
+          labels: |
+            org.opencontainers.image.title=postgres-awscli
+            org.opencontainers.image.description=Alpine ${{ steps.ver.outputs.ALPINE }} with the PostgreSQL ${{ steps.probe.outputs.PSQL }} client, aws-cli ${{ steps.probe.outputs.AWSCLI }} and backup/restore scripts
+            org.opencontainers.image.version=${{ steps.ver.outputs.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.ver.outputs.BUILD_DATE }}
+            org.opencontainers.image.base.name=docker.io/library/alpine:${{ steps.ver.outputs.ALPINE }}
+            io.homelab.tools.postgresql-client=${{ steps.probe.outputs.PSQL }}
+            io.homelab.tools.aws-cli=${{ steps.probe.outputs.AWSCLI }}
+            io.homelab.tools.alpine=${{ steps.ver.outputs.ALPINE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install syft and grype
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin v1.29.1
+          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin v0.98.0
+
+          syft version
+          grype version
+
+      - name: Generate SBOM
+        run: |
+          set -euo pipefail
+
+          syft "${IMAGE}:${{ steps.ver.outputs.SHORT_SHA }}" -o spdx-json > sbom.spdx.json
+          syft "${IMAGE}:${{ steps.ver.outputs.SHORT_SHA }}" -o table      > sbom.txt
+
+      - name: Scan for vulnerabilities
+        # Report-only, deliberately. Most findings here are unfixed base-image CVEs;
+        # blocking on them would freeze the monthly rebuild waiting on Alpine.
+        run: |
+          set -euo pipefail
+
+          grype sbom:sbom.spdx.json -o table > grype.txt
+          grype sbom:sbom.spdx.json -o sarif > grype.sarif
+          grype sbom:sbom.spdx.json -o json  > grype.json
+
+          for sev in Critical High Medium Low; do
+            COUNT=$(jq --arg s "$sev" '[.matches[] | select(.vulnerability.severity == $s)] | length' grype.json)
+            echo "${sev}=${COUNT}" >> "$GITHUB_ENV"
+          done
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: grype.sarif
+          category: grype
+
+      - name: Upload SBOM and scan
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-and-scan-${{ steps.ver.outputs.SHORT_SHA }}
+          path: |
+            sbom.spdx.json
+            sbom.txt
+            grype.txt
+            grype.json
+          retention-days: 90
+
+      - name: Assemble report
+        run: |
+          set -euo pipefail
+
+          {
+            echo "| tool | version |"
+            echo "|------|---------|"
+            echo "| psql | ${{ steps.probe.outputs.PSQL }} |"
+            echo "| pg_dump | ${{ steps.probe.outputs.PGDUMP }} |"
+            echo "| aws-cli | ${{ steps.probe.outputs.AWSCLI }} |"
+            echo "| alpine | ${{ steps.ver.outputs.ALPINE }} |"
+            echo
+            echo "**Vulnerabilities:** ${Critical} critical · ${High} high · ${Medium} medium · ${Low} low"
+          } > tools.md
+
+          {
+            echo "## postgres-awscli ${{ steps.ver.outputs.VERSION }}"
+            echo
+            cat tools.md
+            echo
+            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo
+            echo "**Tags:** \`latest\`, \`${{ steps.ver.outputs.VERSION }}\`, \`${{ steps.ver.outputs.SHORT_SHA }}\`"
+            echo
+            echo "<details><summary>Vulnerability report</summary>"
+            echo
+            echo '```'
+            head -100 grype.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub release
+        # Only when the version actually moved — a plain push to main republishes the
+        # image but does not cut a release.
+        if: needs.check-versions.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.ver.outputs.VERSION }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping."
+            exit 0
+          fi
+
+          # Prose comes from the CHANGELOG section the agent just wrote: everything
+          # from the newest `## ` heading up to the next one.
+          awk '/^## /{n++} n==1' CHANGELOG.md > notes.md
+
+          {
+            echo
+            echo "### Contents"
+            echo
+            cat tools.md
+            echo
+            echo "### Image"
+            echo
+            echo '```'
+            echo "docker pull ${IMAGE}:${TAG}"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> notes.md
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            sbom.spdx.json \
+            grype.txt

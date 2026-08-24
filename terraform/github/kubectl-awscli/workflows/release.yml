@@ -1,0 +1,788 @@
+# Managed by homelab-infra — terraform/github/kubectl-awscli/workflows/release.yml
+# Edits made here in the target repo are overwritten by `just deploy github kubectl-awscli`.
+#
+# One workflow, two entry points:
+#
+#   * monthly cron / manual dispatch — Codex CLI driving DeepSeek resolves the latest
+#     upstream kubectl and Alpine releases, edits the pins in the Dockerfile directly,
+#     writes a CHANGELOG entry, and commits to main. If nothing moved, the run stops.
+#
+#   * push to main — skips the agent and just builds, scans and publishes.
+#
+# There is no versions file. The Dockerfile IS the source of truth, and the release
+# version is the newest `## vX.Y.Z` heading in CHANGELOG.md.
+#
+# The agent is not trusted on any of it. Between the agent and the commit sit four
+# deterministic gates, in bash:
+#
+#   1. scope      — only Dockerfile and CHANGELOG.md may have changed
+#   2. provenance — every pin in the Dockerfile is re-resolved against upstream and
+#                   must exist; a hallucinated version cannot survive this
+#   3. build      — the image builds for amd64 and its tools actually run
+#   4. version    — CHANGELOG's top heading is valid semver and greater than the
+#                   newest existing release tag
+#
+# NOTE: a push made with GITHUB_TOKEN does not trigger another workflow run, so the
+# build cannot rely on the agent's commit re-firing `on: push`. That is why `release`
+# is a dependent job in the SAME run rather than a separate push-triggered workflow.
+#
+# DeepSeek serves the OpenAI Responses API directly, so Codex talks to it without a
+# proxy in between.
+
+name: Release
+
+on:
+  schedule:
+    - cron: "0 5 1 * *" # 05:00 UTC on the 1st of every month
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: Build and publish even when no version changed
+        type: boolean
+        default: false
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write # commit the bump, create the release
+  packages: write # push to GHCR
+  security-events: write # upload the grype SARIF
+
+# Never let two runs bump or publish the same repository at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/kalpak44/kubectl-awscli
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Resolve upstream versions, verify them, commit the bump
+  # ---------------------------------------------------------------------------
+  check-versions:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      bumped: ${{ steps.commit.outputs.bumped }}
+      version: ${{ steps.commit.outputs.version }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure Git identity
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the required secret store?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        # One cheap call so credential/model/API issues fail immediately instead of
+        # halfway through a bump.
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 smoke.json
+            echo
+            exit 1
+          fi
+
+      - name: Run the version agent
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/prompt.md <<'AGENT_PROMPT'
+          You are the release agent for this container image repository.
+
+          `git`, `docker`, `curl`, `jq` and the `gh` CLI are installed and authenticated.
+
+          Your job is to decide whether this image should be rebuilt against newer
+          upstream tooling and, if so, to make that change in the Dockerfile itself.
+
+          You do NOT tag, push, publish or release anything, and you do NOT commit.
+          Later steps in this same workflow run do all of that. You only edit files.
+
+          ----------------------------------------------------------------------
+          WHERE THE VERSIONS LIVE
+          ----------------------------------------------------------------------
+
+          There is no versions file. The Dockerfile is the source of truth. Read it
+          before you do anything else:
+
+            cat Dockerfile
+
+          It contains exactly two pins:
+
+            FROM alpine:<tag>              — the base image
+            ARG KUBECTL_VERSION=<version>  — kubectl, fetched from dl.k8s.io at build
+
+          aws-cli is installed from the Alpine package repository and is deliberately
+          NOT pinned: an exact apk pin breaks the moment Alpine drops the old package.
+          Its version follows the Alpine release. Do not add a pin for it.
+
+          ----------------------------------------------------------------------
+          THE ONE RULE THAT MATTERS: NEVER GUESS
+          ----------------------------------------------------------------------
+
+          Every version you write into the Dockerfile must come from a command you
+          actually ran in this session and whose output you actually read.
+
+          Not from memory. Not from what looks plausible. Not from a pattern like
+          "the next minor after this one probably exists". Run the command, read the
+          output, use that exact string.
+
+          If a lookup fails, times out, or returns something you did not expect:
+          change nothing, and report the failure. A skipped month is completely
+          harmless. A wrong version is not.
+
+          Later steps re-verify every pin you write against upstream and fail the run
+          if it does not resolve. You cannot smuggle a guess past them, so do not try.
+
+          ----------------------------------------------------------------------
+          1. RESOLVE kubectl
+          ----------------------------------------------------------------------
+
+          The current stable release is published as plain text:
+
+            curl -fsSL https://dl.k8s.io/release/stable.txt
+
+          Use that value verbatim, including its leading `v`.
+
+          Then confirm the binary for it actually exists before using it:
+
+            curl -fsIL -o /dev/null -w '%{http_code}\n' \
+              "https://dl.k8s.io/release/<VERSION>/bin/linux/amd64/kubectl"
+
+          That must print 200.
+
+          ----------------------------------------------------------------------
+          2. RESOLVE ALPINE
+          ----------------------------------------------------------------------
+
+          List the available 3.x tags and take the highest:
+
+            curl -fsSL 'https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100' \
+              | jq -r '.results[].name' | grep -E '^3\.[0-9]+$' | sort -V | tail -1
+
+          Then confirm the tag really exists in the registry:
+
+            docker manifest inspect alpine:<TAG> > /dev/null && echo ok
+
+          Move ALPINE forward by at most ONE minor release per run (3.20 to 3.21,
+          never 3.20 straight to 3.24). Stepping one release at a time keeps any
+          regression attributable to a single change, and next month's run continues
+          the climb.
+
+          Never move backwards. Never use `edge`, `latest`, or a release candidate.
+
+          ----------------------------------------------------------------------
+          3. DECIDE WHETHER ANYTHING CHANGED
+          ----------------------------------------------------------------------
+
+          Compare each resolved version against what the Dockerfile currently pins.
+
+          If NEITHER would change:
+
+            - change NOTHING
+            - do not touch the Dockerfile
+            - do not touch CHANGELOG.md
+            - report that the image is already current, and stop
+
+          Leaving the files untouched is how you signal "no release". A later step
+          detects it by diffing the working tree.
+
+          ----------------------------------------------------------------------
+          4. EDIT THE DOCKERFILE
+          ----------------------------------------------------------------------
+
+          Change ONLY the pinned values. Do not reformat, reorder, restructure,
+          "improve" or otherwise rewrite the Dockerfile. Do not add or remove
+          packages, stages, users, entrypoints or commands. A reviewer reading your
+          diff should see one or two changed values and nothing else.
+
+          The single exception: if a version bump genuinely requires a corresponding
+          Dockerfile change to keep building — an Alpine release renames a package,
+          drops one, or moves it between repositories — then make that change too,
+          keep it as small as possible, and explain it in the changelog prose.
+
+          Do not assume such a change is needed. Find out. Check whether the packages
+          the Dockerfile installs actually resolve in the new Alpine before deciding:
+
+            docker run --rm alpine:<NEW_TAG> \
+              sh -c 'apk add --no-cache --simulate bash ca-certificates curl jq aws-cli'
+
+          Read what that prints. It also tells you which aws-cli version the new
+          Alpine ships, which is useful for the changelog.
+
+          ----------------------------------------------------------------------
+          5. PROVE IT BUILDS
+          ----------------------------------------------------------------------
+
+          You must build the image yourself before you are done:
+
+            docker build -t candidate:local .
+
+          Then confirm the tools in it actually run:
+
+            docker run --rm --entrypoint sh candidate:local \
+              -c 'kubectl version --client=true && aws --version'
+
+          If the build fails, or a tool does not run, do not leave the repository in
+          a broken state. Either fix the cause — if the fix is small, obvious and
+          clearly caused by the bump — or revert your edits with `git checkout --`
+          and report that the bump is not currently viable.
+
+          Never commit a state you have not built. A later step builds it again and
+          will fail the run, but that is a backstop, not your excuse to skip this.
+
+          ----------------------------------------------------------------------
+          6. WRITE THE CHANGELOG ENTRY
+          ----------------------------------------------------------------------
+
+          CHANGELOG.md is also where the release version lives. Its newest
+          `## vX.Y.Z` heading is what the workflow tags and publishes, so this step
+          is not decoration.
+
+          Read the current newest version:
+
+            head -20 CHANGELOG.md
+
+          Choose the next one by semver:
+
+            - patch  — only the kubectl patch level moved (v1.36.4 -> v1.36.5)
+            - minor  — kubectl's minor or major moved, or Alpine moved
+            - major  — reserved for deliberate breaking changes to this image's
+                       interface: entrypoint, command, user, or installed tool set.
+                       You must NEVER bump the major version.
+
+          Bump exactly once, even when several things moved — take the highest
+          applicable level.
+
+          Prepend a new section directly beneath the file's `# Changelog` title and
+          above the previous entry, in exactly this shape:
+
+            ## v<VERSION> — <YYYY-MM-DD>
+
+            | tool | from | to |
+            |------|------|----|
+            | kubectl | v1.36.4 | v1.36.5 |
+            | alpine | 3.20 | 3.21 |
+
+            <one short paragraph of prose>
+
+          Get the date from the environment — `date -u +%F` — never from memory.
+
+          The table is the machine-readable part: one row per value you actually
+          changed, and nothing else.
+
+          The prose is the human part. In two to four sentences, say what moved and
+          why someone pulling this image would care. Mention notable kubectl changes
+          when the minor version moved, and note that aws-cli follows Alpine when the
+          base image moved. Be concrete and factual.
+
+          Do not pad it. Do not speculate about changes you have not verified. If you
+          have nothing substantive to add beyond the table, one sentence is right.
+
+          ----------------------------------------------------------------------
+          HARD RULES
+          ----------------------------------------------------------------------
+
+          These override everything else.
+
+          - NEVER write a version you did not obtain from a command you ran.
+          - NEVER move a version backwards.
+          - NEVER move Alpine more than one minor release in a single run.
+          - NEVER bump the major component of the image version.
+          - Edit ONLY Dockerfile and CHANGELOG.md.
+          - NEVER edit anything under .github/ — that directory is managed by the
+            homelab-infra repository and your changes there would be overwritten.
+          - NEVER run git commit, git push, git tag, docker push, or gh release.
+          - NEVER restructure the Dockerfile; change pinned values only.
+          - NEVER leave the working tree in a state you have not successfully built.
+          - If any upstream lookup fails, change nothing and report it.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line per tool you considered:
+
+            <tool> — <old> -> <new> — <changed|already current>
+
+          Then one final line:
+
+            RESULT: <bumped to vX.Y.Z|no change>
+          AGENT_PROMPT
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message summary.md \
+            "$(cat /tmp/prompt.md)"
+
+      # --- Gate 1: scope --------------------------------------------------------
+      - name: Gate — the agent stayed in scope
+        run: |
+          set -euo pipefail
+
+          CHANGED=$(git status --porcelain | awk '{print $NF}' | grep -v '^summary\.md$' || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "No files changed."
+            exit 0
+          fi
+
+          echo "Agent changed:"
+          echo "$CHANGED"
+
+          UNEXPECTED=$(echo "$CHANGED" | grep -vE '^(Dockerfile|CHANGELOG\.md)$' || true)
+
+          if [ -n "$UNEXPECTED" ]; then
+            echo "::error::Agent modified files outside its allowed scope:"
+            echo "$UNEXPECTED"
+            exit 1
+          fi
+
+      # --- Gate 2: provenance ---------------------------------------------------
+      - name: Gate — every pin resolves upstream
+        # The strongest guard against a hallucinated version: re-resolve each pin
+        # independently of the agent and refuse anything that does not exist.
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Dockerfile unchanged — nothing to verify."
+            exit 0
+          fi
+
+          ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
+          KUBECTL=$(grep -m1 -E '^ARG KUBECTL_VERSION=' Dockerfile | cut -d= -f2 | tr -d '[:space:]')
+
+          echo "Dockerfile pins: alpine=${ALPINE} kubectl=${KUBECTL}"
+
+          if [ -z "$ALPINE" ] || [ -z "$KUBECTL" ]; then
+            echo "::error::Could not read both pins out of the Dockerfile."
+            exit 1
+          fi
+
+          if ! echo "$ALPINE" | grep -qE '^3\.[0-9]+$'; then
+            echo "::error::Refusing alpine tag '${ALPINE}' — expected a 3.x release tag."
+            exit 1
+          fi
+
+          if ! echo "$KUBECTL" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Refusing kubectl version '${KUBECTL}' — expected vX.Y.Z."
+            exit 1
+          fi
+
+          if ! docker manifest inspect "alpine:${ALPINE}" > /dev/null 2>&1; then
+            echo "::error::alpine:${ALPINE} does not exist in the registry."
+            exit 1
+          fi
+
+          CODE=$(curl -fsIL -o /dev/null -w '%{http_code}' \
+            "https://dl.k8s.io/release/${KUBECTL}/bin/linux/amd64/kubectl" || true)
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::kubectl ${KUBECTL} is not downloadable from dl.k8s.io (HTTP ${CODE})."
+            exit 1
+          fi
+
+          # Neither pin may move backwards.
+          OLD_ALPINE=$(git show HEAD:Dockerfile | grep -m1 -E '^FROM alpine:' | cut -d: -f2 | tr -d '[:space:]')
+          OLD_KUBECTL=$(git show HEAD:Dockerfile | grep -m1 -E '^ARG KUBECTL_VERSION=' | cut -d= -f2 | tr -d '[:space:]')
+
+          if [ "$(printf '%s\n%s\n' "$OLD_ALPINE" "$ALPINE" | sort -V | head -1)" != "$OLD_ALPINE" ]; then
+            echo "::error::alpine moved backwards: ${OLD_ALPINE} -> ${ALPINE}"
+            exit 1
+          fi
+
+          if [ "$(printf '%s\n%s\n' "$OLD_KUBECTL" "$KUBECTL" | sort -V | head -1)" != "$OLD_KUBECTL" ]; then
+            echo "::error::kubectl moved backwards: ${OLD_KUBECTL} -> ${KUBECTL}"
+            exit 1
+          fi
+
+          echo "Both pins verified."
+
+      # --- Gate 3: it builds ----------------------------------------------------
+      - name: Gate — the bumped image builds and runs
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Dockerfile unchanged — skipping validation build."
+            exit 0
+          fi
+
+          docker build --load --platform linux/amd64 -t candidate:local .
+
+          docker run --rm --entrypoint sh candidate:local \
+            -c 'kubectl version --client=true && aws --version'
+
+      # --- Gate 4: the version moved -------------------------------------------
+      - name: Gate — CHANGELOG names a new version
+        id: version
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Dockerfile unchanged — no version needed."
+            exit 0
+          fi
+
+          NEXT=$(grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md \
+                 | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
+
+          if [ -z "$NEXT" ]; then
+            echo "::error::CHANGELOG.md has no '## vX.Y.Z' heading — the agent must add one."
+            exit 1
+          fi
+
+          PREV=$(git show HEAD:CHANGELOG.md 2>/dev/null \
+                 | grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' \
+                 | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
+
+          echo "CHANGELOG version: ${PREV:-none} -> ${NEXT}"
+
+          if [ "$NEXT" = "$PREV" ]; then
+            echo "::error::The Dockerfile changed but the CHANGELOG version did not."
+            exit 1
+          fi
+
+          if [ -n "$PREV" ]; then
+            LOWEST=$(printf '%s\n%s\n' "${PREV#v}" "${NEXT#v}" | sort -V | head -1)
+            if [ "$LOWEST" != "${PREV#v}" ]; then
+              echo "::error::Version moved backwards: ${PREV} -> ${NEXT}"
+              exit 1
+            fi
+
+            PREV_MAJOR=${PREV#v}; PREV_MAJOR=${PREV_MAJOR%%.*}
+            NEXT_MAJOR=${NEXT#v}; NEXT_MAJOR=${NEXT_MAJOR%%.*}
+            if [ "$NEXT_MAJOR" != "$PREV_MAJOR" ]; then
+              echo "::error::Refusing a major version bump: ${PREV} -> ${NEXT}"
+              exit 1
+            fi
+          fi
+
+          echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push the bump
+        id: commit
+        run: |
+          set -euo pipefail
+
+          rm -f summary.md.tmp
+
+          if git diff --quiet -- Dockerfile; then
+            echo "Nothing to release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            git checkout -- . || true
+            exit 0
+          fi
+
+          VERSION="${{ steps.version.outputs.version }}"
+
+          echo "--- Dockerfile diff ---"
+          git diff -- Dockerfile
+
+          git add Dockerfile CHANGELOG.md
+          git commit -m "bump tooling to ${VERSION}"
+          git push origin main
+
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Version check"
+            echo
+            if [ -f summary.md ]; then
+              cat summary.md
+            else
+              echo "Agent did not produce a summary."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 2. Build, scan, publish, release
+  # ---------------------------------------------------------------------------
+  release:
+    needs: [check-versions]
+    # Runs when: someone pushed to main, or the agent bumped something, or a
+    # dispatch explicitly forced it. `!cancelled()` is what lets this job run even
+    # though `check-versions` is skipped on push events.
+    if: >-
+      !cancelled()
+      && needs.check-versions.result != 'failure'
+      && (github.event_name == 'push'
+          || needs.check-versions.outputs.bumped == 'true'
+          || inputs.force_release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # `main`, not github.sha — on a scheduled run the agent has just pushed a
+          # commit that the workflow's own ref predates.
+          ref: main
+          fetch-depth: 0
+
+      - name: Read version and pins
+        id: ver
+        run: |
+          set -euo pipefail
+
+          VERSION=$(grep -m1 -E '^## v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md \
+                    | sed -E 's/^## (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+
+          : "${VERSION:?CHANGELOG.md has no '## vX.Y.Z' heading}"
+
+          {
+            echo "VERSION=${VERSION}"
+            echo "ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')"
+            echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)"
+            echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Probe build
+        # Single-arch build first, so the labels below can state the versions that
+        # actually landed rather than restating the pins. The multi-arch build that
+        # follows reuses these layers from cache.
+        id: probe
+        run: |
+          set -euo pipefail
+
+          # --load is required: setup-buildx-action made the docker-container driver
+          # the default, and that driver leaves the result in the build cache rather
+          # than the local image store, so `docker run` below would not find it.
+          docker build --load --platform linux/amd64 -t probe:local .
+
+          KUBECTL=$(docker run --rm --entrypoint sh probe:local \
+            -c 'kubectl version --client=true -o json' | jq -r '.clientVersion.gitVersion')
+          AWSCLI=$(docker run --rm --entrypoint sh probe:local \
+            -c 'aws --version 2>&1' | head -1 | awk '{print $1}' | cut -d/ -f2)
+
+          echo "KUBECTL=${KUBECTL}" >> "$GITHUB_OUTPUT"
+          echo "AWSCLI=${AWSCLI}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.VERSION }}
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.SHORT_SHA }}
+          labels: |
+            org.opencontainers.image.title=kubectl-awscli
+            org.opencontainers.image.description=Alpine ${{ steps.ver.outputs.ALPINE }} with kubectl ${{ steps.probe.outputs.KUBECTL }} and aws-cli ${{ steps.probe.outputs.AWSCLI }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.ver.outputs.BUILD_DATE }}
+            org.opencontainers.image.base.name=docker.io/library/alpine:${{ steps.ver.outputs.ALPINE }}
+            io.homelab.tools.kubectl=${{ steps.probe.outputs.KUBECTL }}
+            io.homelab.tools.aws-cli=${{ steps.probe.outputs.AWSCLI }}
+            io.homelab.tools.alpine=${{ steps.ver.outputs.ALPINE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install syft and grype
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin v1.29.1
+          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin v0.98.0
+
+          syft version
+          grype version
+
+      - name: Generate SBOM
+        run: |
+          set -euo pipefail
+
+          syft "${IMAGE}:${{ steps.ver.outputs.SHORT_SHA }}" -o spdx-json > sbom.spdx.json
+          syft "${IMAGE}:${{ steps.ver.outputs.SHORT_SHA }}" -o table      > sbom.txt
+
+      - name: Scan for vulnerabilities
+        # Report-only, deliberately. Most findings here are unfixed base-image CVEs;
+        # blocking on them would freeze the monthly rebuild waiting on Alpine.
+        run: |
+          set -euo pipefail
+
+          grype sbom:sbom.spdx.json -o table > grype.txt
+          grype sbom:sbom.spdx.json -o sarif > grype.sarif
+          grype sbom:sbom.spdx.json -o json  > grype.json
+
+          for sev in Critical High Medium Low; do
+            COUNT=$(jq --arg s "$sev" '[.matches[] | select(.vulnerability.severity == $s)] | length' grype.json)
+            echo "${sev}=${COUNT}" >> "$GITHUB_ENV"
+          done
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: grype.sarif
+          category: grype
+
+      - name: Upload SBOM and scan
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-and-scan-${{ steps.ver.outputs.SHORT_SHA }}
+          path: |
+            sbom.spdx.json
+            sbom.txt
+            grype.txt
+            grype.json
+          retention-days: 90
+
+      - name: Assemble report
+        run: |
+          set -euo pipefail
+
+          {
+            echo "| tool | version |"
+            echo "|------|---------|"
+            echo "| kubectl | ${{ steps.probe.outputs.KUBECTL }} |"
+            echo "| aws-cli | ${{ steps.probe.outputs.AWSCLI }} |"
+            echo "| alpine | ${{ steps.ver.outputs.ALPINE }} |"
+            echo
+            echo "**Vulnerabilities:** ${Critical} critical · ${High} high · ${Medium} medium · ${Low} low"
+          } > tools.md
+
+          {
+            echo "## kubectl-awscli ${{ steps.ver.outputs.VERSION }}"
+            echo
+            cat tools.md
+            echo
+            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo
+            echo "**Tags:** \`latest\`, \`${{ steps.ver.outputs.VERSION }}\`, \`${{ steps.ver.outputs.SHORT_SHA }}\`"
+            echo
+            echo "<details><summary>Vulnerability report</summary>"
+            echo
+            echo '```'
+            head -100 grype.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub release
+        # Only when the version actually moved — a plain push to main republishes the
+        # image but does not cut a release.
+        if: needs.check-versions.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.ver.outputs.VERSION }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping."
+            exit 0
+          fi
+
+          # Prose comes from the CHANGELOG section the agent just wrote: everything
+          # from the newest `## ` heading up to the next one.
+          awk '/^## /{n++} n==1' CHANGELOG.md > notes.md
+
+          {
+            echo
+            echo "### Contents"
+            echo
+            cat tools.md
+            echo
+            echo "### Image"
+            echo
+            echo '```'
+            echo "docker pull ${IMAGE}:${TAG}"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> notes.md
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            sbom.spdx.json \
+            grype.txt

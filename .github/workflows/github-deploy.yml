@@ -11,9 +11,11 @@ on:
           - bunker-party
           - code-viewer-bot
           - kalpak44
+          - kubectl-awscli
           - mac-calendar-mcp
           - mite-assistant-mcp
           - plugin-noco-tools
+          - postgres-awscli
 
 jobs:
   deploy:
