@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: proklinator
+  namespace: public
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`proklinator.online`) || Host(`www.proklinator.online`)
+      kind: Rule
+      services:
+        - name: proklinator
+          port: 80
+  tls:
+    certResolver: cloudflare

@@ -32,6 +32,34 @@ locals {
 Both the CNAME record and the tunnel ingress rule are generated automatically from this map via `for_each`.
 After editing, run `just deploy cloudflare shared/zero-trust` (or the **Cloudflare - Deploy** workflow).
 
+## Multiple zones — one dir, one tunnel, one map per zone
+
+`shared/zero-trust` manages **every** public zone, not just `pavel-usanli.online`. `proklinator.online` (registered
+at GoDaddy, nameservers delegated to Cloudflare) is the second. A third zone follows the same three steps:
+
+1. A `data "cloudflare_zone"` block for it.
+2. Its own `local.<zone>_apps` map and a matching `cloudflare_record` resource keyed off that zone's `zone_id`.
+3. Its hostnames folded into `local.all_hostnames`, which is what the ingress `dynamic` block iterates.
+
+**Ingress rules are keyed by hostname, records by record name.** `local.all_hostnames` is built with
+`concat(values(...))` rather than `merge(...)` precisely because `"www"` exists as a record name in both zones and
+would collide in a merged map.
+
+**Never split a zone into its own dir.** `cloudflare_zero_trust_tunnel_cloudflared_config` replaces a tunnel's
+*entire* ingress rule list, so a second state managing the same tunnel silently deletes the first one's rules on
+every apply. A separate dir was tried and removed: routing it without ingress rules meant weakening the catch-all
+from `http_status:404` to a Traefik forward, which traded an explicit hostname allowlist for a second state file
+and six extra Terraform files. One dir keeps the catch-all a real 404.
+
+**One tunnel, therefore one token.** A tunnel token identifies exactly one tunnel, so a second tunnel would mean a
+second `cloudflared` daemon on 192.168.1.10, a second systemd unit, and a second GitHub secret. `CLOUDFLARE_TUNNEL_TOKEN`
+covers all zones; adding a zone requires no Ansible change and no cloudflared restart, because the tunnel is remotely
+managed and the daemon pulls the new config itself.
+
+**The Traefik ACME token must cover every zone.** DNS-01 runs through the `cloudflare-api-token` secret; without
+`Zone:DNS:Edit` on the new zone, issuance fails for its hostnames. Harmless in practice — Cloudflare terminates TLS
+at the edge and the origin runs `no_tls_verify = true` — but Traefik retries for ever and fills its log.
+
 ## Kubernetes manifest
 
 - **Namespace:** `public`

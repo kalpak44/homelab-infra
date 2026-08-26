@@ -101,7 +101,7 @@ list:
     @printf "    %-40s %s\n" "dns/private/acestream"                   "acestream.internal → 192.168.1.7 (AceStream engine + acexy + Threadfin, Portainer stack)"
     @echo "  shared (non-DNS Cloudflare resources)"
     @printf "    %-40s %s\n" "shared/cloudflare-email"                 "contact@pavel-usanli.online → Gmail forwarding"
-    @printf "    %-40s %s\n" "shared/zero-trust"                       "Cloudflare Zero Trust tunnel (homelab) + ingress config"
+    @printf "    %-40s %s\n" "shared/zero-trust"                       "Cloudflare Zero Trust tunnel + public DNS (pavel-usanli.online, proklinator.online)"
     @echo
     @echo "Proxmox - LXCs + VMs (just deploy proxmox <resource>):"
     @printf "  %-14s %s\n" "adguard-lxc"    "LXC 200 · 192.168.1.2   · AdGuard Home"

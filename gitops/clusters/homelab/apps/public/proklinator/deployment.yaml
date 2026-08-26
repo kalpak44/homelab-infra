@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proklinator
+  namespace: public
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: proklinator
+  template:
+    metadata:
+      labels:
+        app: proklinator
+    spec:
+      automountServiceAccountToken: false
+      # Long enough for the preStop drain plus any in-flight request to finish.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: proklinator
+          # Placeholder — stock nginx welcome page until the real app exists.
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+              ephemeral-storage: 50Mi
+            limits:
+              memory: 64Mi
+              ephemeral-storage: 100Mi
+          startupProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 3
+            failureThreshold: 20 # up to 60s to come up before it counts as failed
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 20
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Give Traefik time to drop this pod from its endpoints before nginx
+              # exits, otherwise in-flight requests land on a dead pod.
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]

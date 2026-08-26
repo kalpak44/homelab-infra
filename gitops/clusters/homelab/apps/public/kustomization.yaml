@@ -9,3 +9,4 @@ resources:
 #  - google-assistant-mcp
   - nocobase
   - plugin-noco-tools
+  - proklinator
