@@ -16,6 +16,7 @@ on:
           - mite-assistant-mcp
           - plugin-noco-tools
           - postgres-awscli
+          - proklinator-app
 
 jobs:
   deploy:

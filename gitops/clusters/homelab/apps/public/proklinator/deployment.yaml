@@ -23,8 +23,10 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: proklinator
-          # Placeholder — stock nginx welcome page until the real app exists.
-          image: nginx:1.27-alpine
+          # Tag bumped by `just bump-images` — dispatched by the source repo's publish
+          # workflow, and swept nightly as a backstop. Keep the `image: <repo>:<tag>`
+          # shape on one line; the recipe rewrites it with sed.
+          image: ghcr.io/kalpak44/proklinator-app:8636146
           ports:
             - containerPort: 80
           resources:
@@ -56,6 +58,6 @@ spec:
           lifecycle:
             preStop:
               # Give Traefik time to drop this pod from its endpoints before nginx
-              # exits, otherwise in-flight requests land on a dead pod.
+              # exits; otherwise in-flight requests land on a dead pod.
               exec:
                 command: ["/bin/sh", "-c", "sleep 5"]

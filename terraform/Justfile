@@ -124,3 +124,4 @@ list:
     @printf "  %-20s %s\n" "mite-assistant-mcp" "kalpak44/mite-assistant-mcp · same"
     @printf "  %-20s %s\n" "plugin-noco-tools"  "kalpak44/plugin-noco-tools · same (PR check: build.yml)"
     @printf "  %-20s %s\n" "postgres-awscli"    "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
+    @printf "  %-20s %s\n" "proklinator-app"    "kalpak44/proklinator-app · same (PR check: publish-frontend.yml) + GH_ADMIN_TOKEN for the cluster deploy dispatch"

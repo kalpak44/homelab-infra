@@ -2,10 +2,24 @@ name: GitOps - Bump images
 
 # Points the public apps at the newest image their source repo has successfully
 # published, then pushes. Flux picks the change up from Git and rolls the Deployment.
+#
+# Two ways in. The nightly sweep queries each source repo for its last successful
+# publish. A source repo can also dispatch this at the end of its own publish run to
+# deploy immediately — it must pass both `app` and `sha`, because at that moment its
+# run is not marked successful yet and the query would return the previous commit.
 on:
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      app:
+        description: Bump only this app (gitops dir name). Empty = sweep all.
+        required: false
+        type: string
+      sha:
+        description: Commit SHA to deploy. Requires app. Empty = query the source repo.
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -25,4 +39,4 @@ jobs:
         with:
           token: ${{ secrets.GH_ADMIN_TOKEN }}
       - uses: extractions/setup-just@v2
-      - run: just bump-images
+      - run: just bump-images "${{ inputs.app }}" "${{ inputs.sha }}"

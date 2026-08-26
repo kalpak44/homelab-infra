@@ -20,13 +20,19 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 # gitops app dir | source repo | publish workflow | image (no tag)
 apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml|ghcr.io/kalpak44/kalpak44
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
-bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party"
+bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party
+proklinator|kalpak44/proklinator-app|publish-frontend.yml|ghcr.io/kalpak44/proklinator-app"
 
 _help:
     @just --list
 
+# `only` limits the sweep to one app; `sha` supplies its commit instead of querying.
+# A publish workflow that dispatches this at the end of its own run MUST pass both: at
+# that moment its run is still in_progress, so the --status success query below would
+# return the *previous* commit and quietly deploy a stale image.
+#
 # Rewrite each app's image tag to the latest published one, then commit and push
-bump-images:
+bump-images only='' sha='':
     #!/usr/bin/env bash
     set -euo pipefail
     export GH_TOKEN="${GH_ADMIN_TOKEN:-${GITHUB_TOKEN:-}}"
@@ -35,20 +41,36 @@ bump-images:
         exit 1
     fi
 
+    only='{{only}}'
+    given_sha='{{sha}}'
+
+    if [ -n "$given_sha" ] && [ -z "$only" ]; then
+        echo "sha given without an app — pass both or neither" >&2
+        exit 1
+    fi
+
     cd "$(git rev-parse --show-toplevel)"
     bumped=()
+    matched=0
 
     while IFS='|' read -r app repo workflow image; do
         [ -z "$app" ] && continue
+        [ -n "$only" ] && [ "$app" != "$only" ] && continue
+        matched=1
         file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
 
-        # --event push --branch main matters: these workflows also run on pull_request,
-        # but the job that actually pushes the image is gated to pushes on the default
-        # branch. A successful PR run would otherwise hand us a SHA that was never
-        # published, and we would point the cluster at a tag that does not exist.
-        sha=$(gh run list --repo "$repo" --workflow "$workflow" \
-                --event push --branch main \
-                --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+        if [ -n "$given_sha" ]; then
+            sha="$given_sha"
+        else
+            # --event push --branch main matters: these workflows also run on
+            # pull_request, but the job that actually pushes the image is gated to
+            # pushes on the default branch. A successful PR run would otherwise hand us
+            # a SHA that was never published, and we would point the cluster at a tag
+            # that does not exist.
+            sha=$(gh run list --repo "$repo" --workflow "$workflow" \
+                    --event push --branch main \
+                    --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+        fi
         if [ -z "$sha" ]; then
             echo "$app: no successful $workflow run in $repo — skipping" >&2
             continue
@@ -75,6 +97,11 @@ bump-images:
         echo "$app: $current -> $new"
         bumped+=("$app")
     done <<< '{{ apps }}'
+
+    if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
+        echo "no app named '$only' is tracked" >&2
+        exit 1
+    fi
 
     if [ ${#bumped[@]} -eq 0 ]; then
         echo "nothing to do"
