@@ -26,7 +26,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml|ghcr.io/kalpak44/kalpak44
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
 bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party
-proklinator|kalpak44/proklinator-app|publish-frontend.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api"
+proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api"
 
 _help:
     @just --list
@@ -72,9 +72,18 @@ bump-images only='' sha='':
             # pushes on the default branch. A successful PR run would otherwise hand us
             # a SHA that was never published, and we would point the cluster at a tag
             # that does not exist.
+            #
+            # `|| true` because gh exits non-zero when the workflow name does not exist
+            # at all, and under `set -e` that assignment would abort the whole sweep —
+            # including the apps further down the list. Renaming a publish workflow in a
+            # source repo is a two-repo change and the two halves cannot land at the same
+            # instant, so that window has to degrade to "skip this app", which is exactly
+            # what the guard below already does for a workflow that exists but has never
+            # succeeded.
             sha=$(gh run list --repo "$repo" --workflow "$workflow" \
                     --event push --branch main \
-                    --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+                    --status success --limit 1 --json headSha --jq '.[0].headSha // empty' \
+                    2>/dev/null || true)
         fi
         if [ -z "$sha" ]; then
             echo "$app: no successful $workflow run in $repo — skipping" >&2

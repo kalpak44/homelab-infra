@@ -29,6 +29,24 @@ spec:
           image: ghcr.io/kalpak44/proklinator-api:930b9c4
           ports:
             - containerPort: 3000
+          # Written by externalsecret.yaml from the Vault secret `proklinator-secrets`.
+          # Listed one by one rather than with envFrom so the manifest states exactly
+          # what the container gets: an envFrom silently grows a new variable into the
+          # pod the moment someone adds a key in Vault.
+          #
+          # These are live keys. CI puts test keys in the same variable names, which is
+          # why nothing in the API branches on environment.
+          env:
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: proklinator-secrets
+                  key: STRIPE_SECRET_KEY
+            - name: STRIPE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: proklinator-secrets
+                  key: STRIPE_PUBLISHABLE_KEY
           resources:
             requests:
               cpu: 10m
