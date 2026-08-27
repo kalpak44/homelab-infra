@@ -7,8 +7,23 @@ spec:
   entryPoints:
     - public-web-secure
   routes:
+    # /api is served by the API pod, everything else by nginx. Same host on purpose:
+    # the browser calls a same-origin path, so there is no CORS to configure.
+    #
+    # The parentheses matter — `&&` binds tighter than `||`, so without them this
+    # would read as "apex, or www under /api" and send apex /api calls to the site.
+    #
+    # Priorities are explicit rather than left to Traefik's rule-length default, so
+    # editing either match cannot silently reorder them. Higher wins.
+    - match: (Host(`proklinator.online`) || Host(`www.proklinator.online`)) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: proklinator-api
+          port: 3000
     - match: Host(`proklinator.online`) || Host(`www.proklinator.online`)
       kind: Rule
+      priority: 10
       services:
         - name: proklinator
           port: 80
