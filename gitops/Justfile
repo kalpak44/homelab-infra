@@ -14,14 +14,19 @@
 # The image is listed per app rather than derived from the repo, because the gitops dir
 # name, the source repo and the image name do not always agree — bunker-game-app is
 # built from bunker-party.
+#
+# An app may list several comma-separated images when one repo publishes more than one —
+# proklinator ships the site and its API from the same commit. They are bumped to the same
+# tag in the same commit, so the pair can never drift apart. Which manifest holds which
+# image is discovered by grep, so the file names do not matter.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-# gitops app dir | source repo | publish workflow | image (no tag)
+# gitops app dir | source repo | publish workflow | image(s), comma-separated, no tag
 apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml|ghcr.io/kalpak44/kalpak44
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
 bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party
-proklinator|kalpak44/proklinator-app|publish-frontend.yml|ghcr.io/kalpak44/proklinator-app"
+proklinator|kalpak44/proklinator-app|publish-frontend.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api"
 
 _help:
     @just --list
@@ -57,7 +62,7 @@ bump-images only='' sha='':
         [ -z "$app" ] && continue
         [ -n "$only" ] && [ "$app" != "$only" ] && continue
         matched=1
-        file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
+        dir="gitops/clusters/homelab/apps/public/${app}"
 
         if [ -n "$given_sha" ]; then
             sha="$given_sha"
@@ -77,25 +82,42 @@ bump-images only='' sha='':
         fi
         new="${sha:0:7}"
 
-        current=$(sed -nE "s|^ *image: ${image}:(.*)$|\1|p" "$file" | head -1)
-        if [ -z "$current" ]; then
-            echo "$app: no '${image}:<tag>' line in $file — skipping" >&2
-            continue
-        fi
+        # An app can publish more than one image, and they all move to the same tag —
+        # they came out of the same commit. The manifest holding each one is found by
+        # grep rather than assumed to be deployment.yaml, so splitting an app across
+        # files needs no change here.
+        app_bumped=0
+        IFS=',' read -ra images <<< "$image"
+        for img in "${images[@]}"; do
+            short="${img##*/}"
+            file=$(grep -rlE "^ *image: ${img}:" "$dir" | head -1 || true)
+            if [ -z "$file" ]; then
+                echo "$app: no '${img}:<tag>' line under $dir — skipping" >&2
+                continue
+            fi
 
-        if [ "$current" = "$new" ]; then
-            echo "$app: already on $new"
-            continue
-        fi
+            current=$(sed -nE "s|^ *image: ${img}:(.*)$|\1|p" "$file" | head -1)
 
-        if [ "${DRY_RUN:-}" = "1" ]; then
-            echo "$app: would bump $current -> $new"
-            continue
-        fi
+            if [ "$current" = "$new" ]; then
+                echo "$app: $short already on $new"
+                continue
+            fi
 
-        sed -i.bak -E "s|^( *image: ${image}:).*$|\1${new}|" "$file" && rm -f "${file}.bak"
-        echo "$app: $current -> $new"
-        bumped+=("$app")
+            if [ "${DRY_RUN:-}" = "1" ]; then
+                echo "$app: $short would bump $current -> $new"
+                continue
+            fi
+
+            sed -i.bak -E "s|^( *image: ${img}:).*$|\1${new}|" "$file" && rm -f "${file}.bak"
+            echo "$app: $short $current -> $new"
+            app_bumped=1
+        done
+
+        # Once per app, however many of its images moved — the commit message lists
+        # apps, not images.
+        if [ "$app_bumped" -eq 1 ]; then
+            bumped+=("$app")
+        fi
     done <<< '{{ apps }}'
 
     if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
@@ -123,7 +145,14 @@ list:
     echo "Image tags bumped by 'just bump-images':"
     while IFS='|' read -r app repo workflow image; do
         [ -z "$app" ] && continue
-        file="gitops/clusters/homelab/apps/public/${app}/deployment.yaml"
-        tag=$(sed -nE "s|^ *image: ${image}:(.*)$|\1|p" "$file" | head -1)
-        printf "  %-20s %-40s now=%s  (from %s)\n" "$app" "$image" "${tag:-?}" "$workflow"
+        dir="gitops/clusters/homelab/apps/public/${app}"
+        IFS=',' read -ra images <<< "$image"
+        for img in "${images[@]}"; do
+            file=$(grep -rlE "^ *image: ${img}:" "$dir" | head -1 || true)
+            tag=''
+            if [ -n "$file" ]; then
+                tag=$(sed -nE "s|^ *image: ${img}:(.*)$|\1|p" "$file" | head -1)
+            fi
+            printf "  %-20s %-45s now=%s  (from %s)\n" "$app" "$img" "${tag:-?}" "$workflow"
+        done
     done <<< '{{ apps }}'

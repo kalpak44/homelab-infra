@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proklinator-api
+  namespace: public
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: proklinator-api
+  template:
+    metadata:
+      labels:
+        app: proklinator-api
+    spec:
+      automountServiceAccountToken: false
+      # Long enough for the preStop drain plus any in-flight request to finish.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: proklinator-api
+          # Built from the same commit as proklinator-app and bumped in the same
+          # sweep, so the site and its API always share a tag. Keep the
+          # `image: <repo>:<tag>` shape on one line; the recipe rewrites it with sed.
+          image: ghcr.io/kalpak44/proklinator-api:dedb819
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+              ephemeral-storage: 50Mi
+            limits:
+              memory: 128Mi
+              ephemeral-storage: 100Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 3
+            failureThreshold: 20 # up to 60s to come up before it counts as failed
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 20
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Give Traefik time to drop this pod from its endpoints before node
+              # exits; otherwise in-flight requests land on a dead pod.
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]

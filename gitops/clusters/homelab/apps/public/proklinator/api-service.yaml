@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: proklinator-api
+  namespace: public
+spec:
+  selector:
+    app: proklinator-api
+  ports:
+    - port: 3000
+      targetPort: 3000

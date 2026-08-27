@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+  - api-deployment.yaml
+  - api-service.yaml
   - ingressroute.yaml
 
 namespace: public
