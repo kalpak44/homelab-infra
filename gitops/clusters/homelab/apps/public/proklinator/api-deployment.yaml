@@ -57,6 +57,14 @@ spec:
               ephemeral-storage: 100Mi
           securityContext:
             runAsNonRoot: true
+            # Required, not decorative. Dockerfile.api ends with `USER node`, and the
+            # kubelet cannot prove a *named* user is non-root — it refuses the container
+            # with "has runAsNonRoot and image has non-numeric user (node), cannot verify
+            # user is non-root" and the pod sits in CreateContainerConfigError for ever.
+            # 1000:1000 is what `node` resolves to in the image; verified against the
+            # published tag, not assumed from the base image.
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
