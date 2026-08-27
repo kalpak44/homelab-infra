@@ -39,7 +39,7 @@ refuses: human-authored ones. It is `pull_request_target`-driven, so its allowli
 Actions variable) runs in its own job with no PR code on disk — never move a checkout above it. The allowlist matches
 `.author.login` from the API, never git author name/email, which are unauthenticated free text. It never writes to the
 PR branch. `ALLOW_MERGE` is computed in bash from build + Playwright QA + mergeability, so the prompt can refuse a merge
-but never grant one. It merges with `GH_ADMIN_TOKEN`, because a `GITHUB_TOKEN` push does not start `publish-frontend.yml`.
+but never grant one. It merges with `GH_ADMIN_TOKEN`, because a `GITHUB_TOKEN` push does not start `publish.yml`.
 
 **Exception — `proklinator-app` closes a loop.** `workflows/ai-issue-agent.yml` implements an issue labelled `ai:ready`
 and opens a PR; `ai-pr-review.yml` reviews it and either merges or hands it back. **The issue is the state machine**

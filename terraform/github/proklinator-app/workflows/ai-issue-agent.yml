@@ -254,6 +254,15 @@ jobs:
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
 
+      # Stripe TEST keys, under the same variable names the API reads in the cluster,
+      # where the values come from Vault via External Secrets. Identical names, different
+      # values — that is what lets the API have no environment switch in it, and it lets
+      # this agent actually run a checkout path rather than write one blind.
+      #
+      # Test keys only. Never the Vault values: this job runs model-written code.
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+
       REPO: ${{ github.repository }}
       MODE: ${{ needs.plan.outputs.mode }}
       ISSUE: ${{ needs.plan.outputs.issue }}
@@ -425,7 +434,50 @@ jobs:
             APP_URL      where the app serves once you build and start it
             PW_DIR       a Playwright install with chromium already downloaded
 
+            STRIPE_SECRET_KEY       Stripe TEST secret key
+            STRIPE_PUBLISHABLE_KEY  Stripe TEST publishable key
+
           `gh` and `git` are installed and authenticated. Dependencies are installed.
+
+          ----------------------------------------------------------------------
+          THE API AND ITS CREDENTIALS
+          ----------------------------------------------------------------------
+
+          This repository ships two things. The site is a Vite + React app in `src/`. The
+          API is a small Express app in `backend/`, with its own `package.json`, served at
+          `/api` on the same host — Traefik routes `PathPrefix(/api)` to it. Routes are
+          declared with `/api` already on them; the prefix is not stripped.
+
+          The two STRIPE_ variables above are already in your environment. They are the
+          same names the API reads in production, where the values come from Vault. Only
+          the values differ. Here they are TEST keys, so you can run and exercise anything
+          that talks to Stripe without real money moving.
+
+          Read configuration from the environment with those exact names. Do not invent a
+          second name, do not add a `.env` file, do not read from a config file, and do not
+          pass a key as a Docker build arg — a build arg is recorded in the layer history
+          of a public image. Do not branch on NODE_ENV to choose a key: code that picks a
+          key by environment is code that can pick the wrong one.
+
+          Run the API like this:
+
+            cd backend && npm ci
+            STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+            STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY" \
+            PORT=3100 node src/server.js &
+            curl -s localhost:3100/api/health
+
+          `/api/health` reports `"stripe": "configured"` when both arrived. Use it to prove
+          your wiring works instead of assuming it does.
+
+          Absolute rules about these keys — breaking one is worse than not finishing:
+
+          - The SECRET key never leaves the server. Never in a response body, never in
+            anything the browser can fetch, never in `src/`, never in the built bundle.
+          - Never log either key, or any prefix or suffix of one, even at debug level.
+          - Never commit a key, or a real-looking key, anywhere — including tests,
+            fixtures, comments and documentation. Use an obvious placeholder.
+          - The publishable key is safe to send to the browser. That is the only one.
 
           ----------------------------------------------------------------------
           HOW TO RUN AND LOOK AT THE APP

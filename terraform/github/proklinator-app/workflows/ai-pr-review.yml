@@ -261,13 +261,24 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Merging with GITHUB_TOKEN produces a push that does NOT start another workflow
-      # run, so publish-frontend.yml would never build the merged main and the cluster
+      # run, so publish.yml would never build the merged main and the cluster
       # would never see the change. The PAT this repo already holds for the GitOps
       # dispatch is reused for the merge alone — comments stay under the bot identity.
       GH_MERGE_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
 
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      # Stripe TEST keys, under the same variable names the API reads in the cluster —
+      # there the values come from Vault via External Secrets. Identical names, different
+      # values, so nothing in backend/ has to branch on environment and the reviewer can
+      # actually exercise a checkout path instead of reading it and guessing.
+      #
+      # Test keys only. This job runs the pull request's own code, so whatever is in this
+      # environment is reachable by it; that is acceptable for keys that cannot move money
+      # and would not be for live ones. Never put the Vault values here.
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
 
       REPO: ${{ github.repository }}
       PR: ${{ needs.gate.outputs.pr }}
@@ -301,7 +312,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24" # what publish-frontend.yml builds with
+          node-version: "24" # what publish.yml builds with
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -742,6 +753,44 @@ jobs:
             MERGE_BLOCKERS    why ALLOW_MERGE is false, when it is
             PR_CHECK_WORKFLOW the repository's own PR check workflow
             MAX_ROUNDS        how many times an agent-authored PR may be sent back
+
+            STRIPE_SECRET_KEY       Stripe TEST secret key
+            STRIPE_PUBLISHABLE_KEY  Stripe TEST publishable key
+
+          ----------------------------------------------------------------------
+          THE API AND ITS CREDENTIALS
+          ----------------------------------------------------------------------
+
+          This repository ships two things: the site, and an Express API under `backend/`
+          served at `/api` on the same host.
+
+          The two STRIPE_ variables above are already in your environment. They are the
+          same names the API reads in production, where the values come from Vault — only
+          the values differ, so no code branches on environment. Here they are TEST keys:
+          you may exercise checkout and any Stripe call freely, and no real money can move.
+
+          If the pull request touches `backend/`, do not review it by reading alone. Start
+          it and call it:
+
+            cd backend && npm ci
+            STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+            STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY" \
+            PORT=3100 node src/server.js &
+            curl -s localhost:3100/api/health
+
+          `/api/health` reports `"stripe": "configured"` when both variables arrived. If a
+          change claims to read configuration and that still says `"missing"`, the wiring
+          is broken no matter how the diff looks.
+
+          Two things are always blocking on this repository, whatever else you find:
+
+            - a Stripe key, or any prefix of one, appearing in a response body, a log line,
+              an error message, a client bundle, or a committed file
+            - the publishable/secret distinction being confused — the secret key must never
+              be sent to the browser under any circumstance
+
+          Check `dist/` after a build if the pull request touches anything that could put a
+          key in it.
 
           The working tree is a checkout you must treat as READ-ONLY.
 

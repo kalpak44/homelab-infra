@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+  - externalsecret.yaml
   - api-deployment.yaml
   - api-service.yaml
   - ingressroute.yaml

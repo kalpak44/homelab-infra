@@ -62,7 +62,7 @@ resource "github_actions_variable" "deepseek_model" {
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
-  value         = "publish-frontend.yml"
+  value         = "publish.yml"
 }
 
 # Who ai-pr-review.yml is allowed to act on. A variable rather than a secret on purpose:
@@ -85,7 +85,7 @@ resource "github_actions_variable" "ai_max_review_rounds" {
 }
 
 # --- Cluster deploy trigger ---------------------------------------------------------
-# publish-frontend.yml dispatches homelab-infra's gitops-bump-images workflow once the
+# publish.yml dispatches homelab-infra's gitops-bump-images workflow once the
 # image is in GHCR, so a merge to main reaches the cluster without waiting for the daily
 # cron. The job's own GITHUB_TOKEN is scoped to this repo and cannot dispatch another
 # one, hence a PAT. Same credential homelab-infra already uses — Terraform only copies
