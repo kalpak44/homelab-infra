@@ -1,0 +1,809 @@
+# Managed by homelab-infra — terraform/github/proklinator-app/workflows/ai-issue-agent.yml
+# Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
+#
+# The implementer. Third and last agent in the loop:
+#
+#   issue labelled ai:ready
+#        │
+#        ▼
+#   ai-issue-agent (implement)  ──push──>  PR "Closes #n"
+#        ▲                                      │
+#        │                          pull_request_target fires
+#        │                                      ▼
+#        │                              ai-pr-review.yml
+#        │                                      │
+#        │                      approve+merge ──┴── REQUEST_CHANGES
+#        │                            │                    │
+#        │                        issue closed        dispatches us back
+#        └────────── (revise) ◄───────────────────────────┘
+#
+# Two modes, one file, because they share every setup step and differ only in the prompt:
+#
+#   implement — from an issue. Claim it, branch, write the change, open the PR.
+#   revise    — from a PR. Read the unresolved review threads, fix, reply, resolve.
+#
+# STATE LIVES ON THE ISSUE. The ai:* labels are the loop's state machine and they are
+# what a human reads to know where something is. The PR is scratch space. The revision
+# round number is not stored anywhere at all — it is counted from CHANGES_REQUESTED
+# reviews on the PR, so there is no marker that can drift out of sync with reality.
+#
+# TOKENS. Two, and the split is forced, not stylistic:
+#   GITHUB_TOKEN   — issues: comment, label, close. The PAT is read-only on issues.
+#   GH_ADMIN_TOKEN — git push and `gh pr create`. A PR opened with GITHUB_TOKEN triggers
+#                    NO workflow runs, so the reviewer would never see it and the repo's
+#                    own pull_request check would never run. Opening it under the PAT
+#                    also makes the author a human account, which is why the dependency
+#                    sweep in ai-pr-agent.yml leaves these PRs alone with no change.
+
+name: AI Issue Agent
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to implement (implement mode)"
+        required: false
+        type: string
+      pr:
+        description: "Pull request number to revise from review feedback (revise mode)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+# Never cancel an implementation halfway — it would leave the issue claimed with no PR.
+# Keyed per issue/PR so unrelated work runs in parallel.
+concurrency:
+  group: ai-issue-agent-${{ inputs.pr || inputs.issue || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------------
+  # Plan — decide the mode and whether to run at all. No repository code executed here.
+  # ---------------------------------------------------------------------------------
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      mode: ${{ steps.plan.outputs.mode }}
+      issue: ${{ steps.plan.outputs.issue }}
+      pr: ${{ steps.plan.outputs.pr }}
+      branch: ${{ steps.plan.outputs.branch }}
+      round: ${{ steps.plan.outputs.round }}
+      max_rounds: ${{ steps.plan.outputs.max_rounds }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+
+      ALLOWLIST: ${{ vars.PR_REVIEW_ALLOWLIST }}
+      MAX_ROUNDS: ${{ vars.AI_MAX_REVIEW_ROUNDS || '3' }}
+
+      # Attacker-controlled text reaches this job through the event. Read it via env,
+      # never interpolated into the script body.
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_LABEL: ${{ github.event.label.name }}
+      EVENT_ISSUE: ${{ github.event.issue.number }}
+      EVENT_ACTOR: ${{ github.event.sender.login }}
+      INPUT_ISSUE: ${{ inputs.issue }}
+      INPUT_PR: ${{ inputs.pr }}
+
+    steps:
+      - name: Decide what to do
+        id: plan
+        run: |
+          set -euo pipefail
+
+          skip() {
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            { echo "## AI Issue Agent — skipped"; echo; echo "$1"; } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          normalize() {
+            printf '%s' "$1" | tr 'A-Z' 'a-z' | tr ',;' '\n' | tr -s ' \t' '\n' | sed '/^$/d'
+          }
+          LIST="$(normalize "${ALLOWLIST:-}")"
+          [ -n "$LIST" ] || skip "\`PR_REVIEW_ALLOWLIST\` is empty — the agent loop is disabled. Fail-closed by design."
+          in_list() { printf '%s\n' "$LIST" | grep -Fxq "$(printf '%s' "$1" | tr 'A-Z' 'a-z')"; }
+
+          MODE=""
+          ISSUE=""
+          PR=""
+
+          case "$EVENT_NAME" in
+            issues)
+              # Only the ai:ready label starts work. Applying it needs write access to the
+              # repository, so it is already a privileged act; the allowlist check below
+              # narrows it further to the people trusted to spend model budget.
+              [ "$EVENT_LABEL" = "ai:ready" ] || skip "Label \`$EVENT_LABEL\` is not \`ai:ready\`."
+              in_list "$EVENT_ACTOR" || skip "\`$EVENT_ACTOR\` is not on \`PR_REVIEW_ALLOWLIST\`."
+              MODE=implement
+              ISSUE="$EVENT_ISSUE"
+              ;;
+            workflow_dispatch)
+              if [ -n "${INPUT_PR:-}" ]; then
+                MODE=revise
+                PR="$INPUT_PR"
+              elif [ -n "${INPUT_ISSUE:-}" ]; then
+                MODE=implement
+                ISSUE="$INPUT_ISSUE"
+              else
+                skip "Provide either an issue number or a pull request number."
+              fi
+              ;;
+            *)
+              skip "Unsupported event \`$EVENT_NAME\`."
+              ;;
+          esac
+
+          # ------------------------------------------------------------------ revise
+          if [ "$MODE" = "revise" ]; then
+            case "$PR" in ''|*[!0-9]*) skip "\`$PR\` is not a pull request number." ;; esac
+
+            gh pr view "$PR" --repo "$REPO" \
+              --json number,state,isDraft,headRefName,body,reviews > pr.json
+
+            STATE=$(jq -r '.state' pr.json)
+            BRANCH=$(jq -r '.headRefName' pr.json)
+
+            [ "$STATE" = "OPEN" ] || skip "PR #$PR is \`$STATE\`."
+
+            # Only ever revise a branch this agent created. A human's branch is not ours
+            # to push to, and the reviewer is the one that decides on those.
+            case "$BRANCH" in
+              ai/issue-*) : ;;
+              *) skip "Branch \`$BRANCH\` was not created by this agent." ;;
+            esac
+
+            # The issue is recovered from the PR body, which is the only place the link
+            # is recorded — and the same place GitHub reads it to auto-close on merge.
+            ISSUE=$(jq -r '.body' pr.json | grep -oiE '(close[sd]?|fixe[sd]?|resolve[sd]?) +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
+            [ -n "$ISSUE" ] || skip "PR #$PR does not reference an issue — refusing to guess which one it implements."
+
+            # The round number IS the count of change requests. Nothing to store, nothing
+            # to drift. Without this cap, reviewer and implementer ping-pong for ever.
+            ROUND=$(jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' pr.json)
+
+            if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+              gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:review" || true
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Stopping after $ROUND revision rounds — the cap is \`$MAX_ROUNDS\`.
+
+          The review feedback has not converged, which usually means the change needs a decision rather than another attempt. Issue #$ISSUE is now \`ai:blocked\`.
+
+          To continue anyway, remove the cap concern and re-run **AI Issue Agent** with \`pr=$PR\`."
+              skip "Round cap reached for PR #$PR ($ROUND >= $MAX_ROUNDS) — issue #$ISSUE marked \`ai:blocked\`."
+            fi
+          fi
+
+          # --------------------------------------------------------------- implement
+          if [ "$MODE" = "implement" ]; then
+            case "$ISSUE" in ''|*[!0-9]*) skip "\`$ISSUE\` is not an issue number." ;; esac
+
+            gh issue view "$ISSUE" --repo "$REPO" --json number,state,labels,title > issue.json
+
+            STATE=$(jq -r '.state' issue.json)
+            [ "$STATE" = "OPEN" ] || skip "Issue #$ISSUE is \`$STATE\`."
+
+            HAS() { jq -e --arg l "$1" '.labels[] | select(.name == $l)' issue.json > /dev/null; }
+
+            HAS "ai:blocked" && skip "Issue #$ISSUE is \`ai:blocked\` — remove the label to let the agent retry."
+
+            # The label swap below is the lock. If it is already claimed, another run owns
+            # it: two agents on one issue means two branches and a duplicate PR.
+            if HAS "ai:in-progress"; then
+              skip "Issue #$ISSUE is already \`ai:in-progress\` — another run owns it."
+            fi
+
+            # An open PR for this issue means it belongs in revise mode, not here.
+            EXISTING=$(gh pr list --repo "$REPO" --state open --head "ai/issue-$ISSUE" --json number -q '.[0].number' || true)
+            [ -z "$EXISTING" ] || skip "PR #$EXISTING already implements issue #$ISSUE — dispatch with \`pr=$EXISTING\` to revise it."
+
+            BRANCH="ai/issue-$ISSUE"
+            ROUND=0
+
+            # Claim it. Do this before any work so a concurrent run bounces off the check
+            # above rather than racing us.
+            gh issue edit "$ISSUE" --repo "$REPO" \
+              --add-label "ai:in-progress" --remove-label "ai:ready" || true
+          fi
+
+          {
+            echo "run=true"
+            echo "mode=$MODE"
+            echo "issue=$ISSUE"
+            echo "pr=$PR"
+            echo "branch=$BRANCH"
+            echo "round=$ROUND"
+            echo "max_rounds=$MAX_ROUNDS"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## AI Issue Agent — $MODE"
+            echo
+            echo "| | |"
+            echo "| :--- | :--- |"
+            echo "| Issue | #$ISSUE |"
+            [ -n "$PR" ] && echo "| Pull request | #$PR |"
+            echo "| Branch | \`$BRANCH\` |"
+            echo "| Round | $ROUND of $MAX_ROUNDS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------
+  # Work
+  # ---------------------------------------------------------------------------------
+  work:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_PUSH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      REPO: ${{ github.repository }}
+      MODE: ${{ needs.plan.outputs.mode }}
+      ISSUE: ${{ needs.plan.outputs.issue }}
+      PR: ${{ needs.plan.outputs.pr }}
+      BRANCH: ${{ needs.plan.outputs.branch }}
+      ROUND: ${{ needs.plan.outputs.round }}
+      MAX_ROUNDS: ${{ needs.plan.outputs.max_rounds }}
+
+      APP_URL: http://127.0.0.1:4173/
+
+    steps:
+      # persist-credentials with the PAT: the push and the PR both have to come from a
+      # real account or nothing downstream fires. Unlike the reviewer, this job is not
+      # executing an outsider's code — the branch is either main or a branch this agent
+      # wrote itself — so leaving the credential in .git/config is acceptable here.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          set -euo pipefail
+
+          git config user.name "kalpak44"
+          git config user.email "kalpak44@users.noreply.github.com"
+
+      - name: Check out the working branch
+        run: |
+          set -euo pipefail
+
+          if [ "$MODE" = "revise" ]; then
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+          else
+            git checkout -b "$BRANCH"
+          fi
+
+          echo "On $(git branch --show-current) at $(git rev-parse --short HEAD)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The agent gets a browser, not a fixed test harness. The full desktop/tablet/mobile
+      # QA suite lives in ai-pr-review.yml and runs on the PR this job opens; duplicating
+      # it here would mean two copies of the same 180 lines drifting apart. What this job
+      # needs is the ability to look at what it just built.
+      - name: Install Playwright
+        run: |
+          set -euo pipefail
+
+          PW_DIR="$RUNNER_TEMP/pw"
+          mkdir -p "$PW_DIR"
+          cd "$PW_DIR"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1 > /dev/null
+          "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
+          echo "PW_DIR=$PW_DIR" >> "$GITHUB_ENV"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the required secret store?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 smoke.json
+            echo
+            exit 1
+          fi
+
+          rm -f smoke.json
+
+      - name: Collect the review feedback
+        if: needs.plan.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+
+          # Unresolved review threads, with their file, line and full comment chain. The
+          # REST reviews API cannot express "unresolved", so this is GraphQL.
+          gh api graphql -f owner="${REPO%%/*}" -f name="${REPO##*/}" -F pr="$PR" -f query='
+            query($owner:String!, $name:String!, $pr:Int!) {
+              repository(owner:$owner, name:$name) {
+                pullRequest(number:$pr) {
+                  reviews(last:5) {
+                    nodes { state body author { login } submittedAt }
+                  }
+                  reviewThreads(first:100) {
+                    nodes {
+                      id
+                      isResolved
+                      isOutdated
+                      path
+                      line
+                      comments(first:20) {
+                        nodes { body author { login } }
+                      }
+                    }
+                  }
+                }
+              }
+            }' > "$RUNNER_TEMP/threads.json"
+
+          jq '{
+            reviews: [.data.repository.pullRequest.reviews.nodes[]
+                      | select(.state == "CHANGES_REQUESTED")],
+            unresolved: [.data.repository.pullRequest.reviewThreads.nodes[]
+                         | select(.isResolved == false)]
+          }' "$RUNNER_TEMP/threads.json" > "$RUNNER_TEMP/feedback.json"
+
+          echo "Unresolved threads: $(jq '.unresolved | length' "$RUNNER_TEMP/feedback.json")"
+
+      - name: Write the shared context
+        run: |
+          set -euo pipefail
+
+          # Everything both prompts need, in one place, so the two prompts differ only in
+          # what they instruct and not in what they know.
+          cat > "$RUNNER_TEMP/context.md" <<'CONTEXT'
+          ----------------------------------------------------------------------
+          ENVIRONMENT
+          ----------------------------------------------------------------------
+
+            REPO         the repository, owner/name
+            ISSUE        the issue number this work belongs to
+            PR           the pull request number (revise mode only; empty otherwise)
+            BRANCH       the branch you are on and the only branch you may push to
+            ROUND        which revision round this is
+            MAX_ROUNDS   the cap; exceeding it stops the loop
+            APP_URL      where the app serves once you build and start it
+            PW_DIR       a Playwright install with chromium already downloaded
+
+          `gh` and `git` are installed and authenticated. Dependencies are installed.
+
+          ----------------------------------------------------------------------
+          HOW TO RUN AND LOOK AT THE APP
+          ----------------------------------------------------------------------
+
+          This is a Vite + React single-page app. Build it and serve the build:
+
+            npm run build
+            nohup npm run preview -- --port 4173 --strictPort --host 127.0.0.1 > /tmp/preview.log 2>&1 &
+
+          Wait for it, then drive it with Playwright. Write scripts under $RUNNER_TEMP,
+          never inside the repository, and run them from $PW_DIR so `require('playwright')`
+          resolves:
+
+            cat > "$RUNNER_TEMP/look.js" <<'EOF'
+            const { chromium, devices } = require('playwright')
+            ;(async () => {
+              const browser = await chromium.launch()
+              for (const [name, opts] of [['desktop', { viewport: { width: 1440, height: 900 } }],
+                                          ['mobile', devices['iPhone 13']]]) {
+                const page = await (await browser.newContext(opts)).newPage()
+                page.on('console', m => m.type() === 'error' && console.log(name, 'CONSOLE', m.text()))
+                page.on('pageerror', e => console.log(name, 'PAGEERROR', e.message))
+                await page.goto(process.env.APP_URL)
+                await page.waitForTimeout(1500)
+                await page.screenshot({ path: `/tmp/${name}.png`, fullPage: true })
+              }
+              await browser.close()
+            })()
+            EOF
+
+            cd "$PW_DIR" && node "$RUNNER_TEMP/look.js"
+
+          This app's layout changes at 900px — a two-page spread above it, a single page
+          below. Anything you touch has to be checked on BOTH sides of that breakpoint.
+
+          ----------------------------------------------------------------------
+          HARD RULES
+          ----------------------------------------------------------------------
+
+          - Push ONLY to $BRANCH. Never to main. Never force-push.
+          - Never edit anything under .github/ — those workflows are generated elsewhere
+            and your change would be silently overwritten.
+          - Never add a secret, token, key or credential to the repository.
+          - Never weaken, skip or delete a check, a test or a lint rule to make something
+            pass. Fix the cause.
+          - Never commit node_modules, dist, or editor files.
+          - `npm run build` MUST succeed before you push. A build failure is never
+            something to push and let CI discover.
+          - Keep the change as small as the task allows. No drive-by refactors, no
+            reformatting of files you did not otherwise need to touch, no new dependency
+            unless the task genuinely requires one.
+          - Match the conventions already in this repository — read neighbouring files
+            before writing new ones.
+          - If the task needs a product or architectural decision that is not already
+            settled in the issue, STOP and hand it back. Do not guess. Handing back is a
+            correct outcome; guessing is not.
+
+          ----------------------------------------------------------------------
+          HOW TO HAND SOMETHING BACK
+          ----------------------------------------------------------------------
+
+          When you cannot proceed, mark the issue blocked and say precisely why:
+
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" \
+              --remove-label "ai:in-progress"
+            gh issue comment "$ISSUE" --repo "$REPO" --body "<what is needed and why>"
+
+          Name the decision that has to be made and, where you can, list the options with
+          their consequences. "Blocked, needs clarification" is not good enough.
+          CONTEXT
+
+      - name: Implement the issue
+        if: needs.plan.outputs.mode == 'implement'
+        run: |
+          set -euo pipefail
+
+          {
+            cat <<'AGENT_PROMPT'
+          You are the implementation agent for this repository. An issue has been triaged
+          as actionable and assigned to you. Your job is to implement it properly and open
+          a pull request that a careful reviewer would approve.
+
+          A separate review agent will read your pull request, run it in a browser on
+          desktop and mobile, and either approve and merge it or send you a numbered list
+          of changes. Write for that reviewer.
+
+          ----------------------------------------------------------------------
+          1. READ THE ISSUE
+          ----------------------------------------------------------------------
+
+            gh issue view "$ISSUE" --repo "$REPO" --comments
+
+          Work out what is actually being asked, including anything settled in the comment
+          thread rather than the description. Read the whole thread — a later comment often
+          overrides the original description.
+
+          Decide, before writing anything, whether this is genuinely actionable:
+
+            - Is the desired outcome unambiguous?
+            - Would two reasonable engineers build the same thing from this description?
+            - Is any product decision left open — wording, visual design, pricing,
+              behaviour that is a matter of taste rather than correctness?
+            - Is it actually a bug report with no reproduction you can find?
+
+          If the task is ambiguous or needs a decision that is not yours to make, hand it
+          back now, before writing code. That is the cheapest possible moment to do it.
+
+          ----------------------------------------------------------------------
+          2. UNDERSTAND THE CODE BEFORE CHANGING IT
+          ----------------------------------------------------------------------
+
+          Read the repository README, then the files the change will touch and the files
+          around them. This app has a deliberate structure — components under src/components,
+          hooks and helpers under src/lib, content under src/data. Follow it.
+
+          Reproduce the problem first if this is a bug. A fix for a bug you never reproduced
+          is a guess.
+
+          ----------------------------------------------------------------------
+          3. IMPLEMENT
+          ----------------------------------------------------------------------
+
+          Make the smallest change that fully solves the issue.
+
+          Then, without exception:
+
+            npm run build
+            npm run lint
+
+          and run the app and look at it, on desktop and on mobile, as described above.
+          Confirm with your own eyes that the thing the issue asked for now happens, and
+          that what worked before still works.
+
+          If lint reports something in code you wrote, fix it. Pre-existing lint findings
+          in files you did not touch are not yours to clean up in this pull request.
+
+          ----------------------------------------------------------------------
+          4. REVIEW YOUR OWN DIFF
+          ----------------------------------------------------------------------
+
+            git status
+            git diff
+
+          Check every hunk: is it necessary, is it minimal, is there debug code left, is
+          there stray formatting churn, did a temporary file get picked up. Remove anything
+          that is not part of the change.
+
+          ----------------------------------------------------------------------
+          5. COMMIT AND PUSH
+          ----------------------------------------------------------------------
+
+          Confirm the branch first — `git branch --show-current` must print $BRANCH.
+
+          Stage only the files you meant to change. Never `git add -A` blindly.
+
+            git add <files>
+            git commit -m "<concise imperative subject>"
+            git push -u origin "$BRANCH"
+
+          ----------------------------------------------------------------------
+          6. OPEN THE PULL REQUEST
+          ----------------------------------------------------------------------
+
+          The body MUST contain the literal line `Closes #<issue>` — that is how GitHub
+          closes the issue on merge, and it is the only record linking the two, so the
+          revision loop reads it back to find its way home.
+
+            gh pr create --repo "$REPO" --base main --head "$BRANCH" \
+              --title "<concise title>" \
+              --body "$(cat <<EOF
+          <what changed and why, in a short paragraph>
+
+          <how you verified it — what you ran, what you saw on desktop and on mobile>
+
+          Closes #$ISSUE
+          EOF
+          )"
+
+          Then move the issue to review and link the pull request:
+
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:review" --remove-label "ai:in-progress"
+            gh issue comment "$ISSUE" --repo "$REPO" --body "Implemented in <pr url> — under review."
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line:
+
+            #<issue> — <implemented and PR #n opened | handed back> — <what you did, or what decision is needed>
+          AGENT_PROMPT
+            cat "$RUNNER_TEMP/context.md"
+          } > "$RUNNER_TEMP/prompt.md"
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$RUNNER_TEMP/summary.md" \
+            "$(cat "$RUNNER_TEMP/prompt.md")"
+
+      - name: Address the review
+        if: needs.plan.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+
+          {
+            cat <<'AGENT_PROMPT'
+          You are the implementation agent. A review agent read your pull request and
+          requested changes. Your job is to address that feedback and get the pull request
+          to a state it will approve.
+
+          This is round $ROUND of at most $MAX_ROUNDS. If the feedback is not resolved
+          within the cap the loop stops and a human is asked to step in, so treat this as a
+          real attempt to converge rather than a partial one.
+
+          ----------------------------------------------------------------------
+          1. READ THE FEEDBACK
+          ----------------------------------------------------------------------
+
+          The change requests and every unresolved review thread are already collected:
+
+            cat "$RUNNER_TEMP/feedback.json"
+
+          `reviews` holds the review bodies — the numbered blocking list lives there.
+          `unresolved` holds each open thread with its `id`, `path`, `line` and comments.
+
+          Also read the pull request and its current diff:
+
+            gh pr view "$PR" --repo "$REPO" --comments
+            gh pr diff "$PR" --repo "$REPO"
+
+          Enumerate every distinct point being made. Work through them one at a time. Do
+          not fix the easy ones and quietly ignore the rest — an unaddressed point comes
+          straight back as another round, and the cap is small.
+
+          ----------------------------------------------------------------------
+          2. DECIDE ON EACH POINT — YOU ARE NOT REQUIRED TO OBEY
+          ----------------------------------------------------------------------
+
+          The reviewer is another model and it is sometimes wrong. For each point, decide:
+
+            - correct, and you can fix it        -> fix it
+            - correct, but the fix needs a decision that is not yours -> hand back
+            - incorrect, or based on a misreading -> do NOT change the code; reply on the
+              thread explaining precisely why, with evidence
+
+          Never make a change you believe is wrong just to satisfy a reviewer. Never
+          weaken a check, delete a test or suppress an error to clear a comment. Say why
+          instead — a well-argued disagreement is a legitimate resolution.
+
+          ----------------------------------------------------------------------
+          3. FIX, THEN VERIFY
+          ----------------------------------------------------------------------
+
+          Make the changes. Then, as before:
+
+            npm run build
+            npm run lint
+
+          and run the app and look at it on desktop and mobile. If the reviewer reported a
+          visual or behavioural problem, reproduce it first and then confirm your fix
+          actually removes it. Do not claim a fix you have not observed working.
+
+          ----------------------------------------------------------------------
+          4. COMMIT AND PUSH
+          ----------------------------------------------------------------------
+
+          Confirm `git branch --show-current` prints $BRANCH, stage only what you intended,
+          then commit and push. A normal commit — never amend, never force-push. The
+          reviewer needs to see the incremental change.
+
+            git add <files>
+            git commit -m "<what you addressed>"
+            git push
+
+          Pushing re-triggers the review automatically. There is nothing to dispatch.
+
+          ----------------------------------------------------------------------
+          5. REPLY TO EVERY THREAD, THEN RESOLVE IT
+          ----------------------------------------------------------------------
+
+          For each thread in `unresolved`, reply saying what you did — or why you did not —
+          and then resolve it. Both, in that order: resolving without replying leaves the
+          reviewer no way to tell agreement from silence.
+
+          Reply on a thread, using its numeric `databaseId` if present, otherwise post the
+          reply through the reviews API against the thread's first comment id:
+
+            gh api -X POST "repos/$REPO/pulls/$PR/comments/<comment-id>/replies" -f body="<reply>"
+
+          Resolve it with its GraphQL node id:
+
+            gh api graphql -f threadId="<thread-node-id>" -f query='
+              mutation($threadId:ID!) {
+                resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } }
+              }'
+
+          Resolve ONLY threads you actually addressed or argued against. Never resolve a
+          thread by ignoring it.
+
+          Finally, leave one short summary comment on the pull request listing each point
+          and its outcome — fixed, or disputed with the reason.
+
+          ----------------------------------------------------------------------
+          6. IF YOU PUSHED NOTHING, ASK FOR THE REVIEW YOURSELF
+          ----------------------------------------------------------------------
+
+          Pushing is what re-triggers the review. So if you disputed every point and made
+          no commit, nothing re-triggers it and the pull request sits at "changes
+          requested" for ever, waiting on a push that is never coming.
+
+          In that case only — no commits made — request the re-review explicitly:
+
+            gh workflow run ai-pr-review.yml --repo "$REPO" -f pr="$PR"
+
+          Do not do this when you pushed. The push already did it, and dispatching as well
+          runs two reviews of the same commit.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line:
+
+            #$PR — round $ROUND — <n addressed, n disputed, n handed back> — <summary>
+          AGENT_PROMPT
+            cat "$RUNNER_TEMP/context.md"
+          } > "$RUNNER_TEMP/prompt.md"
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$RUNNER_TEMP/summary.md" \
+            "$(cat "$RUNNER_TEMP/prompt.md")"
+
+      # An implement run that ends with the issue still ai:in-progress and no pull request
+      # has stranded it: the claim label blocks every future run, so nothing would ever
+      # pick it up again. Hand it back explicitly instead.
+      - name: Release the claim if nothing was produced
+        if: always() && needs.plan.outputs.mode == 'implement'
+        run: |
+          set -euo pipefail
+
+          LABELS=$(gh issue view "$ISSUE" --repo "$REPO" --json labels -q '[.labels[].name] | join(",")' || echo "")
+          OPEN_PR=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number -q '.[0].number' || true)
+
+          case "$LABELS" in
+            *ai:in-progress*)
+              if [ -n "$OPEN_PR" ]; then
+                # The agent pushed and opened a PR but never moved the label.
+                gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:review" --remove-label "ai:in-progress" || true
+                echo "PR #$OPEN_PR exists — issue moved to ai:review."
+              else
+                gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:in-progress" || true
+                gh issue comment "$ISSUE" --repo "$REPO" --body \
+                  "The implementation run finished without opening a pull request. Marked \`ai:blocked\` so the issue is not left claimed.
+
+          Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Remove \`ai:blocked\` and re-apply \`ai:ready\` to try again." || true
+                echo "No PR produced — issue #$ISSUE marked ai:blocked."
+              fi
+              ;;
+            *)
+              echo "Issue #$ISSUE is no longer ai:in-progress — nothing to release."
+              ;;
+          esac
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## AI Issue Agent — $MODE — issue #$ISSUE"
+            echo
+            if [ -f "$RUNNER_TEMP/summary.md" ]; then
+              cat "$RUNNER_TEMP/summary.md"
+            else
+              echo "The agent produced no summary."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

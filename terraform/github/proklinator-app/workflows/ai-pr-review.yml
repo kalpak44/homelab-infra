@@ -1,0 +1,1164 @@
+# Managed by homelab-infra — terraform/github/proklinator-app/workflows/ai-pr-review.yml
+# Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
+#
+# The human-PR counterpart of ai-pr-agent.yml. That one owns bot dependency PRs and may
+# push fixes to them. This one owns PRs written by people on the allowlist, NEVER touches
+# their branch, and instead:
+#
+#   1. gates on the author being in PR_REVIEW_ALLOWLIST (fail-closed, before any checkout),
+#   2. builds the merge result and actually RUNS the app under Playwright on desktop,
+#      tablet and mobile viewports, against a baseline build of the base branch,
+#   3. hands the measured evidence plus the diff to Codex/DeepSeek, which posts a real PR
+#      review with findings and recommendations,
+#   4. merges — but only when bash already decided the objective preconditions hold.
+#
+# The split is deliberate: bash measures, the model judges. ALLOW_MERGE is computed in
+# bash from build/QA/mergeability, so no amount of prompt drift can merge a PR whose app
+# does not build or throws in the browser. The model can only ever decide NOT to merge.
+#
+# Security note: pull_request_target runs with a write token, and this workflow checks out
+# and executes the PR's code. That is safe here only because the allowlist gate runs first,
+# in a separate job, with no PR code on disk. Never move a checkout above that gate, and
+# never let a comment command bypass the author check.
+#
+# The allowlist is matched against the GitHub account that opened the pull request, taken
+# from the API — never against a git author name or email, which are unauthenticated free
+# text. The residual exposure is therefore whoever can push to the PR head branch: for a
+# fork that is the fork's collaborators, for a same-repo branch anyone with write access,
+# who is already trusted by definition.
+
+name: AI PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number to review"
+        required: true
+        type: string
+      policy:
+        description: "auto = review and merge when everything passes; comment = review only"
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - comment
+
+permissions:
+  contents: write # merging the PR
+  pull-requests: write # reviews and comments
+  actions: write # starting a PR check that never ran
+  checks: read
+  statuses: read
+
+# One review per PR. A new push supersedes the review in flight.
+concurrency:
+  group: ai-pr-review-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------------
+  # Gate — no PR code is fetched in this job. Everything it reads comes from the API.
+  # ---------------------------------------------------------------------------------
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      pr: ${{ steps.gate.outputs.pr }}
+      ref: ${{ steps.gate.outputs.ref }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+      head_ref: ${{ steps.gate.outputs.head_ref }}
+      base_ref: ${{ steps.gate.outputs.base_ref }}
+      author: ${{ steps.gate.outputs.author }}
+      mergeable: ${{ steps.gate.outputs.mergeable }}
+      policy: ${{ steps.gate.outputs.policy }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+
+      ALLOWLIST: ${{ vars.PR_REVIEW_ALLOWLIST }}
+
+      # Read through env, never interpolated into the script body — a PR title or a
+      # comment body is attacker-controlled text.
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR: ${{ github.event.pull_request.number }}
+      EVENT_ISSUE: ${{ github.event.issue.number }}
+      EVENT_IS_PR: ${{ github.event.issue.pull_request.url }}
+      EVENT_COMMENT: ${{ github.event.comment.body }}
+      EVENT_COMMENTER: ${{ github.event.comment.user.login }}
+      INPUT_PR: ${{ inputs.pr }}
+      INPUT_POLICY: ${{ inputs.policy }}
+
+    steps:
+      - name: Decide whether to review this PR
+        id: gate
+        run: |
+          set -euo pipefail
+
+          skip() {
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## AI PR Review — skipped"
+              echo
+              echo "$1"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          # --- 1. which PR? ------------------------------------------------------
+          case "$EVENT_NAME" in
+            pull_request_target)
+              PR="$EVENT_PR"
+              ;;
+            issue_comment)
+              [ -n "${EVENT_IS_PR:-}" ] || skip "Comment was on an issue, not a pull request."
+              # Only the literal command, and only as the first token of the comment.
+              printf '%s' "$EVENT_COMMENT" | head -n 1 | grep -qiE '^[[:space:]]*/ai-review\b' \
+                || skip "Comment is not an \`/ai-review\` command."
+              PR="$EVENT_ISSUE"
+              ;;
+            workflow_dispatch)
+              PR="$INPUT_PR"
+              ;;
+            *)
+              skip "Unsupported event \`$EVENT_NAME\`."
+              ;;
+          esac
+
+          case "$PR" in
+            ''|*[!0-9]*) skip "Could not resolve a pull request number from event \`$EVENT_NAME\`." ;;
+          esac
+
+          echo "Resolved PR #$PR from \`$EVENT_NAME\`."
+
+          # --- 2. allowlist ------------------------------------------------------
+          # Comma, semicolon, space or newline separated; matched case-insensitively.
+          normalize() {
+            printf '%s' "$1" | tr 'A-Z' 'a-z' | tr ',;' '\n' | tr -s ' \t' '\n' | sed '/^$/d'
+          }
+
+          LIST="$(normalize "${ALLOWLIST:-}")"
+
+          if [ -z "$LIST" ]; then
+            skip "\`PR_REVIEW_ALLOWLIST\` is empty — refusing to review anything. Fail-closed by design."
+          fi
+
+          in_list() {
+            printf '%s\n' "$LIST" | grep -Fxq "$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
+          }
+
+          # --- 3. PR state -------------------------------------------------------
+          # `.author.login` is the authenticated GitHub account that opened the pull
+          # request, as GitHub reports it. It is NOT git metadata.
+          #
+          # Never gate on anything from git: `user.name` and `user.email` are free text
+          # that any client can set to anything, and GitHub will happily display a commit
+          # as authored by someone who never touched it. Commit-level `author.login` from
+          # the API is the same trap — GitHub resolves it by matching the commit's email
+          # against account emails, so it inherits the spoof. The account that opened the
+          # PR, and the account that posted the comment, are the only identities here that
+          # required an authenticated session to produce.
+          gh pr view "$PR" --repo "$REPO" \
+            --json number,state,isDraft,author,headRefName,headRefOid,baseRefName,mergeable,isCrossRepository \
+            > pr.json
+
+          STATE=$(jq -r '.state' pr.json)
+          DRAFT=$(jq -r '.isDraft' pr.json)
+          AUTHOR=$(jq -r '.author.login' pr.json)
+          IS_BOT=$(jq -r '.author.is_bot // false' pr.json)
+          HEAD_REF=$(jq -r '.headRefName' pr.json)
+          HEAD_SHA=$(jq -r '.headRefOid' pr.json)
+          BASE_REF=$(jq -r '.baseRefName' pr.json)
+          FORK=$(jq -r '.isCrossRepository' pr.json)
+
+          [ "$STATE" = "OPEN" ] || skip "PR #$PR is \`$STATE\`."
+          [ "$DRAFT" = "false" ] || skip "PR #$PR is a draft."
+
+          # Bot PRs belong to ai-pr-agent.yml. Two agents on one branch is a merge race.
+          [ "$IS_BOT" = "false" ] || skip "PR #$PR is bot-authored — \`ai-pr-agent.yml\` owns it."
+
+          if ! in_list "$AUTHOR"; then
+            # One note, only when the PR is first opened, so an outside contributor knows
+            # why nothing happened. Never on synchronize — that would comment on every push.
+            if [ "$EVENT_NAME" = "pull_request_target" ] && [ "${{ github.event.action }}" = "opened" ]; then
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Automated review skipped: \`$AUTHOR\` is not on this repository's review allowlist. A maintainer will review this manually."
+            fi
+            skip "Author \`$AUTHOR\` is not on \`PR_REVIEW_ALLOWLIST\`."
+          fi
+
+          # A comment command cannot widen the allowlist — the AUTHOR must be on it, and so
+          # must whoever asked. Otherwise anyone could make us execute an allowlisted-looking
+          # PR on demand.
+          if [ "$EVENT_NAME" = "issue_comment" ] && ! in_list "$EVENT_COMMENTER"; then
+            skip "\`$EVENT_COMMENTER\` is not on \`PR_REVIEW_ALLOWLIST\`."
+          fi
+
+          # --- 4. mergeability ---------------------------------------------------
+          # GitHub computes this lazily; a fresh PR reports UNKNOWN for a few seconds.
+          MERGEABLE=$(jq -r '.mergeable' pr.json)
+          for _ in 1 2 3 4 5; do
+            [ "$MERGEABLE" = "UNKNOWN" ] || break
+            sleep 6
+            MERGEABLE=$(gh pr view "$PR" --repo "$REPO" --json mergeable -q .mergeable)
+          done
+
+          # Test what would actually land. With conflicts that ref does not exist, so fall
+          # back to the head commit — the review still happens, the merge cannot.
+          if [ "$MERGEABLE" = "MERGEABLE" ]; then
+            REF="refs/pull/$PR/merge"
+          else
+            REF="$HEAD_SHA"
+          fi
+
+          POLICY="${INPUT_POLICY:-auto}"
+          [ "$POLICY" = "comment" ] || POLICY="auto"
+
+          {
+            echo "run=true"
+            echo "pr=$PR"
+            echo "ref=$REF"
+            echo "head_sha=$HEAD_SHA"
+            echo "head_ref=$HEAD_REF"
+            echo "base_ref=$BASE_REF"
+            echo "author=$AUTHOR"
+            echo "mergeable=$MERGEABLE"
+            echo "policy=$POLICY"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## AI PR Review — #$PR"
+            echo
+            echo "| | |"
+            echo "| :--- | :--- |"
+            echo "| Author | \`$AUTHOR\` (allowlisted) |"
+            echo "| Branch | \`$HEAD_REF\` → \`$BASE_REF\` |"
+            echo "| Head | \`${HEAD_SHA:0:7}\` |"
+            echo "| Fork | \`$FORK\` |"
+            echo "| Mergeable | \`$MERGEABLE\` |"
+            echo "| Checkout | \`$REF\` |"
+            echo "| Policy | \`$POLICY\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------
+  # Review — from here on the PR's own code is on disk and gets executed.
+  # ---------------------------------------------------------------------------------
+  review:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Merging with GITHUB_TOKEN produces a push that does NOT start another workflow
+      # run, so publish-frontend.yml would never build the merged main and the cluster
+      # would never see the change. The PAT this repo already holds for the GitOps
+      # dispatch is reused for the merge alone — comments stay under the bot identity.
+      GH_MERGE_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      REPO: ${{ github.repository }}
+      PR: ${{ needs.gate.outputs.pr }}
+      PR_AUTHOR: ${{ needs.gate.outputs.author }}
+      HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+      HEAD_REF: ${{ needs.gate.outputs.head_ref }}
+      BASE_REF: ${{ needs.gate.outputs.base_ref }}
+      MERGEABLE: ${{ needs.gate.outputs.mergeable }}
+      POLICY: ${{ needs.gate.outputs.policy }}
+
+      PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+
+      # Closing the loop with ai-issue-agent.yml. Its PRs come from an ai/issue-* branch;
+      # everything else is a human's and gets reviewed but never handed back.
+      IMPLEMENTER_WORKFLOW: ai-issue-agent.yml
+      MAX_ROUNDS: ${{ vars.AI_MAX_REVIEW_ROUNDS || '3' }}
+
+      APP_URL: http://127.0.0.1:4173/
+      BASELINE_URL: http://127.0.0.1:4174/
+
+    steps:
+      - name: Checkout the merge result
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.ref }}
+          fetch-depth: 0
+          # We are about to run this code. Do not leave a push-capable token in
+          # .git/config where an npm lifecycle script could reach it.
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24" # what publish-frontend.yml builds with
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Prepare QA workspace
+        run: |
+          set -euo pipefail
+
+          echo "QA_DIR=$RUNNER_TEMP/qa" >> "$GITHUB_ENV"
+          echo "PW_DIR=$RUNNER_TEMP/pw" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/qa/screens" "$RUNNER_TEMP/pw"
+
+      # Every gate below records its outcome instead of failing the job. A broken PR must
+      # produce a review explaining why it is broken, not a bare red X with no comment.
+      # Genuine infrastructure problems still fail, because they exit non-zero here.
+      - name: Install dependencies
+        run: |
+          set -uo pipefail
+
+          npm ci 2>&1 | tee "$QA_DIR/install.log"
+          echo "${PIPESTATUS[0]}" > "$QA_DIR/install.status"
+          exit 0
+
+      - name: Lint and format check
+        run: |
+          set -uo pipefail
+
+          npm run lint 2>&1 | tee "$QA_DIR/lint.log"
+          echo "${PIPESTATUS[0]}" > "$QA_DIR/lint.status"
+
+          npm run format:check 2>&1 | tee "$QA_DIR/format.log"
+          echo "${PIPESTATUS[0]}" > "$QA_DIR/format.status"
+          exit 0
+
+      - name: Build
+        run: |
+          set -uo pipefail
+
+          if [ "$(cat "$QA_DIR/install.status")" != "0" ]; then
+            echo "skipped: install failed" | tee "$QA_DIR/build.log"
+            echo "1" > "$QA_DIR/build.status"
+            exit 0
+          fi
+
+          npm run build 2>&1 | tee "$QA_DIR/build.log"
+          echo "${PIPESTATUS[0]}" > "$QA_DIR/build.status"
+          exit 0
+
+      - name: Install Playwright
+        # Into RUNNER_TEMP, never into the repo: adding playwright to package.json would
+        # dirty the working tree the agent is reviewing and pollute the diff it reads.
+        run: |
+          set -euo pipefail
+
+          cd "$PW_DIR"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1 > /dev/null
+          "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Serve the built app
+        run: |
+          set -euo pipefail
+
+          if [ "$(cat "$QA_DIR/build.status")" != "0" ]; then
+            echo "Build failed — nothing to serve."
+            exit 0
+          fi
+
+          nohup npm run preview -- --port 4173 --strictPort --host 127.0.0.1 \
+            > "$QA_DIR/preview.log" 2>&1 &
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "$APP_URL" -o /dev/null; then
+              echo "Preview server up at $APP_URL"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Preview server never came up:" >&2
+          cat "$QA_DIR/preview.log" >&2
+          exit 1
+
+      # Best-effort only. A baseline that will not build tells us nothing about the PR,
+      # so it is never allowed to block or fail the review.
+      - name: Serve a baseline build of the base branch
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+
+          if [ "$(cat "$QA_DIR/build.status")" != "0" ]; then
+            echo "PR build failed — a baseline would have nothing to compare against."
+            exit 0
+          fi
+
+          # The checkout was of refs/pull/N/merge, so the base branch may not be present
+          # as a remote-tracking ref. The repository is public and the remote needs no
+          # credentials for a read, which is why persist-credentials: false costs nothing.
+          if git rev-parse --verify "origin/$BASE_REF" >/dev/null 2>&1; then
+            BASE_POINT="origin/$BASE_REF"
+          else
+            git fetch --depth=1 origin "$BASE_REF"
+            BASE_POINT="FETCH_HEAD"
+          fi
+
+          git worktree add --detach "$RUNNER_TEMP/baseline" "$BASE_POINT"
+          cd "$RUNNER_TEMP/baseline"
+
+          npm ci --no-audit --no-fund > "$QA_DIR/baseline.log" 2>&1
+          npm run build >> "$QA_DIR/baseline.log" 2>&1
+
+          nohup npx vite preview --port 4174 --strictPort --host 127.0.0.1 \
+            >> "$QA_DIR/baseline.log" 2>&1 &
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "$BASELINE_URL" -o /dev/null; then
+              echo "ok" > "$QA_DIR/baseline.status"
+              echo "Baseline up at $BASELINE_URL"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Baseline server never came up — continuing without it."
+
+      - name: Write the browser QA suite
+        run: |
+          set -euo pipefail
+
+          cat > "$PW_DIR/qa.js" <<'QA_SUITE'
+          // Objective, app-agnostic browser evidence. Deliberately not a test of this
+          // app's specific markup: a selector-level assertion here would go stale on the
+          // first legitimate redesign and block merges for no reason. The model does the
+          // app-specific judging, from these numbers and the screenshots.
+          const fs = require('fs')
+          const path = require('path')
+          const { chromium, devices } = require('playwright')
+
+          const URL_UNDER_TEST = process.env.QA_TARGET
+          const TAG = process.env.QA_TAG || 'pr'
+          const OUT = process.env.QA_DIR
+          const SHOTS = path.join(OUT, 'screens')
+
+          const PROFILES = [
+            {
+              id: 'desktop',
+              label: 'Desktop — 1440×900',
+              mobile: false,
+              context: { viewport: { width: 1440, height: 900 } },
+            },
+            {
+              id: 'tablet',
+              label: 'Tablet — iPad Air',
+              mobile: false,
+              context: devices['iPad Air'],
+            },
+            {
+              id: 'mobile',
+              label: 'Mobile — iPhone 13',
+              mobile: true,
+              context: devices['iPhone 13'],
+            },
+          ]
+
+          async function probe(browser, profile) {
+            const context = await browser.newContext({ ...profile.context })
+            const page = await context.newPage()
+
+            const consoleErrors = []
+            const pageErrors = []
+            const requestFailures = []
+            const badResponses = []
+
+            page.on('console', (m) => {
+              if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 400))
+            })
+            page.on('pageerror', (e) => pageErrors.push(String((e && e.stack) || e).slice(0, 600)))
+            page.on('requestfailed', (r) => {
+              const why = r.failure() ? r.failure().errorText : 'unknown'
+              requestFailures.push(`${r.method()} ${r.url()} — ${why}`)
+            })
+            page.on('response', (r) => {
+              if (r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`)
+            })
+
+            let status = 0
+            let navError = null
+            try {
+              const response = await page.goto(URL_UNDER_TEST, { waitUntil: 'load', timeout: 45000 })
+              status = response ? response.status() : 0
+              await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {})
+              await page.waitForTimeout(1500)
+            } catch (e) {
+              navError = String((e && e.message) || e).slice(0, 400)
+            }
+
+            let metrics = {}
+            if (!navError) {
+              metrics = await page.evaluate(() => {
+                const root = document.getElementById('root') || document.body
+                const brokenImages = Array.from(document.images)
+                  .filter((i) => i.complete && i.naturalWidth === 0)
+                  .map((i) => i.currentSrc || i.src)
+                return {
+                  title: document.title,
+                  lang: document.documentElement.lang || '',
+                  rootChildren: root ? root.childElementCount : 0,
+                  textLength: ((root && root.innerText) || '').trim().length,
+                  scrollWidth: document.documentElement.scrollWidth,
+                  innerWidth: window.innerWidth,
+                  viewportMeta: !!document.querySelector('meta[name="viewport"]'),
+                  interactive: document.querySelectorAll('button, a[href], [role="button"], input, select, textarea').length,
+                  brokenImages,
+                }
+              })
+
+              await page
+                .screenshot({ path: path.join(SHOTS, `${TAG}-${profile.id}.png`), fullPage: true })
+                .catch(() => {})
+
+              // Generic interaction probe: click the first visible enabled control and see
+              // whether anything throws. Catches "renders fine, explodes on touch".
+              const errorsBefore = consoleErrors.length + pageErrors.length
+              try {
+                const control = page.locator('button:visible, [role="button"]:visible').first()
+                if (await control.count()) {
+                  await control.click({ timeout: 5000 })
+                  await page.waitForTimeout(1200)
+                  await page
+                    .screenshot({ path: path.join(SHOTS, `${TAG}-${profile.id}-after-click.png`), fullPage: true })
+                    .catch(() => {})
+                }
+              } catch (e) {
+                metrics.interactionError = String((e && e.message) || e).slice(0, 300)
+              }
+              metrics.errorsFromInteraction = consoleErrors.length + pageErrors.length - errorsBefore
+            }
+
+            await context.close()
+
+            const overflow = metrics.scrollWidth ? metrics.scrollWidth - metrics.innerWidth : 0
+
+            // blocking: objectively broken, and the merge gate honours it.
+            // advisory: needs a human-shaped judgement, so it goes to the model instead.
+            const checks = [
+              { name: 'navigation', blocking: true, ok: !navError, detail: navError || 'page loaded' },
+              { name: 'http status', blocking: true, ok: status === 200, detail: String(status) },
+              { name: 'no uncaught exceptions', blocking: true, ok: pageErrors.length === 0, detail: pageErrors.join(' | ') || 'none' },
+              { name: 'no console errors', blocking: true, ok: consoleErrors.length === 0, detail: consoleErrors.join(' | ') || 'none' },
+              { name: 'no failed requests', blocking: true, ok: requestFailures.length === 0, detail: requestFailures.join(' | ') || 'none' },
+              { name: 'no 4xx/5xx responses', blocking: true, ok: badResponses.length === 0, detail: badResponses.join(' | ') || 'none' },
+              { name: 'rendered content', blocking: true, ok: (metrics.rootChildren || 0) > 0 && (metrics.textLength || 0) > 0, detail: `${metrics.rootChildren || 0} nodes, ${metrics.textLength || 0} chars` },
+              { name: 'interactive controls present', blocking: false, ok: (metrics.interactive || 0) > 0, detail: `${metrics.interactive || 0}` },
+              { name: 'viewport meta', blocking: false, ok: !!metrics.viewportMeta, detail: metrics.viewportMeta ? 'present' : 'missing' },
+              { name: 'no images broken', blocking: false, ok: (metrics.brokenImages || []).length === 0, detail: (metrics.brokenImages || []).join(' | ') || 'none' },
+              { name: 'no horizontal overflow', blocking: false, ok: overflow <= 2, detail: `scrollWidth ${metrics.scrollWidth || 0} vs viewport ${metrics.innerWidth || 0}` },
+            ]
+
+            return { profile: profile.label, id: profile.id, mobile: profile.mobile, status, metrics, checks }
+          }
+
+          ;(async () => {
+            const browser = await chromium.launch()
+            const results = []
+            for (const profile of PROFILES) {
+              results.push(await probe(browser, profile))
+            }
+            await browser.close()
+
+            const blockingFailures = results.flatMap((r) =>
+              r.checks.filter((c) => c.blocking && !c.ok).map((c) => `${r.id}: ${c.name} — ${c.detail}`)
+            )
+            const advisories = results.flatMap((r) =>
+              r.checks.filter((c) => !c.blocking && !c.ok).map((c) => `${r.id}: ${c.name} — ${c.detail}`)
+            )
+
+            fs.writeFileSync(path.join(OUT, `${TAG}-results.json`), JSON.stringify({ url: URL_UNDER_TEST, results }, null, 2))
+
+            const lines = [`### Browser QA — ${TAG} (${URL_UNDER_TEST})`, '']
+            for (const r of results) {
+              lines.push(`**${r.profile}**`, '')
+              lines.push('| Check | Result | Detail |', '| :--- | :--- | :--- |')
+              for (const c of r.checks) {
+                const mark = c.ok ? 'pass' : c.blocking ? '**FAIL**' : 'warn'
+                lines.push(`| ${c.name} | ${mark} | ${String(c.detail).replace(/\|/g, '\\|').slice(0, 200)} |`)
+              }
+              lines.push('')
+            }
+            lines.push(`Blocking failures: ${blockingFailures.length}`, `Advisories: ${advisories.length}`, '')
+            if (blockingFailures.length) lines.push('Blocking:', ...blockingFailures.map((f) => `- ${f}`), '')
+            if (advisories.length) lines.push('Advisory:', ...advisories.map((f) => `- ${f}`), '')
+
+            fs.appendFileSync(path.join(OUT, 'report.md'), lines.join('\n') + '\n')
+            fs.writeFileSync(path.join(OUT, `${TAG}.verdict`), blockingFailures.length ? 'fail' : 'pass')
+
+            console.log(lines.join('\n'))
+          })().catch((e) => {
+            // A crash in the harness is not evidence about the PR — say so, do not
+            // silently report a pass.
+            fs.appendFileSync(path.join(OUT, 'report.md'), `\n### Browser QA — ${TAG}\n\nHarness error: ${e && e.message}\n`)
+            fs.writeFileSync(path.join(OUT, `${TAG}.verdict`), 'error')
+            console.error(e)
+            process.exit(0)
+          })
+          QA_SUITE
+
+      - name: Run browser QA on the PR
+        run: |
+          set -uo pipefail
+
+          if [ "$(cat "$QA_DIR/build.status")" != "0" ]; then
+            echo "error" > "$QA_DIR/pr.verdict"
+            echo "Build failed — no browser QA." >> "$QA_DIR/report.md"
+            exit 0
+          fi
+
+          QA_TARGET="$APP_URL" QA_TAG=pr node "$PW_DIR/qa.js"
+          exit 0
+
+      - name: Run browser QA on the baseline
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+
+          if [ ! -f "$QA_DIR/baseline.status" ]; then
+            echo "No baseline server — skipping comparison run." >> "$QA_DIR/report.md"
+            exit 0
+          fi
+
+          QA_TARGET="$BASELINE_URL" QA_TAG=baseline node "$PW_DIR/qa.js"
+          exit 0
+
+      # The merge decision's objective half. The model reads ALLOW_MERGE; it can refuse,
+      # it can never grant.
+      - name: Compute the merge gate
+        run: |
+          set -euo pipefail
+
+          reason=""
+          allow=true
+
+          deny() { allow=false; reason="${reason}${reason:+; }$1"; }
+
+          [ "$POLICY" = "auto" ] || deny "policy is \`$POLICY\`"
+          [ "$MERGEABLE" = "MERGEABLE" ] || deny "PR is \`$MERGEABLE\`"
+          [ "$(cat "$QA_DIR/install.status")" = "0" ] || deny "\`npm ci\` failed"
+          [ "$(cat "$QA_DIR/build.status")" = "0" ] || deny "\`npm run build\` failed"
+          [ "$(cat "$QA_DIR/pr.verdict" 2>/dev/null || echo error)" = "pass" ] || deny "browser QA did not pass"
+
+          # The PR must not have moved under us while we were building it.
+          NOW_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)
+          [ "$NOW_SHA" = "$HEAD_SHA" ] || deny "head moved ${HEAD_SHA:0:7} → ${NOW_SHA:0:7} during the review"
+
+          NOW_STATE=$(gh pr view "$PR" --repo "$REPO" --json state -q .state)
+          [ "$NOW_STATE" = "OPEN" ] || deny "PR is now \`$NOW_STATE\`"
+
+          echo "ALLOW_MERGE=$allow" >> "$GITHUB_ENV"
+          echo "MERGE_BLOCKERS=${reason:-none}" >> "$GITHUB_ENV"
+
+          echo "ALLOW_MERGE=$allow (${reason:-no blockers})"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the required secret store?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 smoke.json
+            echo
+            exit 1
+          fi
+
+          rm -f smoke.json
+
+      - name: Run the reviewer
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/prompt.md" <<'AGENT_PROMPT'
+          You are the code reviewer for a human-authored pull request in this GitHub repository.
+
+          `gh` and `git` are installed and authenticated. The repository working tree is the
+          MERGE RESULT of the pull request and its base branch — that is, what would actually
+          land on the base branch, not the head branch in isolation.
+
+          Your job is to review that change the way a careful senior maintainer would, leave a
+          genuinely useful pull-request review, and then merge it if and only if it is right.
+
+          ----------------------------------------------------------------------
+          WHAT YOU ARE WORKING WITH
+          ----------------------------------------------------------------------
+
+          Environment variables:
+
+            REPO              the repository, owner/name
+            PR                the pull request number under review
+            PR_AUTHOR         its author, already verified against the review allowlist
+            HEAD_REF          the PR head branch
+            BASE_REF          the base branch
+            HEAD_SHA          the head commit this review is about
+            APP_URL           the built PR app, already running and serving
+            BASELINE_URL      the same app built from BASE_REF, for before/after comparison
+                              (may be unavailable — check before relying on it)
+            QA_DIR            build logs, browser QA report, screenshots
+            PW_DIR            a Playwright install, with chromium already downloaded
+            ALLOW_MERGE       "true" or "false" — see MERGING below
+            MERGE_BLOCKERS    why ALLOW_MERGE is false, when it is
+            PR_CHECK_WORKFLOW the repository's own PR check workflow
+            MAX_ROUNDS        how many times an agent-authored PR may be sent back
+
+          The working tree is a checkout you must treat as READ-ONLY.
+
+          ----------------------------------------------------------------------
+          HARD RULES — these override everything else
+          ----------------------------------------------------------------------
+
+          - NEVER commit. NEVER push. NEVER modify the PR branch or any branch.
+            This is a human's pull request. Suggest changes in the review; do not make them.
+            If you edited a file while investigating, restore it before you finish.
+          - NEVER merge when ALLOW_MERGE is not exactly "true".
+          - NEVER use admin, force or bypass flags of any kind.
+          - NEVER close a pull request.
+          - NEVER approve a change you do not understand.
+          - Review ONLY pull request $PR. Do not touch other pull requests.
+          - Do not report a check as passing unless you saw it pass.
+
+          ----------------------------------------------------------------------
+          1. UNDERSTAND THE CHANGE
+          ----------------------------------------------------------------------
+
+          Read the pull request and the full diff:
+
+            gh pr view "$PR" --repo "$REPO" --json number,title,body,author,headRefName,baseRefName,mergeable,mergeStateStatus,files,statusCheckRollup
+            gh pr diff "$PR" --repo "$REPO"
+
+          Read the surrounding code too, not only the changed lines. A diff that looks fine in
+          isolation is often wrong in context — read the callers, the sibling components, the
+          module it belongs to, and the repository's README and conventions.
+
+          Work out, concretely:
+            - what the change is supposed to do
+            - whether it actually does that
+            - what else it affects
+            - what it might break
+
+          ----------------------------------------------------------------------
+          2. READ THE EVIDENCE THAT WAS ALREADY GATHERED
+          ----------------------------------------------------------------------
+
+          Before you form an opinion, read what the workflow already measured:
+
+            cat "$QA_DIR/report.md"
+            cat "$QA_DIR/build.log"
+            cat "$QA_DIR/lint.log"
+            cat "$QA_DIR/format.log"
+            ls "$QA_DIR/screens"
+
+          `$QA_DIR/pr-results.json` holds the structured browser results for the PR build, and
+          `$QA_DIR/baseline-results.json` the same for the base branch when a baseline was built.
+
+          Compare the two. A warning that is present on both is pre-existing and is NOT this
+          pull request's fault — say so rather than blaming the author. A warning that appears
+          only in the PR run is a regression this change introduced, and matters a great deal.
+
+          Lint and formatting are advisory in this repository's CI. Treat them the same way:
+          mention them as recommendations, never as merge blockers.
+
+          ----------------------------------------------------------------------
+          3. EXERCISE THE RUNNING APP YOURSELF
+          ----------------------------------------------------------------------
+
+          The built PR app is already serving at APP_URL. You are expected to actually drive
+          it — the automated pass only proves the app loads without throwing.
+
+          Playwright is installed at PW_DIR with chromium ready. Write your own scripts under
+          $RUNNER_TEMP (never inside the repository) and run them with node, for example:
+
+            cat > "$RUNNER_TEMP/check.js" <<'EOF'
+            const { chromium, devices } = require('playwright')
+            ;(async () => {
+              const browser = await chromium.launch()
+              const ctx = await browser.newContext(devices['iPhone 13'])
+              const page = await ctx.newPage()
+              page.on('console', m => m.type() === 'error' && console.log('CONSOLE', m.text()))
+              page.on('pageerror', e => console.log('PAGEERROR', e.message))
+              await page.goto(process.env.APP_URL)
+              // ... interact, assert, screenshot ...
+              await page.screenshot({ path: process.env.QA_DIR + '/screens/agent-mobile.png', fullPage: true })
+              await browser.close()
+            })()
+            EOF
+
+            cd "$PW_DIR" && node "$RUNNER_TEMP/check.js"
+
+          Run it from $PW_DIR (or set NODE_PATH="$PW_DIR/node_modules") so `require('playwright')`
+          resolves.
+
+          Exercise the paths this pull request actually touches, on BOTH a desktop viewport and
+          a mobile one — this is a responsive layout and the two render differently. Look for:
+
+            - does the feature the PR describes actually work end to end
+            - does anything the PR did not intend to change still work
+            - layout on a narrow screen: overlap, clipping, unreachable controls,
+              horizontal scrolling, text spilling out of its container
+            - touch interaction, not just mouse: tap targets big enough to hit, no
+              hover-only affordances, no reliance on a mouse event that never fires
+            - keyboard reachability of anything interactive
+            - console errors or unhandled rejections appearing during interaction
+            - visible differences against BASELINE_URL that the PR did not intend
+
+          Take screenshots into "$QA_DIR/screens/" — they are uploaded as a run artifact and you
+          can point the author at them.
+
+          If something looks wrong in a screenshot, verify it in the DOM before reporting it.
+          Do not report a layout problem you have not confirmed.
+
+          ----------------------------------------------------------------------
+          4. REVIEW THE CODE ITSELF
+          ----------------------------------------------------------------------
+
+          Beyond "does it run", look for:
+
+            - correctness: off-by-one, wrong condition, wrong state update, stale closure,
+              missing await, unhandled promise rejection, incorrect dependency array
+            - React specifics: hook rules, effects that should not be effects, keys on lists,
+              state derived during render, unnecessary re-render of an expensive subtree,
+              event listeners that are never removed
+            - accessibility: missing labels, non-semantic elements used as controls,
+              focus that goes nowhere, contrast that a screenshot makes obvious
+            - responsive design: hard-coded pixel widths, viewport assumptions, breakpoints
+              that contradict the ones already used in this repository
+            - dead code, debug code, commented-out blocks, stray console.log
+            - secrets, tokens, keys or personal data added to the repository
+            - anything that weakens CI, tests, or a security control
+            - unrelated changes bundled into the pull request
+            - inconsistency with how the rest of this repository is written
+
+          Be specific. "Consider improving error handling" is worthless. Name the file, the
+          line, what goes wrong, and what to do instead.
+
+          Distinguish clearly between:
+            - blocking problems: correctness, breakage, security, data loss
+            - recommendations: worth doing, not worth blocking on
+            - nits: style and taste, explicitly labelled as optional
+
+          Do not invent problems to look thorough. If the change is good, say it is good.
+
+          ----------------------------------------------------------------------
+          5. CHECK THE REPOSITORY'S OWN CI
+          ----------------------------------------------------------------------
+
+          The repository has its own pull-request check. Read its state for THIS pull request:
+
+            gh pr view "$PR" --repo "$REPO" --json statusCheckRollup
+
+          If there are no checks at all and PR_CHECK_WORKFLOW is non-empty, start it:
+
+            gh workflow run "$PR_CHECK_WORKFLOW" --repo "$REPO" --ref "$HEAD_REF"
+
+          Then wait, and poll until it concludes. Be patient — builds take minutes.
+
+          A check that is queued, pending, running, cancelled, timed out or failing is NOT a
+          pass. If a check fails, read its logs with `gh run view --log-failed` and explain the
+          real cause in your review.
+
+          ----------------------------------------------------------------------
+          6. POST THE REVIEW
+          ----------------------------------------------------------------------
+
+          Post exactly ONE pull-request review. Not a stream of comments.
+
+          Where a point belongs to a specific line, attach it to that line — a review with
+          inline comments is far more useful than a wall of prose. Build the request as JSON
+          and submit it:
+
+            cat > "$RUNNER_TEMP/review.json" <<'EOF'
+            {
+              "event": "COMMENT",
+              "body": "<the summary, in markdown>",
+              "comments": [
+                { "path": "src/components/Book.jsx", "line": 42, "side": "RIGHT", "body": "<the point>" }
+              ]
+            }
+            EOF
+
+            gh api -X POST "repos/$REPO/pulls/$PR/reviews" --input "$RUNNER_TEMP/review.json"
+
+          Every `path` must be a file the pull request changed and every `line` a line that
+          appears in the diff, or GitHub rejects the whole review. If a point does not map onto
+          a changed line, put it in the body instead. If the API rejects your review, drop the
+          inline comments and post the body alone with `gh pr comment` rather than giving up.
+
+          Choose `event`:
+            - "APPROVE" when you found nothing blocking and you are confident in the change
+            - "REQUEST_CHANGES" when there is a blocking problem
+            - "COMMENT" when you have findings but no blocker, or you are not confident
+
+          ----------------------------------------------------------------------
+          6a. WHEN THE AUTHOR IS THE IMPLEMENTATION AGENT
+          ----------------------------------------------------------------------
+
+          If HEAD_REF starts with `ai/issue-`, this pull request was written by the
+          implementation agent and a machine will read your review and act on it. Three
+          things change.
+
+          First, "REQUEST_CHANGES" is the only signal that sends it back. A "COMMENT"
+          review, however detailed, stalls the loop — the work simply sits there. So if
+          you want something changed, request changes. If you do not, approve.
+
+          Second, your blocking list is a work order, not prose. Make every item
+          independently actionable:
+
+            1. src/components/Book.jsx:42 — <what is wrong> — <what to do instead>
+
+          Attach each one to its line as an inline comment where you can. The agent replies
+          on those threads and resolves them, so a point made inline gets answered
+          individually while a point buried in the body may not.
+
+          Third, there is a hard cap of MAX_ROUNDS revision rounds, after which the loop
+          stops and a human is called in. Spend your requests on things that genuinely
+          matter. Do not send a pull request back over a preference, a nit, or a style
+          point — put those under Recommendations and approve. Blocking means broken,
+          insecure, or wrong.
+
+          The agent is allowed to disagree with you and argue back on a thread instead of
+          changing the code. If its argument is sound, accept it and approve; do not
+          re-request the same change a second time.
+
+          Structure the body roughly like this, dropping empty sections:
+
+            ## AI review — <one-line verdict>
+
+            <two or three sentences: what this PR does and whether it works>
+
+            ### Verified in the browser
+            <what you actually ran and observed, desktop and mobile, and what the
+             automated pass measured — including anything that was pre-existing>
+
+            ### Blocking
+            <numbered, specific, with file:line and a concrete fix>
+
+            ### Recommendations
+            <numbered, specific, non-blocking>
+
+            ### Nits
+            <optional, brief>
+
+            ### CI
+            <check names and their conclusions>
+
+            ---
+            Screenshots and logs: <link to this workflow run>
+
+          Write for the author. Be direct and concrete, never fawning and never sarcastic.
+          If you could not verify something, say that plainly instead of implying you did.
+
+          ----------------------------------------------------------------------
+          7. MERGING
+          ----------------------------------------------------------------------
+
+          ALLOW_MERGE is computed in the workflow from facts, not opinions: the merge policy,
+          mergeability, the install, the build, the browser QA verdict, and whether the head
+          commit moved while you were working. It is a ceiling, not an instruction.
+
+          If ALLOW_MERGE is not exactly "true": do not merge. Say in the review that the merge
+          was withheld, and give MERGE_BLOCKERS as the reason.
+
+          If ALLOW_MERGE is "true", merge only when ALL of these also hold:
+
+            - you understand the change
+            - you found no blocking problem
+            - every relevant repository check concluded successfully on this head commit
+            - the app works, on desktop and on mobile, for the paths this PR touches
+            - nothing that worked on the baseline is broken in the PR build
+            - no secret, credential or personal data was added
+            - no test, check or security control was weakened
+            - the pull request contains no unrelated changes you cannot account for
+            - you would put your own name on this merge
+
+          Green CI alone is never sufficient. If you are not confident, leave it open — that
+          is always the correct default.
+
+          To merge, use the dedicated merge token, which exists so that the resulting push
+          starts the repository's publish workflow:
+
+            GH_TOKEN="$GH_MERGE_TOKEN" gh pr merge "$PR" --repo "$REPO" --squash
+
+          Then confirm it actually merged:
+
+            gh pr view "$PR" --repo "$REPO" --json state,mergedAt
+
+          Do not assume a command that printed no error did what you wanted.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          Finish with a short summary for the run log:
+
+            #<pr> — <title> — <approved|changes requested|commented> — <merged|not merged> — <reason>
+            blocking: <count>  recommendations: <count>
+            verified: <what you ran in the browser, one line>
+          AGENT_PROMPT
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$RUNNER_TEMP/summary.md" \
+            "$(cat "$RUNNER_TEMP/prompt.md")"
+
+      # The loop's return leg, and it is bash rather than prompt because it is the thing
+      # that has to terminate. The reviewer posts its review with GITHUB_TOKEN, and events
+      # from that token start no workflow runs — so the implementer can never be woken by
+      # a pull_request_review event and must be dispatched explicitly.
+      # Deliberately NOT `if: always()`. If the reviewer step itself failed, no new review
+      # exists — but an older CHANGES_REQUESTED review is still the latest one, so this
+      # step would dispatch the implementer again on feedback it has already addressed.
+      # ROUND would not increase either, because it counts reviews, so the cap could never
+      # stop it: implementer pushes, reviewer crashes, implementer is dispatched, for ever.
+      # Running only on a successful review means a hand-back always follows a real review.
+      - name: Hand back to the implementer
+        run: |
+          set -euo pipefail
+
+          # Only ever hand back to a branch the implementer owns. A human's PR is reviewed
+          # and then left alone.
+          case "$HEAD_REF" in
+            ai/issue-*) : ;;
+            *) echo "\`$HEAD_REF\` is not an implementer branch — nothing to hand back."; exit 0 ;;
+          esac
+
+          gh pr view "$PR" --repo "$REPO" --json state,body,reviews > loop.json
+
+          STATE=$(jq -r '.state' loop.json)
+
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR #$PR is \`$STATE\` — the loop is finished."
+            exit 0
+          fi
+
+          # The round number is derived, never stored: it is simply how many times this
+          # PR has been sent back. Nothing to initialise, nothing to drift.
+          ROUND=$(jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' loop.json)
+          LAST=$(jq -r '.reviews | sort_by(.submittedAt) | last | .state // "NONE"' loop.json)
+          ISSUE=$(jq -r '.body' loop.json | grep -oiE '(close[sd]?|fixe[sd]?|resolve[sd]?) +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
+
+          echo "state=$STATE last_review=$LAST round=$ROUND/$MAX_ROUNDS issue=${ISSUE:-none}"
+
+          if [ "$LAST" != "CHANGES_REQUESTED" ]; then
+            # Open, but nothing was requested. Either the review approved and the merge
+            # gate withheld it, or the reviewer only commented. Both need a human, and
+            # neither is something the implementer can act on.
+            {
+              echo
+              echo "PR is open with last review \`$LAST\` and was not merged."
+              echo "Merge blockers: \`${MERGE_BLOCKERS:-none}\`. Not dispatching the implementer."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+            gh pr comment "$PR" --repo "$REPO" --body \
+              "Review round $ROUND reached the cap of \`$MAX_ROUNDS\`. Not sending this back to the implementer again.
+
+          Feedback that has not converged in $MAX_ROUNDS rounds is usually a sign the change needs a decision rather than another attempt. Over to a human." || true
+
+            if [ -n "$ISSUE" ]; then
+              gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:review" || true
+            fi
+
+            echo "Round cap reached — loop stopped." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh workflow run "$IMPLEMENTER_WORKFLOW" --repo "$REPO" -f pr="$PR"
+
+          echo "Dispatched \`$IMPLEMENTER_WORKFLOW\` for PR #$PR (round $((ROUND + 1)) of $MAX_ROUNDS)." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      # Post-hoc enforcement. If the model merged against the gate, the merge already
+      # happened — but the run goes red and the summary says exactly what occurred, which
+      # is what makes the rule auditable rather than aspirational.
+      - name: Verify the merge respected the gate
+        if: always()
+        run: |
+          set -euo pipefail
+
+          STATE=$(gh pr view "$PR" --repo "$REPO" --json state -q .state || echo UNKNOWN)
+
+          if [ "$STATE" = "MERGED" ] && [ "${ALLOW_MERGE:-false}" != "true" ]; then
+            {
+              echo "## Merge gate violated"
+              echo
+              echo "PR #$PR is merged, but \`ALLOW_MERGE\` was \`${ALLOW_MERGE:-unset}\`."
+              echo "Blockers were: \`${MERGE_BLOCKERS:-unknown}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Agent merged against the gate." >&2
+            exit 1
+          fi
+
+          echo "PR state: $STATE, ALLOW_MERGE: ${ALLOW_MERGE:-unset}"
+
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ needs.gate.outputs.pr }}-qa
+          path: ${{ runner.temp }}/qa
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## AI PR Review — #$PR by \`$PR_AUTHOR\`"
+            echo
+            echo "\`ALLOW_MERGE\` = \`${ALLOW_MERGE:-unset}\` (${MERGE_BLOCKERS:-n/a})"
+            echo
+            if [ -f "$RUNNER_TEMP/summary.md" ]; then
+              cat "$RUNNER_TEMP/summary.md"
+            else
+              echo "The reviewer produced no summary."
+            fi
+            echo
+            if [ -f "$QA_DIR/report.md" ]; then
+              cat "$QA_DIR/report.md"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

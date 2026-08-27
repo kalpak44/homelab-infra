@@ -34,6 +34,27 @@ No `github_repository_ruleset`. One was tried and removed — see the last non-n
 dropped from state, left in the repo. Use that pattern rather than deleting the resource: a plain delete would remove
 the file, and with no green check the agent would stop merging.
 
+**Exception — `proklinator-app` gets a second agent.** `workflows/ai-pr-review.yml` handles the PRs `ai-pr-agent.yml`
+refuses: human-authored ones. It is `pull_request_target`-driven, so its allowlist gate (`PR_REVIEW_ALLOWLIST`, an
+Actions variable) runs in its own job with no PR code on disk — never move a checkout above it. The allowlist matches
+`.author.login` from the API, never git author name/email, which are unauthenticated free text. It never writes to the
+PR branch. `ALLOW_MERGE` is computed in bash from build + Playwright QA + mergeability, so the prompt can refuse a merge
+but never grant one. It merges with `GH_ADMIN_TOKEN`, because a `GITHUB_TOKEN` push does not start `publish-frontend.yml`.
+
+**Exception — `proklinator-app` closes a loop.** `workflows/ai-issue-agent.yml` implements an issue labelled `ai:ready`
+and opens a PR; `ai-pr-review.yml` reviews it and either merges or hands it back. **The issue is the state machine**
+(`ai:*` labels), the PR is scratch space, and the round number is *derived* by counting `CHANGES_REQUESTED` reviews —
+never stored, so it cannot drift. Three constraints hold the design together and must not be relaxed:
+
+- **The implementer pushes and opens PRs with `GH_ADMIN_TOKEN`.** A PR opened with `GITHUB_TOKEN` triggers no workflow
+  runs at all, so neither the reviewer nor the repo's own `pull_request` check would ever fire. It also makes the author
+  a human account, which is why `ai-pr-agent.yml`'s bot sweep leaves these PRs alone with no change to that file.
+- **The reviewer hands back by `workflow_dispatch`, not by event.** Its review is posted with `GITHUB_TOKEN`, so a
+  `pull_request_review` trigger would never fire. That hand-back step must never be `if: always()` — on a crashed
+  review the previous `CHANGES_REQUESTED` is still the latest, `ROUND` does not increase, and the cap can never stop it.
+- **`AI_MAX_REVIEW_ROUNDS` is enforced independently in both workflows.** Each round is two model runs plus two browser
+  QA passes.
+
 **Exception — the container-image repos.** `kubectl-awscli` and `postgres-awscli` get `workflows/release.yml` instead
 of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow, and now one **job**, because every step needs
 the working tree the step before it produced and because nothing may reach the registry until the whole chain has

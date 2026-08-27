@@ -253,7 +253,7 @@ layers.
 | `kalpak44/mite-assistant-mcp` | `github/mite-assistant-mcp` | same                                                        |
 | `kalpak44/plugin-noco-tools`  | `github/plugin-noco-tools`  | same; PR check is the repo's own `build.yml`                |
 | `kalpak44/postgres-awscli`    | `github/postgres-awscli`    | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
-| `kalpak44/proklinator-app`    | `github/proklinator-app`    | same; PR check is the repo's own `publish-frontend.yml`, which also publishes `ghcr.io/kalpak44/proklinator-app` and dispatches **GitOps - Bump images** to deploy it. Also gets `GH_ADMIN_TOKEN` for that dispatch |
+| `kalpak44/proklinator-app`    | `github/proklinator-app`    | same; PR check is the repo's own `publish-frontend.yml`, which also publishes `ghcr.io/kalpak44/proklinator-app` and dispatches **GitOps - Bump images** to deploy it. Also gets `GH_ADMIN_TOKEN` for that dispatch, plus a closed agent loop: `ai-issue-agent.yml` implements an `ai:ready` issue and opens a PR, `ai-pr-review.yml` browser-tests it and merges or hands it back, capped by `AI_MAX_REVIEW_ROUNDS` |
 
 **CI stays with the repo.** This layer ships the agent and points it at the repo's own check via the
 `PR_CHECK_WORKFLOW` variable (`publish-frontend.yml` / `pr-check.yml`) - it does not manage the check itself. A repo
