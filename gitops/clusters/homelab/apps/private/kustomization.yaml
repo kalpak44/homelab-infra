@@ -4,6 +4,6 @@ resources:
   - private-home-page
   - crowdsec-web-ui
   - headlamp
-  - lex-bg-connector
+#  - lex-bg-connector
   - playwright-mcp
   - ciela-mcp
