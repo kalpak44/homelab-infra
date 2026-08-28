@@ -533,13 +533,25 @@ jobs:
               }
             }' > "$RUNNER_TEMP/threads.json"
 
+          # `advisory` is not a nicety. GitHub forbids an Actions token from submitting an
+          # APPROVE event, so ai-pr-review.yml posts EVERY review — approvals and findings
+          # alike — as COMMENTED. Filtering to CHANGES_REQUESTED therefore threw away the
+          # findings on any review that did not explicitly request changes, and the agent
+          # was handed `{"reviews":[],"unresolved":[]}` and told to address it. The round
+          # counter still keys off CHANGES_REQUESTED alone — that is the cap, and widening
+          # it would let an approval push the loop towards its limit.
           jq '{
             reviews: [.data.repository.pullRequest.reviews.nodes[]
                       | select(.state == "CHANGES_REQUESTED")],
+            advisory: [.data.repository.pullRequest.reviews.nodes[]
+                       | select(.state != "CHANGES_REQUESTED")
+                       | select((.body // "") != "")],
             unresolved: [.data.repository.pullRequest.reviewThreads.nodes[]
                          | select(.isResolved == false)]
           }' "$RUNNER_TEMP/threads.json" > "$RUNNER_TEMP/feedback.json"
 
+          echo "Change requests: $(jq '.reviews | length' "$RUNNER_TEMP/feedback.json")"
+          echo "Other reviews with a body: $(jq '.advisory | length' "$RUNNER_TEMP/feedback.json")"
           echo "Unresolved threads: $(jq '.unresolved | length' "$RUNNER_TEMP/feedback.json")"
 
       - name: Write the shared context
@@ -874,12 +886,25 @@ jobs:
           1. READ THE FEEDBACK
           ----------------------------------------------------------------------
 
-          The change requests and every unresolved review thread are already collected:
+          The reviews and every unresolved review thread are already collected:
 
             cat "$RUNNER_TEMP/feedback.json"
 
-          `reviews` holds the review bodies — the numbered blocking list lives there.
-          `unresolved` holds each open thread with its `id`, `path`, `line` and comments.
+          `reviews` holds the CHANGES_REQUESTED bodies — the numbered blocking list lives
+          there. `advisory` holds every other review that said something: the reviewer
+          cannot submit an APPROVE event, so a review carrying only recommendations arrives
+          as COMMENTED and lands here rather than in `reviews`. Recommendations are not
+          optional to read. Act on them or say why you are not. `unresolved` holds each open
+          thread with its `id`, `path`, `line` and comments.
+
+          Then read everything the loop has already said about this work:
+
+            cat "$RUNNER_TEMP/history.md"
+
+          That is the issue and its full thread plus every earlier round on this pull
+          request. Use it to tell a point you have already answered from a new one — and if
+          an earlier round agreed to do something and it is still not done, that is the
+          first thing to fix.
 
           Also read the pull request and its current diff:
 
@@ -889,6 +914,10 @@ jobs:
           Enumerate every distinct point being made. Work through them one at a time. Do
           not fix the easy ones and quietly ignore the rest — an unaddressed point comes
           straight back as another round, and the cap is small.
+
+          If, after all of that, there is genuinely nothing to act on — no change requests,
+          no unresolved threads, no unactioned recommendation — do NOT invent work and do
+          NOT re-implement anything. Say so and stop.
 
           ----------------------------------------------------------------------
           2. DECIDE ON EACH POINT — YOU ARE NOT REQUIRED TO OBEY
