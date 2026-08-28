@@ -271,7 +271,17 @@ jobs:
       ROUND: ${{ needs.plan.outputs.round }}
       MAX_ROUNDS: ${{ needs.plan.outputs.max_rounds }}
 
+      DEFAULT_BRANCH: main
+      JOB_TIMEOUT: "60"
+
       APP_URL: http://127.0.0.1:4173/
+
+      # vite.config.js sends /api to API_PROXY_TARGET in both the dev and the preview
+      # server, defaulting to http://localhost:3000. The SPA polls /api/health on mount,
+      # so with nothing listening there every page load records a 502 and a console
+      # error. Pinned here rather than left to the default so the port the API runs on
+      # and the port the proxy dials are one decision, stated once.
+      API_PROXY_TARGET: http://127.0.0.1:3000
 
     steps:
       # persist-credentials with the PAT: the push and the PR both have to come from a
@@ -296,6 +306,15 @@ jobs:
           set -euo pipefail
 
           if [ "$MODE" = "revise" ]; then
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+          elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
+            # Implement mode, but the branch already exists: an earlier attempt got as far
+            # as pushing and its PR was then closed (an open one would have been routed to
+            # revise mode by the plan job). Continue from it rather than branching fresh
+            # off main — a new branch from main would push as a non-fast-forward and strand
+            # the run, and it would silently throw away work whose review is in history.md.
+            echo "Branch \`$BRANCH\` already exists — continuing from the previous attempt."
             git fetch origin "$BRANCH"
             git checkout "$BRANCH"
           else
@@ -329,6 +348,64 @@ jobs:
           npm install --no-audit --no-fund playwright@1 > /dev/null
           "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
           echo "PW_DIR=$PW_DIR" >> "$GITHUB_ENV"
+
+      # Codex runs every shell call in its own process group and SIGKILLs the whole group
+      # when the call returns (codex-rs/utils/pty/src/process_group.rs). `nohup` masks
+      # SIGHUP and nothing else, so a server the agent starts is dead by its next command
+      # — observed as `curl → preview 200` followed immediately by ERR_CONNECTION_REFUSED,
+      # seven times in one run. `setsid` puts the servers in a new session, out of the
+      # group being killed. This is a script rather than prose in the prompt because the
+      # agent was otherwise re-deriving the whole kill/start/sleep dance on every probe
+      # and guessing readiness with `sleep 1.5`.
+      - name: Write the serve helper
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/serve.sh" <<'SERVE'
+          #!/usr/bin/env bash
+          # Rebuild the site and (re)start it and the API. Returns only once both answer.
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          # Matched on the port and on the absolute script path, because `npm run preview`
+          # becomes `node .../vite preview --port 4173 ...` and `cd backend && node
+          # src/server.js` becomes a bare `node src/server.js` — a pattern naming the
+          # directory it was started from matches neither.
+          pkill -f 'vite preview.*4173' 2>/dev/null || true
+          pkill -f "$GITHUB_WORKSPACE/backend/src/server.js" 2>/dev/null || true
+          sleep 0.5
+
+          if ! npm run build > "$RUNNER_TEMP/build.log" 2>&1; then
+            echo "build failed:" >&2
+            tail -30 "$RUNNER_TEMP/build.log" >&2
+            exit 1
+          fi
+
+          [ -d backend/node_modules ] || ( cd backend && npm ci --no-audit --no-fund > /dev/null )
+
+          # Run by absolute path from the workspace root rather than `cd backend` first:
+          # node resolves `express` from the script's own directory either way, and this
+          # puts a distinguishable path in the process list for the pkill above.
+          setsid --fork node "$GITHUB_WORKSPACE/backend/src/server.js" \
+            > "$RUNNER_TEMP/api.log" 2>&1 < /dev/null
+          setsid --fork npm run preview -- --port 4173 --strictPort --host 127.0.0.1 \
+            > "$RUNNER_TEMP/preview.log" 2>&1 < /dev/null
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "$APP_URL" -o /dev/null && curl -fsS "${APP_URL%/}/api/health" -o /dev/null; then
+              echo "app $APP_URL  api $(curl -sS "${APP_URL%/}/api/health")"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "servers did not come up:" >&2
+          tail -20 "$RUNNER_TEMP/preview.log" "$RUNNER_TEMP/api.log" >&2
+          exit 1
+          SERVE
+
+          chmod +x "$RUNNER_TEMP/serve.sh"
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex
@@ -374,6 +451,57 @@ jobs:
           fi
 
           rm -f smoke.json
+
+      # What earlier runs on this issue already tried. An issue reaches `ai:ready` a second
+      # time because the first attempt was handed back, and a run that cannot see why is
+      # condemned to make the same call again — the loop's most expensive failure mode.
+      # The issue is the state machine, so its comment thread is the record; pull requests
+      # on the branch, including closed ones, are the rest of it.
+      - name: Collect prior attempts
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# Prior attempts on issue #$ISSUE"
+            echo
+
+            echo "## The issue and its full comment thread"
+            echo
+            gh issue view "$ISSUE" --repo "$REPO" --comments || echo "_could not read the issue_"
+            echo
+
+            # Every PR ever opened from this branch, not just the open one: a closed PR is
+            # usually an abandoned attempt, and its review is the reason it was abandoned.
+            PRS=$(gh pr list --repo "$REPO" --state all --head "$BRANCH" --json number -q '.[].number' || true)
+
+            if [ -z "$PRS" ]; then
+              echo "## Pull requests from \`$BRANCH\`"
+              echo
+              echo "_none — no previous run got as far as opening one_"
+              echo
+            else
+              for N in $PRS; do
+                echo "## Pull request #$N"
+                echo
+                gh pr view "$N" --repo "$REPO" \
+                  --json number,title,state,isDraft,mergedAt,closedAt,body,comments,reviews \
+                  --template '{{.title}} — {{.state}}{{if .mergedAt}} (merged){{end}}
+
+          {{.body}}
+
+          ### Reviews
+          {{range .reviews}}- **{{.author.login}}** {{.state}}:
+          {{.body}}
+          {{end}}
+          ### Comments
+          {{range .comments}}- **{{.author.login}}**: {{.body}}
+          {{end}}' || echo "_could not read PR #$N_"
+                echo
+              done
+            fi
+          } > "$RUNNER_TEMP/history.md"
+
+          echo "Prior-attempt context: $(wc -l < "$RUNNER_TEMP/history.md") lines"
 
       - name: Collect the review feedback
         if: needs.plan.outputs.mode == 'revise'
@@ -432,7 +560,14 @@ jobs:
             ROUND        which revision round this is
             MAX_ROUNDS   the cap; exceeding it stops the loop
             APP_URL      where the app serves once you build and start it
-            PW_DIR       a Playwright install with chromium already downloaded
+            PW_DIR       a Playwright install with chromium already downloaded;
+                         write your browser scripts INTO this directory
+            RUNNER_TEMP/serve.sh
+                         rebuilds the site and (re)starts it and the API
+            RUNNER_TEMP/history.md
+                         what earlier runs on this issue already tried, and how each
+                         one ended — the issue thread plus every pull request ever
+                         opened from $BRANCH, including closed ones, with their reviews
 
             STRIPE_SECRET_KEY       Stripe TEST secret key
             STRIPE_PUBLISHABLE_KEY  Stripe TEST publishable key
@@ -459,16 +594,15 @@ jobs:
           of a public image. Do not branch on NODE_ENV to choose a key: code that picks a
           key by environment is code that can pick the wrong one.
 
-          Run the API like this:
+          You do not start the API yourself — `$RUNNER_TEMP/serve.sh` does, on the port the
+          preview server proxies `/api` to. Check it with:
 
-            cd backend && npm ci
-            STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
-            STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY" \
-            PORT=3100 node src/server.js &
-            curl -s localhost:3100/api/health
+            curl -s "${APP_URL%/}/api/health"
 
-          `/api/health` reports `"stripe": "configured"` when both arrived. Use it to prove
-          your wiring works instead of assuming it does.
+          `/api/health` reports `"stripe": "configured"` when both keys arrived. Use it to
+          prove your wiring works instead of assuming it does. Reach the API through
+          `$APP_URL/api/...` so you exercise the same same-origin path the browser uses; if
+          you must call it directly it is on the port `$API_PROXY_TARGET` names.
 
           Absolute rules about these keys — breaking one is worse than not finishing:
 
@@ -483,16 +617,24 @@ jobs:
           HOW TO RUN AND LOOK AT THE APP
           ----------------------------------------------------------------------
 
-          This is a Vite + React single-page app. Build it and serve the build:
+          This is a Vite + React single-page app with an Express API beside it. One command
+          rebuilds and restarts both, and returns only once each answers:
 
-            npm run build
-            nohup npm run preview -- --port 4173 --strictPort --host 127.0.0.1 > /tmp/preview.log 2>&1 &
+            "$RUNNER_TEMP/serve.sh"
 
-          Wait for it, then drive it with Playwright. Write scripts under $RUNNER_TEMP,
-          never inside the repository, and run them from $PW_DIR so `require('playwright')`
-          resolves:
+          Run it after every change you want to look at. Do NOT start servers yourself: each
+          of your shell calls runs in its own process group which is killed when the call
+          returns, so anything you background — with `nohup` or without — is gone by your
+          next command. `serve.sh` starts them with `setsid`, outside that group, so they
+          survive. If a page will not load, run `serve.sh` again rather than starting
+          `npm run preview` by hand; by hand it cannot work.
 
-            cat > "$RUNNER_TEMP/look.js" <<'EOF'
+          Then drive it with Playwright. Write your scripts INTO $PW_DIR — never inside the
+          repository, and never in $RUNNER_TEMP itself: node resolves `require('playwright')`
+          from the script's own directory, not from the working directory, so a script that
+          lives elsewhere fails with MODULE_NOT_FOUND no matter where you `cd` first.
+
+            cat > "$PW_DIR/look.js" <<'EOF'
             const { chromium, devices } = require('playwright')
             ;(async () => {
               const browser = await chromium.launch()
@@ -509,7 +651,7 @@ jobs:
             })()
             EOF
 
-            cd "$PW_DIR" && node "$RUNNER_TEMP/look.js"
+            node "$PW_DIR/look.js"
 
           This app's layout changes at 900px — a two-page spread above it, a single page
           below. Anything you touch has to be checked on BOTH sides of that breakpoint.
@@ -566,14 +708,40 @@ jobs:
           of changes. Write for that reviewer.
 
           ----------------------------------------------------------------------
-          1. READ THE ISSUE
+          1. READ THE ISSUE, AND WHAT WAS ALREADY TRIED
           ----------------------------------------------------------------------
 
-            gh issue view "$ISSUE" --repo "$REPO" --comments
+            cat "$RUNNER_TEMP/history.md"
+
+          That is the issue, its full comment thread, and every pull request ever opened
+          from this branch — including closed ones — with their reviews.
 
           Work out what is actually being asked, including anything settled in the comment
           thread rather than the description. Read the whole thread — a later comment often
           overrides the original description.
+
+          Then work out whether you are the first attempt. If you are not, the history says
+          why the previous one stopped, and that is the most important thing you will read
+          today:
+
+            - If it was handed back as ambiguous and the thread has since answered the
+              question, build the answer that was given. Do not re-litigate it.
+            - If it was handed back as ambiguous and nothing has been answered, hand it back
+              again immediately, naming the same open question. Do not quietly pick one.
+            - If it was handed back for a technical reason, do not repeat the approach that
+              failed. Say in the pull request what you did differently.
+            - If a previous pull request was closed after review, read that review first.
+              Everything it objected to still applies to you.
+            - If the reviewer left recommendations without requesting changes, they were
+              never handed back to anyone. Act on them or say why you are not.
+
+          Check what the branch already carries before you write anything:
+
+            git log --oneline main..HEAD
+
+          If it is not empty you are resuming an earlier attempt's branch, not starting
+          clean. Build on those commits. Do not revert them wholesale to start again, and
+          never force-push.
 
           Decide, before writing anything, whether this is genuinely actionable:
 
@@ -605,10 +773,11 @@ jobs:
 
           Then, without exception:
 
-            npm run build
             npm run lint
+            "$RUNNER_TEMP/serve.sh"
 
-          and run the app and look at it, on desktop and on mobile, as described above.
+          `serve.sh` runs the build, so a non-zero exit from it is a build failure. Then look
+          at the app, on desktop and on mobile, as described above.
           Confirm with your own eyes that the thing the issue asked for now happens, and
           that what worked before still works.
 
@@ -673,11 +842,18 @@ jobs:
             cat "$RUNNER_TEMP/context.md"
           } > "$RUNNER_TEMP/prompt.md"
 
+          # Teed, and the exit status kept, so the hand-back below can quote what actually
+          # went wrong instead of reporting a bare "produced no summary".
+          set +e
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
             --output-last-message "$RUNNER_TEMP/summary.md" \
-            "$(cat "$RUNNER_TEMP/prompt.md")"
+            "$(cat "$RUNNER_TEMP/prompt.md")" 2>&1 | tee "$RUNNER_TEMP/agent.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/agent.status"
+          set -e
+
+          exit "$(cat "$RUNNER_TEMP/agent.status")"
 
       - name: Address the review
         if: needs.plan.outputs.mode == 'revise'
@@ -735,10 +911,10 @@ jobs:
 
           Make the changes. Then, as before:
 
-            npm run build
             npm run lint
+            "$RUNNER_TEMP/serve.sh"
 
-          and run the app and look at it on desktop and mobile. If the reviewer reported a
+          and look at the app on desktop and mobile. If the reviewer reported a
           visual or behavioural problem, reproduce it first and then confirm your fix
           actually removes it. Do not claim a fix you have not observed working.
 
@@ -808,11 +984,18 @@ jobs:
             cat "$RUNNER_TEMP/context.md"
           } > "$RUNNER_TEMP/prompt.md"
 
+          # Teed, and the exit status kept, so the hand-back below can quote what actually
+          # went wrong instead of reporting a bare "produced no summary".
+          set +e
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
             --output-last-message "$RUNNER_TEMP/summary.md" \
-            "$(cat "$RUNNER_TEMP/prompt.md")"
+            "$(cat "$RUNNER_TEMP/prompt.md")" 2>&1 | tee "$RUNNER_TEMP/agent.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/agent.status"
+          set -e
+
+          exit "$(cat "$RUNNER_TEMP/agent.status")"
 
       # An implement run that ends with the issue still ai:in-progress and no pull request
       # has stranded it: the claim label blocks every future run, so nothing would ever
@@ -832,13 +1015,92 @@ jobs:
                 gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:review" --remove-label "ai:in-progress" || true
                 echo "PR #$OPEN_PR exists — issue moved to ai:review."
               else
+                # The next run reads this comment as its history, so it has to say WHY,
+                # not just THAT. "Finished without opening a pull request" tells the
+                # following attempt nothing and it repeats the failure exactly.
                 gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:in-progress" || true
-                gh issue comment "$ISSUE" --repo "$REPO" --body \
-                  "The implementation run finished without opening a pull request. Marked \`ai:blocked\` so the issue is not left claimed.
 
-          Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                STATUS=$(cat "$RUNNER_TEMP/agent.status" 2>/dev/null || echo "unknown")
+                COMMITS=$(git log --oneline "origin/$DEFAULT_BRANCH..HEAD" 2>/dev/null | head -20 || true)
+                DIRTY=$(git status --porcelain 2>/dev/null | head -40 || true)
+                PUSHED=$(git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1 && echo yes || echo no)
 
-          Remove \`ai:blocked\` and re-apply \`ai:ready\` to try again." || true
+                case "$STATUS" in
+                  0)       WHY="The agent ran to completion but never opened a pull request." ;;
+                  124|137) WHY="The agent was killed — the job hit its ${JOB_TIMEOUT}-minute timeout." ;;
+                  unknown) WHY="The agent step never ran, or was interrupted before it could record an exit status. This is usually a setup failure earlier in the job, not a decision the agent made." ;;
+                  *)       WHY="The agent exited non-zero (status \`$STATUS\`)." ;;
+                esac
+
+                {
+                  echo "## No pull request was produced"
+                  echo
+                  echo "$WHY Marked \`ai:blocked\` so the issue is not left claimed."
+                  echo
+
+                  echo "### What the agent said"
+                  echo
+                  if [ -s "$RUNNER_TEMP/summary.md" ]; then
+                    cat "$RUNNER_TEMP/summary.md"
+                  else
+                    echo "_It produced no closing summary, which usually means it was cut off rather than that it decided to stop._"
+                  fi
+                  echo
+
+                  echo "### State it left behind"
+                  echo
+                  echo "| | |"
+                  echo "| :--- | :--- |"
+                  echo "| Branch | \`$BRANCH\` |"
+                  echo "| Pushed to origin | $PUSHED |"
+                  echo "| Commits ahead of \`$DEFAULT_BRANCH\` | $( [ -n "$COMMITS" ] && printf '%s' "$(printf '%s\n' "$COMMITS" | wc -l | tr -d ' ')" || echo 0 ) |"
+                  echo "| Uncommitted changes | $( [ -n "$DIRTY" ] && echo "yes — lost with the runner" || echo none ) |"
+                  echo "| Agent exit status | \`$STATUS\` |"
+                  echo
+
+                  if [ -n "$COMMITS" ]; then
+                    echo "<details><summary>Commits</summary>"
+                    echo
+                    echo '```'
+                    printf '%s\n' "$COMMITS"
+                    echo '```'
+                    echo
+                    echo "</details>"
+                    echo
+                  fi
+
+                  if [ -n "$DIRTY" ]; then
+                    echo "<details><summary>Uncommitted working tree</summary>"
+                    echo
+                    echo '```'
+                    printf '%s\n' "$DIRTY"
+                    echo '```'
+                    echo
+                    echo "</details>"
+                    echo
+                  fi
+
+                  if [ -s "$RUNNER_TEMP/agent.log" ]; then
+                    echo "<details><summary>Last 60 lines of the agent's output</summary>"
+                    echo
+                    echo '```'
+                    tail -60 "$RUNNER_TEMP/agent.log"
+                    echo '```'
+                    echo
+                    echo "</details>"
+                    echo
+                  fi
+
+                  echo "### To retry"
+                  echo
+                  echo "Remove \`ai:blocked\` and re-apply \`ai:ready\`. The next run reads this thread"
+                  echo "first, so if the agent stopped for a decision, answering it here is what unblocks it."
+                  echo
+                  echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                } > "$RUNNER_TEMP/handback.md"
+
+                gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/handback.md" || true
+                cat "$RUNNER_TEMP/handback.md" >> "$GITHUB_STEP_SUMMARY"
                 echo "No PR produced — issue #$ISSUE marked ai:blocked."
               fi
               ;;
@@ -846,6 +1108,65 @@ jobs:
               echo "Issue #$ISSUE is no longer ai:in-progress — nothing to release."
               ;;
           esac
+
+      # A revise run that dies leaves the PR sitting under CHANGES_REQUESTED with nothing
+      # said. The reviewer only hands back after a review it actually completed, so silence
+      # here stalls the loop rather than looping it — and the round is spent either way.
+      # Say what happened, on the PR, where the next round will read it.
+      - name: Report a failed revision
+        if: failure() && needs.plan.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+
+          STATUS=$(cat "$RUNNER_TEMP/agent.status" 2>/dev/null || echo "unknown")
+          PUSHED=$(git log --oneline "origin/$BRANCH..HEAD" 2>/dev/null | wc -l | tr -d ' ' || echo "?")
+
+          case "$STATUS" in
+            0)       WHY="The agent finished but the step failed afterwards." ;;
+            124|137) WHY="The agent was killed — the job hit its ${JOB_TIMEOUT}-minute timeout." ;;
+            unknown) WHY="The agent step never ran, or was interrupted before it could record an exit status — usually a setup failure earlier in the job." ;;
+            *)       WHY="The agent exited non-zero (status \`$STATUS\`)." ;;
+          esac
+
+          {
+            echo "## Revision round $ROUND of $MAX_ROUNDS did not complete"
+            echo
+            echo "$WHY The review feedback on this pull request has **not** been addressed."
+            echo
+            echo "| | |"
+            echo "| :--- | :--- |"
+            echo "| Unpushed local commits | $PUSHED |"
+            echo "| Agent exit status | \`$STATUS\` |"
+            echo
+
+            echo "### What the agent said"
+            echo
+            if [ -s "$RUNNER_TEMP/summary.md" ]; then
+              cat "$RUNNER_TEMP/summary.md"
+            else
+              echo "_No closing summary — it was cut off rather than stopping deliberately._"
+            fi
+            echo
+
+            if [ -s "$RUNNER_TEMP/agent.log" ]; then
+              echo "<details><summary>Last 60 lines of the agent's output</summary>"
+              echo
+              echo '```'
+              tail -60 "$RUNNER_TEMP/agent.log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            fi
+
+            echo "This round is spent. Re-run with **Actions → AI Issue Agent → Run workflow**"
+            echo "and pr \`$PR\` to try it again."
+            echo
+            echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$RUNNER_TEMP/failure.md"
+
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summary
         if: always()

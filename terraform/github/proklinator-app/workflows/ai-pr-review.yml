@@ -299,6 +299,15 @@ jobs:
       APP_URL: http://127.0.0.1:4173/
       BASELINE_URL: http://127.0.0.1:4174/
 
+      # vite.config.js proxies /api to API_PROXY_TARGET in the preview server, defaulting
+      # to http://localhost:3000, and the SPA polls /api/health on mount. With nothing
+      # listening there every profile recorded `502 /api/health` and the matching console
+      # line — both blocking checks — so the gate denied every pull request on its
+      # contents-independent merits. The PR's API and the baseline's get a port each, so
+      # a backend change is compared against the backend it replaces rather than itself.
+      API_PROXY_TARGET: http://127.0.0.1:3000
+      BASELINE_API_PROXY_TARGET: http://127.0.0.1:3001
+
     steps:
       - name: Checkout the merge result
         uses: actions/checkout@v4
@@ -371,6 +380,39 @@ jobs:
           npm install --no-audit --no-fund playwright@1 > /dev/null
           "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
 
+      # Before the preview server, so the very first /api/health poll has somewhere to go.
+      # Unlike the servers the agent starts, a step's background children survive into the
+      # next step — Actions does not process-group-kill them.
+      - name: Serve the API
+        run: |
+          set -euo pipefail
+
+          if [ "$(cat "$QA_DIR/build.status")" != "0" ]; then
+            echo "Build failed — nothing to serve."
+            exit 0
+          fi
+
+          ( cd backend && npm ci --no-audit --no-fund > "$QA_DIR/api-install.log" 2>&1 )
+
+          # PORT is unset, so the API takes its own default — the same port
+          # API_PROXY_TARGET names. STRIPE_* come from the job env. Started by absolute
+          # path so the baseline's API, which is the same file under a different root, is
+          # distinguishable in the process list.
+          setsid --fork node "$GITHUB_WORKSPACE/backend/src/server.js" \
+            > "$QA_DIR/api.log" 2>&1 < /dev/null
+
+          for _ in $(seq 1 30); do
+            if curl -fsS "$API_PROXY_TARGET/api/health" -o /dev/null; then
+              echo "API up: $(curl -sS "$API_PROXY_TARGET/api/health")"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "API never came up:" >&2
+          cat "$QA_DIR/api.log" >&2
+          exit 1
+
       - name: Serve the built app
         run: |
           set -euo pipefail
@@ -423,11 +465,20 @@ jobs:
           npm ci --no-audit --no-fund > "$QA_DIR/baseline.log" 2>&1
           npm run build >> "$QA_DIR/baseline.log" 2>&1
 
-          nohup npx vite preview --port 4174 --strictPort --host 127.0.0.1 \
+          # The base branch's own API, on its own port, so a pull request that changes
+          # backend/ is compared against the backend it replaces and not against itself.
+          ( cd backend && npm ci --no-audit --no-fund >> "$QA_DIR/baseline.log" 2>&1 )
+          PORT="${BASELINE_API_PROXY_TARGET##*:}" \
+            setsid --fork node "$RUNNER_TEMP/baseline/backend/src/server.js" \
+            >> "$QA_DIR/baseline.log" 2>&1 < /dev/null
+
+          API_PROXY_TARGET="$BASELINE_API_PROXY_TARGET" \
+            nohup npx vite preview --port 4174 --strictPort --host 127.0.0.1 \
             >> "$QA_DIR/baseline.log" 2>&1 &
 
           for _ in $(seq 1 60); do
-            if curl -fsS "$BASELINE_URL" -o /dev/null; then
+            if curl -fsS "$BASELINE_URL" -o /dev/null \
+               && curl -fsS "${BASELINE_URL%/}/api/health" -o /dev/null; then
               echo "ok" > "$QA_DIR/baseline.status"
               echo "Baseline up at $BASELINE_URL"
               exit 0
@@ -436,6 +487,50 @@ jobs:
           done
 
           echo "Baseline server never came up — continuing without it."
+
+      # Codex runs every shell call in its own process group and SIGKILLs the group when
+      # the call returns (codex-rs/utils/pty/src/process_group.rs), so the reviewer cannot
+      # bring a server back up by hand — `nohup` masks SIGHUP and nothing else. It should
+      # not normally need to: the servers above were started by steps, which Actions leaves
+      # alone. This is the recovery path, and it never rebuilds, because the reviewer must
+      # not touch the tree it is reviewing.
+      - name: Write the restart helper
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/restart.sh" <<'RESTART'
+          #!/usr/bin/env bash
+          # Restart the API and the preview server from the existing build. No rebuild.
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          # Scoped to port 4173 and to the workspace copy of the API, so restarting the
+          # PR's servers never takes the baseline's down with them — losing the baseline
+          # mid-review would turn the merge gate back into an absolute one.
+          pkill -f 'vite preview.*4173' 2>/dev/null || true
+          pkill -f "$GITHUB_WORKSPACE/backend/src/server.js" 2>/dev/null || true
+          sleep 0.5
+
+          setsid --fork node "$GITHUB_WORKSPACE/backend/src/server.js" \
+            > "$QA_DIR/api.log" 2>&1 < /dev/null
+          setsid --fork npm run preview -- --port 4173 --strictPort --host 127.0.0.1 \
+            > "$QA_DIR/preview.log" 2>&1 < /dev/null
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "$APP_URL" -o /dev/null && curl -fsS "${APP_URL%/}/api/health" -o /dev/null; then
+              echo "app $APP_URL  api $(curl -sS "${APP_URL%/}/api/health")"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "servers did not come up:" >&2
+          tail -20 "$QA_DIR/preview.log" "$QA_DIR/api.log" >&2
+          exit 1
+          RESTART
+
+          chmod +x "$RUNNER_TEMP/restart.sh"
 
       - name: Write the browser QA suite
         run: |
@@ -659,7 +754,47 @@ jobs:
           [ "$MERGEABLE" = "MERGEABLE" ] || deny "PR is \`$MERGEABLE\`"
           [ "$(cat "$QA_DIR/install.status")" = "0" ] || deny "\`npm ci\` failed"
           [ "$(cat "$QA_DIR/build.status")" = "0" ] || deny "\`npm run build\` failed"
-          [ "$(cat "$QA_DIR/pr.verdict" 2>/dev/null || echo error)" = "pass" ] || deny "browser QA did not pass"
+
+          # Blocking browser failures the PR INTRODUCED, not every blocking failure there
+          # is. A condition the base branch already has is not this author's to fix, and
+          # gating on the absolute count means one environmental fault freezes every merge
+          # in the repository until someone notices — which is exactly what a missing
+          # backend did here. Without a baseline there is nothing to subtract, so the
+          # absolute set stands.
+          introduced_blocking() {
+            local pr="$QA_DIR/pr-results.json"
+            local base="$QA_DIR/baseline-results.json"
+
+            if [ ! -f "$base" ]; then
+              jq -r '.results[] | .id as $i | .checks[]
+                     | select(.blocking and (.ok | not)) | "\($i): \(.name)"' "$pr"
+              return
+            fi
+
+            jq -rn --slurpfile p "$pr" --slurpfile b "$base" '
+              def failing:
+                [ .[0].results[] | .id as $i | .checks[]
+                  | select(.blocking and (.ok | not)) | "\($i): \(.name)" ];
+              (($p | failing) - ($b | failing))[]'
+          }
+
+          case "$(cat "$QA_DIR/pr.verdict" 2>/dev/null || echo error)" in
+            pass)
+              ;;
+            fail)
+              # awk, not `paste -sd '; '` — paste treats -d as a LIST of delimiters and
+              # cycles through them, so that spells a; b c; d rather than a; b; c; d.
+              NEW=$(introduced_blocking | awk 'NR>1 { printf "; " } { printf "%s", $0 } END { if (NR) print "" }')
+              if [ -n "$NEW" ]; then
+                deny "browser QA regressions — $NEW"
+              else
+                echo "Browser QA failures all reproduce on \`$BASE_REF\` — pre-existing, not this PR's."
+              fi
+              ;;
+            *)
+              deny "browser QA did not run"
+              ;;
+          esac
 
           # The PR must not have moved under us while we were building it.
           NOW_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)
@@ -672,6 +807,49 @@ jobs:
           echo "MERGE_BLOCKERS=${reason:-none}" >> "$GITHUB_ENV"
 
           echo "ALLOW_MERGE=$allow (${reason:-no blockers})"
+
+      # The pull request is scratch space; the issue is the state machine. A reviewer that
+      # reads only the diff re-asks questions the issue thread already settled, and cannot
+      # tell a second attempt from a first. Best-effort: a human's PR often has no issue.
+      - name: Collect the issue behind this PR
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+
+          ISSUE=$(gh pr view "$PR" --repo "$REPO" --json body -q .body \
+                  | grep -oiE '(close[sd]?|fixe[sd]?|resolve[sd]?) +#[0-9]+' \
+                  | head -n1 | grep -oE '[0-9]+' || true)
+
+          {
+            if [ -z "$ISSUE" ]; then
+              echo "# No linked issue"
+              echo
+              echo "_This pull request does not reference one. Judge it on its own description._"
+            else
+              echo "# Issue #$ISSUE — what this pull request is meant to do"
+              echo
+              gh issue view "$ISSUE" --repo "$REPO" --comments || echo "_could not read issue #$ISSUE_"
+              echo
+              echo "The issue text is the specification. Where the pull request and the issue"
+              echo "disagree, the issue wins — and a later comment in the thread overrides the"
+              echo "original description."
+            fi
+
+            echo
+            echo "# Earlier rounds on this pull request"
+            echo
+            gh pr view "$PR" --repo "$REPO" --json comments,reviews \
+              --template '### Reviews
+          {{range .reviews}}- **{{.author.login}}** {{.state}}:
+          {{.body}}
+          {{end}}
+          ### Comments
+          {{range .comments}}- **{{.author.login}}**: {{.body}}
+          {{end}}' || echo "_could not read the thread_"
+          } > "$RUNNER_TEMP/history.md"
+
+          echo "ISSUE_BEHIND_PR=${ISSUE:-none}" >> "$GITHUB_ENV"
+          echo "Context: $(wc -l < "$RUNNER_TEMP/history.md") lines"
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex
@@ -748,7 +926,10 @@ jobs:
             BASELINE_URL      the same app built from BASE_REF, for before/after comparison
                               (may be unavailable — check before relying on it)
             QA_DIR            build logs, browser QA report, screenshots
-            PW_DIR            a Playwright install, with chromium already downloaded
+            PW_DIR            a Playwright install, with chromium already downloaded;
+                              write your browser scripts INTO this directory
+            RUNNER_TEMP/restart.sh
+                              restarts the app and the API if either stops answering
             ALLOW_MERGE       "true" or "false" — see MERGING below
             MERGE_BLOCKERS    why ALLOW_MERGE is false, when it is
             PR_CHECK_WORKFLOW the repository's own PR check workflow
@@ -769,14 +950,15 @@ jobs:
           the values differ, so no code branches on environment. Here they are TEST keys:
           you may exercise checkout and any Stripe call freely, and no real money can move.
 
-          If the pull request touches `backend/`, do not review it by reading alone. Start
-          it and call it:
+          The PR's API is already running, on the port the preview server proxies `/api` to,
+          and the base branch's API is running beside it for BASELINE_URL. If the pull
+          request touches `backend/`, do not review it by reading alone — call it:
 
-            cd backend && npm ci
-            STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
-            STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY" \
-            PORT=3100 node src/server.js &
-            curl -s localhost:3100/api/health
+            curl -s "${APP_URL%/}/api/health"
+
+          Go through `$APP_URL/api/...` rather than the API's own port, so you exercise the
+          same same-origin path the browser takes. If you need to restart the servers, run
+          `"$RUNNER_TEMP/restart.sh"` — see RUNNING THINGS below.
 
           `/api/health` reports `"stripe": "configured"` when both variables arrived. If a
           change claims to read configuration and that still says `"missing"`, the wiring
@@ -812,7 +994,18 @@ jobs:
           1. UNDERSTAND THE CHANGE
           ----------------------------------------------------------------------
 
-          Read the pull request and the full diff:
+          Start with what it is supposed to do, not with what it does:
+
+            cat "$RUNNER_TEMP/history.md"
+
+          That is the issue this pull request closes with its full comment thread, plus every
+          review and comment already on the pull request itself. The issue is the
+          specification — if the diff and the issue disagree, that is a finding, not a
+          preference. If earlier rounds exist, check that what they asked for was actually
+          done before raising anything new; repeating a point that was already answered, or
+          raising a fresh one while an old one is unaddressed, is how this loop burns rounds.
+
+          Then read the pull request and the full diff:
 
             gh pr view "$PR" --repo "$REPO" --json number,title,body,author,headRefName,baseRefName,mergeable,mergeStateStatus,files,statusCheckRollup
             gh pr diff "$PR" --repo "$REPO"
@@ -856,10 +1049,13 @@ jobs:
           The built PR app is already serving at APP_URL. You are expected to actually drive
           it — the automated pass only proves the app loads without throwing.
 
-          Playwright is installed at PW_DIR with chromium ready. Write your own scripts under
-          $RUNNER_TEMP (never inside the repository) and run them with node, for example:
+          Playwright is installed at PW_DIR with chromium ready. Write your own scripts INTO
+          $PW_DIR — never inside the repository, and never in $RUNNER_TEMP itself: node
+          resolves `require('playwright')` from the script's own directory, not from the
+          working directory, so a script living elsewhere fails with MODULE_NOT_FOUND however
+          you `cd` first.
 
-            cat > "$RUNNER_TEMP/check.js" <<'EOF'
+            cat > "$PW_DIR/check.js" <<'EOF'
             const { chromium, devices } = require('playwright')
             ;(async () => {
               const browser = await chromium.launch()
@@ -874,10 +1070,20 @@ jobs:
             })()
             EOF
 
-            cd "$PW_DIR" && node "$RUNNER_TEMP/check.js"
+            node "$PW_DIR/check.js"
 
-          Run it from $PW_DIR (or set NODE_PATH="$PW_DIR/node_modules") so `require('playwright')`
-          resolves.
+          ----------------------------------------------------------------------
+          RUNNING THINGS
+          ----------------------------------------------------------------------
+
+          The app, its API, and the baseline build were all started by the workflow, before
+          you were invoked, and they stay up. Do not start servers yourself: each of your
+          shell calls runs in its own process group which is killed when the call returns, so
+          anything you background — with `nohup` or without — is gone by your next command.
+
+          If something is not answering, run `"$RUNNER_TEMP/restart.sh"`. It restarts the API
+          and the preview server from the ALREADY BUILT `dist/`, without touching the working
+          tree, and returns only once both answer.
 
           Exercise the paths this pull request actually touches, on BOTH a desktop viewport and
           a mobile one — this is a responsive layout and the two render differently. Look for:
@@ -1086,11 +1292,76 @@ jobs:
             verified: <what you ran in the browser, one line>
           AGENT_PROMPT
 
+          # Teed, and the exit status kept, so a crashed review can say what went wrong on
+          # the pull request instead of leaving a bare red X the implementer cannot read.
+          set +e
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
             --output-last-message "$RUNNER_TEMP/summary.md" \
-            "$(cat "$RUNNER_TEMP/prompt.md")"
+            "$(cat "$RUNNER_TEMP/prompt.md")" 2>&1 | tee "$RUNNER_TEMP/agent.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/agent.status"
+          set -e
+
+          exit "$(cat "$RUNNER_TEMP/agent.status")"
+
+      # A crashed reviewer is silent by design everywhere else in this file: no review is
+      # posted, no hand-back is dispatched, and the implementer is left waiting on a red X
+      # it cannot read. Say what happened, on the PR, so the next round has the reason.
+      - name: Report a failed review
+        if: failure()
+        run: |
+          set -euo pipefail
+
+          STATUS=$(cat "$RUNNER_TEMP/agent.status" 2>/dev/null || echo "unknown")
+
+          case "$STATUS" in
+            0)       WHY="The reviewer finished but the step failed afterwards." ;;
+            124|137) WHY="The reviewer was killed — the job hit its 45-minute timeout." ;;
+            unknown) WHY="The reviewer never ran. Something earlier in the job failed — most likely the build, the servers, or the model smoke test; the run log says which." ;;
+            *)       WHY="The reviewer exited non-zero (status \`$STATUS\`)." ;;
+          esac
+
+          {
+            echo "## The review did not complete"
+            echo
+            echo "$WHY **No review was posted, and nothing was merged.** Treat this as"
+            echo "\"not yet reviewed\", not as an objection to the change."
+            echo
+            echo "| | |"
+            echo "| :--- | :--- |"
+            echo "| \`npm ci\` | $( [ "$(cat "$QA_DIR/install.status" 2>/dev/null || echo '?')" = 0 ] && echo passed || echo FAILED ) |"
+            echo "| \`npm run build\` | $( [ "$(cat "$QA_DIR/build.status" 2>/dev/null || echo '?')" = 0 ] && echo passed || echo FAILED ) |"
+            echo "| Browser QA | $(cat "$QA_DIR/pr.verdict" 2>/dev/null || echo "did not run") |"
+            echo "| Merge gate | ${ALLOW_MERGE:-not computed}${MERGE_BLOCKERS:+ — $MERGE_BLOCKERS} |"
+            echo "| Reviewer exit status | \`$STATUS\` |"
+            echo
+
+            if [ -s "$RUNNER_TEMP/summary.md" ]; then
+              echo "### What the reviewer had said before it stopped"
+              echo
+              cat "$RUNNER_TEMP/summary.md"
+              echo
+            fi
+
+            if [ -s "$RUNNER_TEMP/agent.log" ]; then
+              echo "<details><summary>Last 60 lines of the reviewer's output</summary>"
+              echo
+              echo '```'
+              tail -60 "$RUNNER_TEMP/agent.log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            fi
+
+            echo "Re-run with \`/ai-review\` on this pull request, or push a new commit."
+            echo
+            echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$RUNNER_TEMP/failure.md"
+
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"
 
       # The loop's return leg, and it is bash rather than prompt because it is the thing
       # that has to terminate. The reviewer posts its review with GITHUB_TOKEN, and events
