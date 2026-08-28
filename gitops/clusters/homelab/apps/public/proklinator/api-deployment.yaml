@@ -26,7 +26,7 @@ spec:
           # Built from the same commit as proklinator-app and bumped in the same
           # sweep, so the site and its API always share a tag. Keep the
           # `image: <repo>:<tag>` shape on one line; the recipe rewrites it with sed.
-          image: ghcr.io/kalpak44/proklinator-api:35394ef
+          image: ghcr.io/kalpak44/proklinator-api:7d10f38
           ports:
             - containerPort: 3000
           # Written by externalsecret.yaml from the Vault secret `proklinator-secrets`.
