@@ -166,7 +166,7 @@ jobs:
 
             # The issue is recovered from the PR body, which is the only place the link
             # is recorded — and the same place GitHub reads it to auto-close on merge.
-            ISSUE=$(jq -r '.body' pr.json | grep -oiE '(close[sd]?|fixe[sd]?|resolve[sd]?) +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
+            ISSUE=$(jq -r '.body' pr.json | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
             [ -n "$ISSUE" ] || skip "PR #$PR does not reference an issue — refusing to guess which one it implements."
 
             # The round number IS the count of change requests. Nothing to store, nothing

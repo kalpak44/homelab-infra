@@ -817,7 +817,7 @@ jobs:
           set -euo pipefail
 
           ISSUE=$(gh pr view "$PR" --repo "$REPO" --json body -q .body \
-                  | grep -oiE '(close[sd]?|fixe[sd]?|resolve[sd]?) +#[0-9]+' \
+                  | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' \
                   | head -n1 | grep -oE '[0-9]+' || true)
 
           {
@@ -1180,10 +1180,23 @@ jobs:
           a changed line, put it in the body instead. If the API rejects your review, drop the
           inline comments and post the body alone with `gh pr comment` rather than giving up.
 
-          Choose `event`:
-            - "APPROVE" when you found nothing blocking and you are confident in the change
+          Choose `event`. There are only two you can actually use:
+
             - "REQUEST_CHANGES" when there is a blocking problem
-            - "COMMENT" when you have findings but no blocker, or you are not confident
+            - "COMMENT" for everything else, approval included
+
+          **"APPROVE" is not available to you and you must not attempt it.** This job posts
+          with an Actions token, and GitHub answers `422 GitHub Actions is not permitted to
+          approve pull requests` — always, with no way around it. Do not try it and then
+          fall back; open the body with your verdict instead:
+
+            ## AI review — approve: <one-line reason>
+
+            _Posted as COMMENT: an Actions token cannot submit an APPROVE event._
+
+          What actually accepts a pull request here is the **merge**, not the review event.
+          When ALLOW_MERGE is "true" and you are satisfied, merging is your approval. When
+          it is "false", say plainly in the body that you would otherwise have approved.
 
           ----------------------------------------------------------------------
           6a. WHEN THE AUTHOR IS THE IMPLEMENTATION AGENT
@@ -1194,8 +1207,17 @@ jobs:
           things change.
 
           First, "REQUEST_CHANGES" is the only signal that sends it back. A "COMMENT"
-          review, however detailed, stalls the loop — the work simply sits there. So if
-          you want something changed, request changes. If you do not, approve.
+          review, however detailed, stalls the loop — the work simply sits there, because
+          the hand-back step dispatches only on a CHANGES_REQUESTED latest review. And
+          since you cannot APPROVE, "COMMENT" is also what an approval looks like, so the
+          two are indistinguishable to that step. Therefore:
+
+            - Anything you actually want changed before merge → REQUEST_CHANGES. Not a
+              COMMENT that politely suggests it; that reaches nobody.
+            - Nothing blocking → COMMENT, and merge if ALLOW_MERGE is "true".
+            - Nothing blocking but ALLOW_MERGE is "false" → COMMENT saying so. A human
+              picks it up; do not request changes to force another round the implementer
+              cannot resolve, because the blocker is not in the code.
 
           Second, your blocking list is a work order, not prose. Make every item
           independently actionable:
@@ -1390,6 +1412,30 @@ jobs:
 
           if [ "$STATE" != "OPEN" ]; then
             echo "PR #$PR is \`$STATE\` — the loop is finished."
+
+            # Clear the issue's lifecycle labels. `Closes #n` in the PR body closes the
+            # issue on merge but touches no label, so it was being left CLOSED and still
+            # tagged `ai:review` — the labels ARE the state machine, and a closed issue
+            # sitting in a live state is exactly the drift they exist to prevent.
+            DONE_ISSUE=$(jq -r '.body' loop.json \
+              | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' \
+              | head -n1 | grep -oE '[0-9]+' || true)
+
+            if [ "$STATE" = "MERGED" ] && [ -n "$DONE_ISSUE" ]; then
+              # Only the ones actually present: `--remove-label` on a label the issue does
+              # not carry is an error, and one such name would abort the whole call and
+              # leave every other label in place.
+              PRESENT=$(gh issue view "$DONE_ISSUE" --repo "$REPO" --json labels \
+                        -q '[.labels[].name | select(startswith("ai:"))] | join(",")' || true)
+
+              if [ -n "$PRESENT" ]; then
+                gh issue edit "$DONE_ISSUE" --repo "$REPO" --remove-label "$PRESENT" || true
+                echo "Cleared \`$PRESENT\` from issue #$DONE_ISSUE."
+              else
+                echo "Issue #$DONE_ISSUE carries no ai:* labels."
+              fi
+            fi
+
             exit 0
           fi
 
@@ -1397,7 +1443,7 @@ jobs:
           # PR has been sent back. Nothing to initialise, nothing to drift.
           ROUND=$(jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' loop.json)
           LAST=$(jq -r '.reviews | sort_by(.submittedAt) | last | .state // "NONE"' loop.json)
-          ISSUE=$(jq -r '.body' loop.json | grep -oiE '(close[sd]?|fixe[sd]?|resolve[sd]?) +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
+          ISSUE=$(jq -r '.body' loop.json | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
 
           echo "state=$STATE last_review=$LAST round=$ROUND/$MAX_ROUNDS issue=${ISSUE:-none}"
 
@@ -1410,6 +1456,23 @@ jobs:
               echo "PR is open with last review \`$LAST\` and was not merged."
               echo "Merge blockers: \`${MERGE_BLOCKERS:-none}\`. Not dispatching the implementer."
             } >> "$GITHUB_STEP_SUMMARY"
+
+            # Say it on the pull request too, not just in a run summary nobody opens. This
+            # is a dead end in the loop — an implementer PR that will not move again on its
+            # own — and the next run reads this thread as its history.
+            gh pr comment "$PR" --repo "$REPO" --body \
+          "## The loop has stopped here
+
+          The last review is \`$LAST\`, not \`CHANGES_REQUESTED\`, so the implementer was not dispatched — only a change request sends work back. The pull request was not merged either.
+
+          | | |
+          | :--- | :--- |
+          | Merge gate | \`${ALLOW_MERGE:-unset}\` |
+          | Blockers | \`${MERGE_BLOCKERS:-none}\` |
+          | Round | $ROUND of $MAX_ROUNDS |
+
+          Nothing further happens without a human. Either fix the blocker and re-run with \`/ai-review\`, or dispatch **AI Issue Agent** with \`pr=$PR\` to have the implementer act on the review anyway." || true
+
             exit 0
           fi
 
