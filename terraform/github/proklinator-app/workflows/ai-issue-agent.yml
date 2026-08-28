@@ -50,6 +50,11 @@ on:
         description: "Pull request number to revise from review feedback (revise mode)"
         required: false
         type: string
+      force:
+        description: "Ignore the review-round cap — use after you have answered the blocker yourself"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -95,6 +100,7 @@ jobs:
       EVENT_ACTOR: ${{ github.event.sender.login }}
       INPUT_ISSUE: ${{ inputs.issue }}
       INPUT_PR: ${{ inputs.pr }}
+      INPUT_FORCE: ${{ inputs.force }}
 
     steps:
       - name: Decide what to do
@@ -173,14 +179,29 @@ jobs:
             # to drift. Without this cap, reviewer and implementer ping-pong for ever.
             ROUND=$(jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' pr.json)
 
-            if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
-              gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:review" || true
+            # `force` is the human override, and it is why the automatic path stays capped.
+            # The reviewer's hand-back dispatches this workflow too, but it never passes
+            # force, so runaway ping-pong is still stopped at MAX_ROUNDS. A person ticking
+            # the box has, by definition, just looked at the thing.
+            if [ "$ROUND" -ge "$MAX_ROUNDS" ] && [ "${INPUT_FORCE:-false}" = "true" ]; then
+              echo "Round cap ($ROUND >= $MAX_ROUNDS) overridden by \`force\`."
+              gh issue edit "$ISSUE" --repo "$REPO" --remove-label "ai:blocked" || true
               gh pr comment "$PR" --repo "$REPO" --body \
-                "Stopping after $ROUND revision rounds — the cap is \`$MAX_ROUNDS\`.
+                "Continuing past the round cap ($ROUND of \`$MAX_ROUNDS\`) — dispatched manually with \`force\`. The reviewer will still refuse to hand back automatically, so each further round has to be started by hand." || true
+
+            elif [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+              gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:review" || true
+
+              CAP_NOTE="Stopping after $ROUND revision rounds — the cap is \`$MAX_ROUNDS\`.
 
           The review feedback has not converged, which usually means the change needs a decision rather than another attempt. Issue #$ISSUE is now \`ai:blocked\`.
 
-          To continue anyway, remove the cap concern and re-run **AI Issue Agent** with \`pr=$PR\`."
+          **To continue:** answer the open question in a comment here or on issue #$ISSUE, then run **Actions → AI Issue Agent → Run workflow** with \`pr=$PR\` and **force** ticked. The implementer reads this whole thread before it starts, so your answer is what it acts on. Without \`force\` it will stop here again — the round count only ever goes up."
+
+              gh pr comment "$PR" --repo "$REPO" --body "$CAP_NOTE" || true
+              # Also on the issue: that is where the state machine lives and where you look.
+              gh issue comment "$ISSUE" --repo "$REPO" --body "$CAP_NOTE" || true
+
               skip "Round cap reached for PR #$PR ($ROUND >= $MAX_ROUNDS) — issue #$ISSUE marked \`ai:blocked\`."
             fi
           fi
@@ -196,7 +217,16 @@ jobs:
 
             HAS() { jq -e --arg l "$1" '.labels[] | select(.name == $l)' issue.json > /dev/null; }
 
-            HAS "ai:blocked" && skip "Issue #$ISSUE is \`ai:blocked\` — remove the label to let the agent retry."
+            # Re-applying `ai:ready` IS the unblock. Requiring `ai:blocked` to come off
+            # first was a trap: applying `ai:ready` while it was still on fired the event,
+            # got skipped here, and then removing `ai:blocked` fired nothing at all —
+            # the trigger is `types: [labeled]` — so the issue sat there looking ready and
+            # nothing was running. Whoever applies the label is allowlisted and has just
+            # read the hand-back, so treat it as the deliberate act it is.
+            if HAS "ai:blocked"; then
+              echo "Issue #$ISSUE was \`ai:blocked\`; \`ai:ready\` overrides it."
+              gh issue edit "$ISSUE" --repo "$REPO" --remove-label "ai:blocked" || true
+            fi
 
             # The label swap below is the lock. If it is already claimed, another run owns
             # it: two agents on one issue means two branches and a duplicate PR.
@@ -702,6 +732,15 @@ jobs:
 
           Name the decision that has to be made and, where you can, list the options with
           their consequences. "Blocked, needs clarification" is not good enough.
+
+          End the comment by telling the reader exactly how to restart you:
+
+            > Answer this in a comment on this issue, then apply `ai:ready`. That clears
+            > `ai:blocked` on its own. The next run reads this whole thread first, so it
+            > continues from your answer rather than starting over.
+
+          Write the question so that a one-line reply is enough to unblock it. You will be
+          the one reading that reply, and a question that invites an essay gets none.
           CONTEXT
 
       - name: Implement the issue
@@ -1122,8 +1161,10 @@ jobs:
 
                   echo "### To retry"
                   echo
-                  echo "Remove \`ai:blocked\` and re-apply \`ai:ready\`. The next run reads this thread"
-                  echo "first, so if the agent stopped for a decision, answering it here is what unblocks it."
+                  echo "Answer whatever is open in a comment here, then apply \`ai:ready\`. That is the"
+                  echo "whole restart — applying \`ai:ready\` clears \`ai:blocked\` by itself, you do not"
+                  echo "have to remove it first. The next run reads this entire thread before it starts,"
+                  echo "so your comment is what it acts on; it will not begin again from nothing."
                   echo
                   echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                 } > "$RUNNER_TEMP/handback.md"
