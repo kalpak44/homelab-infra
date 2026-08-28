@@ -143,8 +143,31 @@ bump-images only='' sha='':
     git config user.email "homelab-infra@users.noreply.github.com"
     git add gitops/clusters/homelab/apps/public
     git commit -m "bump $(IFS=', '; echo "${bumped[*]}") image tag(s)"
-    git push
-    echo "pushed — Flux will reconcile"
+
+    # Rebase and retry rather than fail. The workflow's concurrency group serialises
+    # bumps against each other, but nothing serialises them against a human push or a
+    # `just deploy` commit landing in the same few seconds, and losing that race is not
+    # a reason to leave the cluster on a stale tag. Rebasing is always safe here: the
+    # commit only rewrites `image:` tag lines, so it either replays cleanly or the
+    # conflict is a genuine disagreement about which tag to deploy, which must not be
+    # resolved automatically.
+    for attempt in 1 2 3; do
+        if git push; then
+            echo "pushed — Flux will reconcile"
+            exit 0
+        fi
+
+        echo "push rejected (attempt $attempt) — rebasing onto the current main" >&2
+
+        if ! git pull --rebase --quiet; then
+            git rebase --abort || true
+            echo "the bump conflicts with what is already on main — resolve it by hand" >&2
+            exit 1
+        fi
+    done
+
+    echo "push still rejected after 3 attempts — something is pushing to main continuously" >&2
+    exit 1
 
 # Show the apps whose image tags are tracked, and where they point today
 list:

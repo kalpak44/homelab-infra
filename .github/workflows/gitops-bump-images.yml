@@ -24,6 +24,17 @@ on:
 permissions:
   contents: write
 
+# Every bump ends in a push to main, so two of them in flight at once means one loses the
+# race and the run goes red — twice this morning, each failure paired with a success five
+# to eight seconds earlier. A source repo dispatches this at the end of its publish run,
+# and several publishes land together whenever a change touches more than one repo, so
+# overlap is normal rather than exceptional. Never cancel-in-progress: the runs carry
+# different `app`/`sha` inputs, so the one being cancelled is not superseded by the one
+# replacing it — its bump would simply be dropped.
+concurrency:
+  group: gitops-bump-images
+  cancel-in-progress: false
+
 jobs:
   bump:
     runs-on: self-hosted
