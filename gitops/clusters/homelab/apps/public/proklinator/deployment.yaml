@@ -26,7 +26,7 @@ spec:
           # Tag bumped by `just bump-images` — dispatched by the source repo's publish
           # workflow, and swept nightly as a backstop. Keep the `image: <repo>:<tag>`
           # shape on one line; the recipe rewrites it with sed.
-          image: ghcr.io/kalpak44/proklinator-app:7ac951f
+          image: ghcr.io/kalpak44/proklinator-app:126d48b
           ports:
             - containerPort: 80
           resources:
