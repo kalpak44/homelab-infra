@@ -22,7 +22,7 @@ locals {
   # The scaffolding below stays in place while this is empty, so onboarding the
   # next customer really is one line plus an apply.
   saas_customers = {
-    "nocobase.deepcraftstudio.com" =  "http://192.168.1.5:80"
+    "ownai.deepcraftstudio.com" =  "http://192.168.1.5:80"
   }
 
   saas_fallback_origin = "saas.pavel-usanli.online"
