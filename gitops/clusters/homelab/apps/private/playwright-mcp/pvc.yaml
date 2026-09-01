@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: playwright-mcp-profile
+  name: playwright-mcp-output
   namespace: private
 spec:
   accessModes:

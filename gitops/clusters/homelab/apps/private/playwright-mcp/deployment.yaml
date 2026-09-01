@@ -5,11 +5,10 @@ metadata:
   namespace: private
 spec:
   replicas: 1
-  # The Chromium profile on the PVC is single-writer (SingletonLock + leveldb locks),
-  # so the old pod must be gone before the new one launches or the browser refuses to
-  # start. maxSurge 0 + maxUnavailable 1 gives that, and unlike `type: Recreate` it
-  # sets rollingUpdate explicitly instead of colliding with the API server's default
-  # (Recreate + a leftover defaulted rollingUpdate is rejected on apply).
+  # maxSurge 0 keeps a single pod attached to the ReadWriteOnce PVC at any moment.
+  # Do not switch this to `type: Recreate`: the API server has already defaulted a
+  # rollingUpdate block onto the live object, Flux's server-side apply does not own
+  # it, and Recreate alongside a leftover rollingUpdate is rejected on apply.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -38,15 +37,22 @@ spec:
             - 0.0.0.0
             - --allowed-hosts
             - playwright-mcp.internal.pavel-usanli.online
-            # Persistent profile on NFS. Without this the server creates a temp
-            # user-data-dir per pod, so cookies and logins die with the pod.
-            - --user-data-dir
-            - /profile
+            # Every connection gets its own in-memory profile, so no cookie,
+            # login or localStorage written by one MCP client is visible to the
+            # next. Nothing browser-related is persisted; that is the point.
+            - --isolated
+            # The PVC therefore holds output artifacts, not a profile: screenshots,
+            # PDFs, traces and snapshots survive the pod. Capped so accumulating
+            # outputs cannot fill the claim -- the server evicts oldest first.
+            - --output-dir
+            - /output
+            - --output-max-size
+            - "2147483648"
             - --user-agent
             - "Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)"
           volumeMounts:
-            - name: profile
-              mountPath: /profile
+            - name: output
+              mountPath: /output
           ports:
             - containerPort: 8931
           readinessProbe:
@@ -64,6 +70,6 @@ spec:
               memory: 1Gi
               ephemeral-storage: 2Gi
       volumes:
-        - name: profile
+        - name: output
           persistentVolumeClaim:
-            claimName: playwright-mcp-profile
+            claimName: playwright-mcp-output

@@ -33,7 +33,7 @@ gitops/clusters/homelab/
         ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
         ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
         ├── lex-bg-connector/                # Lex background connector (data preloader)
-        ├── playwright-mcp/                  # Microsoft Playwright MCP (browser automation; NFS profile, DuckDuckBot UA)
+        ├── playwright-mcp/                  # Microsoft Playwright MCP (browser automation; isolated per connection, NFS outputs, DuckDuckBot UA)
         └── ciela-mcp/                       # Ciela MCP server (Bulgarian legislation search)
 ```
 
