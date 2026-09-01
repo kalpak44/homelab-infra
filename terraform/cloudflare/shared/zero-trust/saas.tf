@@ -13,14 +13,15 @@
 # request lands on the catch-all 404 — indistinguishable from a DNS mistake.
 
 locals {
-  # key = the customer's hostname, value = the origin it should reach.
-  saas_customers = {
-    # Simulated customer. proklinator.online is a zone in this same account, so
-    # its `app` record has to stay DNS-only for the simulation to be honest —
-    # an orange-clouded record is handled by that zone's own proxy and never
-    # reaches the custom-hostname path at all.
-    "app.proklinator.online" = "http://192.168.1.5:80"
-  }
+  # key = the customer's hostname, value = the origin it should reach. One line
+  # per customer is the whole entry — it yields the custom hostname here and the
+  # tunnel ingress rule in main.tf, because both are generated from this map.
+  #
+  #   "app.customer.com" = "http://192.168.1.5:80"
+  #
+  # The scaffolding below stays in place while this is empty, so onboarding the
+  # next customer really is one line plus an apply.
+  saas_customers = {}
 
   saas_fallback_origin = "saas.pavel-usanli.online"
 }
