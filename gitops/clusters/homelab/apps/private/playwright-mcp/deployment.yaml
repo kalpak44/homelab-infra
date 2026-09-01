@@ -26,6 +26,11 @@ spec:
       containers:
         - name: playwright-mcp
           image: mcp/playwright:latest
+          # A caller-supplied screenshot/PDF filename is resolved against the
+          # process cwd, not against --output-dir, so without this those files
+          # land on the container filesystem and die with the pod. Safe to move:
+          # the image entrypoint is `node /app/cli.js`, an absolute path.
+          workingDir: /output
           args:
             - --headless
             - --browser
