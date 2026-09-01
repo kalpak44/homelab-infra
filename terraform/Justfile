@@ -80,7 +80,10 @@ output layer resource name:
     # otherwise it is prepended to the value and `just output ... | gh secret set`
     # stores the banner along with the secret.
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false -reconfigure >/dev/null 2>&1
-    terraform output -raw {{name}}
+    # -raw stays the default because it is what keeps the piping above clean, but
+    # it refuses objects and lists outright (saas_customer_onboarding is one), so
+    # fall back to -json rather than making every caller know which kind it is.
+    terraform output -raw {{name}} 2>/dev/null || terraform output -json {{name}}
 
 # List every deployable resource with a short description
 list:
