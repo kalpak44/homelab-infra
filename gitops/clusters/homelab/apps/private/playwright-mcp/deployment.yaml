@@ -53,11 +53,30 @@ spec:
             - /output
             - --output-max-size
             - "2147483648"
+            # Writes each session's full trace into --output-dir, so what a client
+            # actually did survives on NFS after the pod log has rotated away.
+            - --save-session
             - --user-agent
             - "Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)"
+          env:
+            # playwright-mcp has no server log-level flag; it logs through the
+            # `debug` package on stderr, which is what `kubectl logs` reads.
+            # Namespaces verified present in this image: pw:mcp:{server,request,
+            # server:response,error,file,test}. server:response is excluded
+            # because it dumps every full page snapshot into the log.
+            - name: DEBUG
+              value: "pw:mcp:*,-pw:mcp:server:response"
+            # `debug` emits ANSI colour codes when it thinks it has a TTY; they
+            # render as escape noise in kubectl logs.
+            - name: DEBUG_COLORS
+              value: "0"
           volumeMounts:
             - name: output
               mountPath: /output
+            # Kubernetes gives /dev/shm 64Mi by default. Chromium uses shared
+            # memory for its renderers and crashes on heavy pages at that size.
+            - name: dshm
+              mountPath: /dev/shm
           ports:
             - containerPort: 8931
           readinessProbe:
@@ -65,16 +84,24 @@ spec:
               port: 8931
             initialDelaySeconds: 10
             periodSeconds: 10
+          # Under --isolated each connection gets its OWN browser (confirmed in
+          # the log: "create browser (isolated)" per session), so memory scales
+          # with concurrent clients rather than being a flat cost. The 512Mi
+          # memory-backed /dev/shm also counts against the container limit.
           resources:
             requests:
-              cpu: 100m
-              memory: 512Mi
+              cpu: 250m
+              memory: 1Gi
               ephemeral-storage: 1Gi
             limits:
-              cpu: 500m
-              memory: 1Gi
+              cpu: 2000m
+              memory: 3Gi
               ephemeral-storage: 2Gi
       volumes:
         - name: output
           persistentVolumeClaim:
             claimName: playwright-mcp-output
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
