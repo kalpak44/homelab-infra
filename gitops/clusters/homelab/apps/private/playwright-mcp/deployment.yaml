@@ -5,11 +5,16 @@ metadata:
   namespace: private
 spec:
   replicas: 1
-  # Recreate, not RollingUpdate: the Chromium profile on the PVC is single-writer
-  # (SingletonLock + leveldb locks). A rolling update would start the new pod while
-  # the old one still holds the profile, and the new browser would refuse to launch.
+  # The Chromium profile on the PVC is single-writer (SingletonLock + leveldb locks),
+  # so the old pod must be gone before the new one launches or the browser refuses to
+  # start. maxSurge 0 + maxUnavailable 1 gives that, and unlike `type: Recreate` it
+  # sets rollingUpdate explicitly instead of colliding with the API server's default
+  # (Recreate + a leftover defaulted rollingUpdate is rejected on apply).
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: playwright-mcp
