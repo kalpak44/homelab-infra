@@ -30,9 +30,6 @@ locals {
     "google-assistant"      = "google-assistant.pavel-usanli.online"
     "shopify-gpt-assistant" = "shopify-gpt-assistant.pavel-usanli.online"
     "noco-ai-tools"         = "noco-ai-tools.pavel-usanli.online"
-
-    # nginx on nocobase-lxc, not k3s — see ingress_overrides below.
-    "deepcraft-nocobase" = "deepcraft-nocobase.pavel-usanli.online"
   }
 
   proklinator_apps = {
@@ -55,15 +52,10 @@ locals {
   # also means it bypasses Traefik — so no cert-manager, and no CrowdSec.
   traefik_origin = "https://192.168.1.120"
 
-  ingress_overrides = merge(
-    {
-      # nginx on nocobase-lxc. Plain HTTP: Cloudflare terminates TLS at the edge
-      # and cloudflared reaches the container over the LAN, so the box needs no
-      # certificate and never listens on 443.
-      "deepcraft-nocobase.pavel-usanli.online" = "http://192.168.1.5:80"
-    },
-    local.saas_customers,
-  )
+  # Currently only the SaaS customers, which reach nginx on nocobase-lxc over
+  # plain HTTP: Cloudflare terminates TLS at the edge and cloudflared crosses
+  # the LAN, so that box needs no certificate and never listens on 443.
+  ingress_overrides = local.saas_customers
 
   ingress_services = {
     for h in local.all_hostnames : h => lookup(local.ingress_overrides, h, local.traefik_origin)

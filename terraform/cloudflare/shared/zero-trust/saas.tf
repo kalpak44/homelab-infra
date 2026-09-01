@@ -25,11 +25,11 @@ locals {
   saas_fallback_origin = "saas.pavel-usanli.online"
 }
 
-# Every custom hostname routes here. A dedicated record rather than reusing
-# deepcraft-nocobase: the fallback origin is an edge routing target, and pointing
-# it at a name that also serves its own traffic conflates the two. It is
-# deliberately left out of all_hostnames, so hitting it directly gets the
-# catch-all 404 rather than quietly becoming a second public entrance.
+# Every custom hostname routes here. It is a record of its own rather than a
+# hostname that also serves traffic: the fallback origin is an edge routing
+# target, and conflating the two makes an origin outage and a broken SaaS path
+# look identical. It is deliberately left out of all_hostnames, so hitting it
+# directly gets the catch-all 404 instead of quietly becoming a public entrance.
 resource "cloudflare_record" "saas_fallback" {
   zone_id = data.cloudflare_zone.this.id
   name    = "saas"
