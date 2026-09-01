@@ -30,6 +30,10 @@ locals {
     "google-assistant"      = "google-assistant.pavel-usanli.online"
     "shopify-gpt-assistant" = "shopify-gpt-assistant.pavel-usanli.online"
     "noco-ai-tools"         = "noco-ai-tools.pavel-usanli.online"
+
+    # nginx on nocobase-lxc, not k3s — see ingress_overrides below. Doubles as the
+    # CNAME target a third-party domain points at under Cloudflare for SaaS.
+    "deepcraft-nocobase" = "deepcraft-nocobase.pavel-usanli.online"
   }
 
   proklinator_apps = {
@@ -40,6 +44,22 @@ locals {
   # Ingress rules are keyed by hostname, not record name, so "www" existing in
   # both zones doesn't collide.
   all_hostnames = toset(concat(values(local.public_k3s_apps), values(local.proklinator_apps)))
+
+  # Every hostname reaches Traefik in k3s unless it appears in ingress_overrides.
+  # An override sends one hostname straight at a box on the LAN instead, which
+  # also means it bypasses Traefik — so no cert-manager, and no CrowdSec.
+  traefik_origin = "https://192.168.1.120"
+
+  ingress_overrides = {
+    # nginx on nocobase-lxc. Plain HTTP: Cloudflare terminates TLS at the edge
+    # and cloudflared reaches the container over the LAN, so the box needs no
+    # certificate and never listens on 443.
+    "deepcraft-nocobase.pavel-usanli.online" = "http://192.168.1.5:80"
+  }
+
+  ingress_services = {
+    for h in local.all_hostnames : h => lookup(local.ingress_overrides, h, local.traefik_origin)
+  }
 
   tunnel_cname = "${cloudflare_zero_trust_tunnel_cloudflared.homelab.id}.cfargotunnel.com"
 }
@@ -77,11 +97,12 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "homelab" {
     }
 
     dynamic "ingress_rule" {
-      for_each = local.all_hostnames
+      for_each = local.ingress_services
       content {
-        hostname = ingress_rule.value
-        service  = "https://192.168.1.120"
+        hostname = ingress_rule.key
+        service  = ingress_rule.value
         origin_request {
+          # Only meaningful for the https origins; ignored for plain http ones.
           no_tls_verify = true
         }
       }
