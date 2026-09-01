@@ -222,6 +222,7 @@ spec:
                 cscli allowlists add trusted_ips 46.10.211.21 -d "Trusted client IP" 2>/dev/null || true
                 cscli allowlists add trusted_ips 62.176.70.79 -d "Trusted client IP" 2>/dev/null || true
                 cscli allowlists add trusted_ips 46.10.148.46 -d "Trusted client IP" 2>/dev/null || true
+                cscli allowlists add trusted_ips 77.85.26.124 -d "Trusted client IP" 2>/dev/null || true
                 cscli bouncers delete traefik 2>/dev/null || true
                 cscli bouncers add traefik --key "${BOUNCER_KEY_traefik}"
                 # --force is required for idempotency: without it, a machine
