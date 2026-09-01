@@ -25,7 +25,15 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: playwright-mcp
-          image: mcp/playwright:latest
+          # Microsoft's own image, pinned. Docker Hub's mcp/playwright has a
+          # single `latest` tag that currently serves a 1.61.0-alpha build in
+          # which the MCP session is tied to the TCP connection: Node's default
+          # keepAliveTimeout (5s) drops the idle connection, the transport
+          # closes, and the session is deleted. Any client that thinks for more
+          # than 5s between tool calls then gets `Session not found` (HTTP 404).
+          # Measured on this cluster, ingress bypassed: alpha died at 10s idle,
+          # v0.0.80 still served the same tab after 45s. Both run as uid 1000.
+          image: mcr.microsoft.com/playwright/mcp:v0.0.80
           # A caller-supplied screenshot/PDF filename is resolved against the
           # process cwd, not against --output-dir, so without this those files
           # land on the container filesystem and die with the pod. Safe to move:
