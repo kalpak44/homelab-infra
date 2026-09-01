@@ -133,6 +133,7 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | Redis + Commander          | LXC        | 192.168.1.6   | `proxmox/redis-lxc`                    | `proxmox/redis-lxc`                         |
 | Portainer                  | VM         | 192.168.1.7   | `proxmox/portainer-vm`                 | `proxmox/portainer-vm`                      |
 | RabbitMQ                   | LXC        | 192.168.1.8   | `proxmox/rabbitmq-lxc`                 | `proxmox/rabbitmq-lxc`                      |
+| NocoBase                   | LXC        | 192.168.1.5   | `proxmox/nocobase-lxc`                 | -                                           |
 | whisper.cpp                | LXC        | 192.168.1.9   | `proxmox/whisper-lxc`                  | `proxmox/whisper-lxc`                       |
 | Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
 | NFS server (k3s PVs)       | VM         | 192.168.1.108 | `proxmox/nfs-vm`                       | `proxmox/nfs-vm`                            |
@@ -167,6 +168,19 @@ with password auth (scram-sha-256).
 `just configure whisper-lxc`; sized at 3GB RAM / 8GB disk to fit the model in memory. HTTP server (OpenAI-compatible
 transcription API) on `192.168.1.9:8080`, no DNS hostname. To change the model edit
 `ansible/proxmox/whisper-lxc/roles/whisper/defaults/main.yml`.
+
+**NocoBase** – LAN-isolated: the Proxmox firewall drops all outbound traffic to `192.168.0.0/16` on the
+container's veth, except PostgreSQL (`192.168.1.4:5432`) and Redis (`192.168.1.6:6379`). Internet access and
+inbound LAN access are unaffected. This is the only consumer of the cluster-wide firewall switch, which is
+declared in `terraform/proxmox/nocobase-lxc/` with ACCEPT policies — a second isolated guest must not redeclare it.
+
+Terraform generates a dedicated ED25519 keypair on first apply and writes it to the gitignored
+`terraform/proxmox/nocobase-lxc/.ssh/`. A CI apply writes those files into the runner's throwaway workspace, so
+recover them with `just output proxmox nocobase-lxc ssh_private_key` — the state on R2 is the copy of record.
+`just configure nocobase-lxc` then hardens sshd: **port 22022**, key-only, `PermitRootLogin prohibit-password`.
+It deliberately skips `_shared/enable-root-ssh.yml`, which would otherwise force `PasswordAuthentication yes` back
+on, and it disables `ssh.socket` — Ubuntu 24.04 socket-activates sshd, which makes the `Port` directive a silent
+no-op until systemd hands the port back. Root keeps its password for `pct enter 207` from the node as break-glass.
 
 **Portainer** - Docker + nginx + certbot inside the VM. UI at `https://portainer.internal.pavel-usanli.online`. First
 visit shows a setup wizard – create the admin there within 5 minutes of the first launch (

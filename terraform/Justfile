@@ -76,7 +76,10 @@ output layer resource name:
     export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
     export AWS_ENDPOINT_URL_S3="${R2_ENDPOINT:-}"
     cd {{layer}}/{{resource}}
-    terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false -reconfigure 2>/dev/null
+    # init writes its banner to stdout, not stderr, so it must be silenced too —
+    # otherwise it is prepended to the value and `just output ... | gh secret set`
+    # stores the banner along with the secret.
+    terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false -reconfigure >/dev/null 2>&1
     terraform output -raw {{name}}
 
 # List every deployable resource with a short description
@@ -111,6 +114,7 @@ list:
     @printf "  %-14s %s\n" "rabbitmq-lxc"   "LXC 205 · 192.168.1.8   · RabbitMQ"
     @printf "  %-14s %s\n" "cloudflared-lxc" "LXC 210 · 192.168.1.10  · Cloudflare Tunnel connector"
     @printf "  %-14s %s\n" "whisper-lxc"    "LXC 206 · 192.168.1.9   · whisper.cpp server (large-v3-q5_0)"
+    @printf "  %-14s %s\n" "nocobase-lxc"   "LXC 207 · 192.168.1.5   · NocoBase (20G root + 50G data, LAN-isolated)"
     @printf "  %-14s %s\n" "nfs-vm"         "VM  301 · 192.168.1.108 · NFS server (k3s PVs)"
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"

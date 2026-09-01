@@ -1,0 +1,72 @@
+---
+# Deliberately does NOT import ../_shared/enable-root-ssh.yml. That file writes
+# 00-homelab.conf with `PermitRootLogin yes` + `PasswordAuthentication yes`, and
+# because sshd applies the first match per keyword it would win over anything we
+# wrote later. We reuse the same filename so this host gets the hardened content
+# in the same first-wins slot.
+
+- name: Install openssh-server
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    update_cache: true
+
+- name: Ensure sshd_config.d directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Drop hardened sshd override (first-wins over cloud-init drop-ins)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/00-homelab.conf
+    content: |
+      # Managed by ansible/proxmox/nocobase-lxc/roles/ssh-hardening
+      # sshd applies first match per keyword; this file sorts before the template's
+      # 60-cloudimg-settings.conf and 99-password-login.conf.
+      Port {{ nocobase_ssh_port }}
+      PermitRootLogin prohibit-password
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart sshd
+
+# Validate before anything restarts sshd. On a bad config this fails with the old
+# daemon still running and the current session still usable.
+- name: Validate the resulting sshd config
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false
+
+# Ubuntu 24.04 enables ssh.socket, and systemd — not sshd — then owns the listening
+# port, which makes the `Port` directive above a silent no-op. Hand the port back to
+# sshd so sshd_config is the single source of truth.
+- name: Disable SSH socket activation
+  ansible.builtin.systemd:
+    name: ssh.socket
+    state: stopped
+    enabled: false
+  notify: Restart sshd
+
+- name: Enable sshd as a plain service
+  ansible.builtin.systemd:
+    name: ssh.service
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Apply the sshd restart now, before we verify
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify sshd answers on the hardened port
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ nocobase_ssh_port }}"
+    timeout: 30
+    state: started
+  delegate_to: localhost
+  become: false

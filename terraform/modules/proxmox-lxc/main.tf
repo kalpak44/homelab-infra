@@ -1,8 +1,8 @@
 resource "proxmox_virtual_environment_container" "this" {
-  node_name    = var.node_name
-  vm_id        = var.container_id
-  unprivileged = var.unprivileged
-  started      = true
+  node_name     = var.node_name
+  vm_id         = var.container_id
+  unprivileged  = var.unprivileged
+  started       = true
   start_on_boot = true
 
   initialization {
@@ -35,9 +35,20 @@ resource "proxmox_virtual_environment_container" "this" {
     size         = var.disk_size_gb
   }
 
+  dynamic "mount_point" {
+    for_each = var.data_disk_size_gb > 0 ? [1] : []
+
+    content {
+      volume = var.datastore_id
+      size   = "${var.data_disk_size_gb}G"
+      path   = var.data_disk_path
+    }
+  }
+
   network_interface {
-    name   = "eth0"
-    bridge = var.network_bridge
+    name     = "eth0"
+    bridge   = var.network_bridge
+    firewall = var.firewall_enabled
   }
 
   operating_system {

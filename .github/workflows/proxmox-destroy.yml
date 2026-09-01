@@ -15,6 +15,7 @@ on:
           - rabbitmq-lxc
           - cloudflared-lxc
           - whisper-lxc
+          - nocobase-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster

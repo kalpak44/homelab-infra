@@ -76,3 +76,21 @@ variable "password" {
   default     = "ubuntu"
   sensitive   = true
 }
+
+variable "data_disk_size_gb" {
+  description = "Extra data volume in GiB, mounted at data_disk_path. 0 means no data volume."
+  type        = number
+  default     = 0
+}
+
+variable "data_disk_path" {
+  description = "Mount path inside the container for the data volume"
+  type        = string
+  default     = "/data"
+}
+
+variable "firewall_enabled" {
+  description = "Filter this container's veth through the Proxmox firewall. Inert unless the cluster firewall is also enabled."
+  type        = bool
+  default     = false
+}

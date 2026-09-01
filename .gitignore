@@ -17,6 +17,7 @@ override.tf.json
 ansible/roles/external/
 
 # SSH keys & secrets
+terraform/proxmox/nocobase-lxc/.ssh/
 *.pem
 *.key
 *.p12

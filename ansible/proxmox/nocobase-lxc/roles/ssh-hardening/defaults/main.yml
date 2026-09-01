@@ -1,0 +1,4 @@
+---
+# Canonical value lives in ansible/inventories/hosts.yml as a host var; this is
+# only the fallback for a direct role invocation.
+nocobase_ssh_port: 22022

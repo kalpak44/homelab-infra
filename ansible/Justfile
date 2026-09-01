@@ -15,6 +15,7 @@
 #   RABBITMQ_USER/PASSWORD,
 #   FLUX_GITHUB_TOKEN
 #   HOST_PASSWORD (root password for all LXCs/VMs - used for SSH + sudo)
+#   SSH_PRIVATE_KEY (operator key, base64 or PEM; required where password auth is off)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
@@ -50,7 +51,27 @@ configure resource: setup
       k3s-cluster/flux) playbook="proxmox/k3s-cluster/flux-install.yml" ;;
       *)                playbook="proxmox/{{resource}}/playbook.yml" ;;
     esac
-    ansible-playbook "$playbook" \
+    # Hosts that refuse password auth (nocobase-lxc) need a key. Harmless elsewhere:
+    # sshd still falls back to the password every other host accepts.
+    # SSH_PRIVATE_KEY is stored base64-encoded, but accept a raw PEM too. A key that
+    # will not parse is dropped rather than passed on, so it cannot break other hosts.
+    key_args=()
+    if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+      keyfile="$(mktemp)"
+      trap 'rm -f "$keyfile"' EXIT
+      if printf '%s' "$SSH_PRIVATE_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+        printf '%s\n' "$SSH_PRIVATE_KEY" > "$keyfile"
+      else
+        printf '%s' "$SSH_PRIVATE_KEY" | base64 -d > "$keyfile" 2>/dev/null || true
+      fi
+      chmod 600 "$keyfile"
+      if ssh-keygen -y -f "$keyfile" >/dev/null 2>&1; then
+        key_args=(--private-key "$keyfile")
+      else
+        echo "warning: SSH_PRIVATE_KEY did not parse; falling back to password auth" >&2
+      fi
+    fi
+    ansible-playbook "$playbook" ${key_args[@]+"${key_args[@]}"} \
       -e "host_password=${HOST_PASSWORD:-}" \
       -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
       -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
@@ -106,6 +127,7 @@ list:
     @printf "  %-24s %s\n" "redis-lxc"        "Redis + Redis Commander - cache and web UI"
     @printf "  %-24s %s\n" "rabbitmq-lxc"     "RabbitMQ - message broker"
     @printf "  %-24s %s\n" "whisper-lxc"      "whisper.cpp server - speech-to-text (large-v3-q5_0 model)"
+    @printf "  %-24s %s\n" "nocobase-lxc"     "SSH hardening - key-only auth on port 22022, no password login"
     @printf "  %-24s %s\n" "nfs-vm"           "NFS server - persistent volumes for k3s"
     @printf "  %-24s %s\n" "portainer-vm"     "Portainer - Docker container management UI"
     @printf "  %-24s %s\n" "cloudflared-lxc"  "Cloudflare Tunnel daemon - WAN-less public ingress"

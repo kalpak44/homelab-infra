@@ -1,0 +1,37 @@
+---
+- name: Harden SSH on nocobase
+  hosts: nocobase
+  become: true
+  # Facts are gathered by hand below: the play has to discover which port sshd is
+  # answering on before it can connect at all.
+  gather_facts: false
+
+  pre_tasks:
+    # First run reaches a fresh container on 22; every later run finds the hardened
+    # port. Probing both keeps `just configure nocobase-lxc` idempotent either way.
+    - name: Find the port sshd is answering on
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ item }}"
+        timeout: 5
+        state: started
+      delegate_to: localhost
+      become: false
+      loop: "{{ [nocobase_ssh_port, 22] | unique }}"
+      register: _ssh_probe
+      ignore_errors: true
+
+    - name: Fail if sshd is unreachable on either port
+      ansible.builtin.fail:
+        msg: "No sshd on {{ ansible_host }}:{{ nocobase_ssh_port }} or {{ ansible_host }}:22"
+      when: _ssh_probe.results | rejectattr('failed') | list | length == 0
+
+    - name: Connect on the first port that answered
+      ansible.builtin.set_fact:
+        ansible_port: "{{ _ssh_probe.results | rejectattr('failed') | map(attribute='item') | first }}"
+
+    - name: Gather facts now that the port is known
+      ansible.builtin.setup:
+
+  roles:
+    - ssh-hardening

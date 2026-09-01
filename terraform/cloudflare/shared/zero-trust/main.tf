@@ -69,6 +69,13 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "homelab" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
 
   config {
+    # Required by the private network route in warp.tf. Cloudflare turns this on
+    # by itself when a route is added, so leaving it undeclared means every apply
+    # of this dir plans to switch WARP routing back off and silently break it.
+    warp_routing {
+      enabled = true
+    }
+
     dynamic "ingress_rule" {
       for_each = local.all_hostnames
       content {
