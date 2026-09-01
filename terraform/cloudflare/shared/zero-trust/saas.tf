@@ -57,10 +57,13 @@ resource "cloudflare_custom_hostname" "customer" {
     # TXT validation, not HTTP. HTTP validation needs the customer's CNAME to be
     # serving already, and on a hostname that is not yet live that is circular.
     # TXT lets them prepare every record in one pass before cutting traffic over.
-    method                = "txt"
-    type                  = "dv"
-    certificate_authority = "google"
-    bundle_method         = "ubiquitous"
+    method = "txt"
+    type   = "dv"
+
+    # No certificate_authority here. Picking the CA is Enterprise-only and the
+    # API rejects the whole create with 1459 on any lower plan, so on Free the
+    # only correct thing to send is nothing — Cloudflare then assigns the CA.
+    bundle_method = "ubiquitous"
 
     settings {
       min_tls_version = "1.2"
