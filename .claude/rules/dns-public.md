@@ -60,6 +60,29 @@ managed and the daemon pulls the new config itself.
 `Zone:DNS:Edit` on the new zone, issuance fails for its hostnames. Harmless in practice — Cloudflare terminates TLS
 at the edge and the origin runs `no_tls_verify = true` — but Traefik retries for ever and fills its log.
 
+## Domains we don't host — Cloudflare for SaaS
+
+A hostname on someone else's domain cannot just CNAME at one of ours. It resolves to our edge IPs, but the handshake
+carries the customer's SNI, and with no zone to match it the edge rejects it (1016) before any routing happens. Adding
+a `cloudflare_custom_hostname` in `terraform/cloudflare/shared/zero-trust/saas.tf` registers that SNI against our zone,
+issues a DV certificate for it, and routes it to the fallback origin (`saas.pavel-usanli.online`) — which is an
+ordinary proxied record pointing at the tunnel.
+
+**The Host header survives the whole trip, so a custom hostname still needs a tunnel ingress rule.** `local.saas_customers`
+is folded into both `all_hostnames` and `ingress_overrides` in `main.tf` for exactly that reason. Register the hostname
+but forget the rule and TLS negotiates cleanly and the request dies on the catch-all 404 — which looks identical to a
+DNS mistake and is why the two maps are wired from one source.
+
+Validation is `method = "txt"`, not `http`: HTTP validation requires the customer's CNAME to be serving already, and it
+can't serve until the certificate exists. TXT lets the customer stage every record in one pass and cut over once. Hand
+them `terraform output saas_customer_onboarding` — the CNAME plus both validation records. Those records are computed
+by Cloudflare and are often empty on the apply that created the hostname; re-read the output after a refresh.
+
+**A customer domain that happens to sit in our own Cloudflare account must be DNS-only.** An orange-clouded record is
+served by that zone's own proxy and never reaches the custom-hostname path (orange-to-orange needs separate
+enablement). This is the case for the simulated `app.proklinator.online` customer, whose record is deliberately *not*
+managed by Terraform — it stands in for a record at a provider we don't control.
+
 ## Kubernetes manifest
 
 - **Namespace:** `public`

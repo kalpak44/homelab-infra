@@ -112,9 +112,12 @@ The single `CLOUDFLARE_API_TOKEN` needs:
 | Account | Email Routing Addresses | Edit + Read |
 | Zone    | Email Routing Rules     | Edit + Read |
 | Zone    | Zone Settings           | Edit + Read |
+| Zone    | SSL and Certificates    | Edit        |
 
 Zone resource is scoped to your domain (e.g. `pavel-usanli.online`). Account-level permissions cover the Zero Trust
-tunnel (`cloudflare/shared/zero-trust`).
+tunnel (`cloudflare/shared/zero-trust`). **SSL and Certificates** is what the Cloudflare-for-SaaS custom hostnames in
+`saas.tf` need; without it every call to that API returns a bare `Authentication error` rather than a permission
+message, so a token missing it looks like a broken token.
 
 ---
 
