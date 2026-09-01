@@ -5,6 +5,11 @@ metadata:
   namespace: private
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate: the Chromium profile on the PVC is single-writer
+  # (SingletonLock + leveldb locks). A rolling update would start the new pod while
+  # the old one still holds the profile, and the new browser would refuse to launch.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: playwright-mcp
@@ -28,6 +33,15 @@ spec:
             - 0.0.0.0
             - --allowed-hosts
             - playwright-mcp.internal.pavel-usanli.online
+            # Persistent profile on NFS. Without this the server creates a temp
+            # user-data-dir per pod, so cookies and logins die with the pod.
+            - --user-data-dir
+            - /profile
+            - --user-agent
+            - "Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)"
+          volumeMounts:
+            - name: profile
+              mountPath: /profile
           ports:
             - containerPort: 8931
           readinessProbe:
@@ -44,3 +58,7 @@ spec:
               cpu: 500m
               memory: 1Gi
               ephemeral-storage: 2Gi
+      volumes:
+        - name: profile
+          persistentVolumeClaim:
+            claimName: playwright-mcp-profile
