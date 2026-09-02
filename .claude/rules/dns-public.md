@@ -83,6 +83,12 @@ served by that zone's own proxy and never reaches the custom-hostname path (oran
 enablement). This is the case for the simulated `app.proklinator.online` customer, whose record is deliberately *not*
 managed by Terraform — it stands in for a record at a provider we don't control.
 
+**Zone-level protections apply to custom hostnames, but their referer checks do not.** Hotlink Protection is off on
+`pavel-usanli.online` (`cloudflare_zone_settings_override` in `saas.tf`) because a custom hostname inherits the zone's
+settings while the check still compares the `Referer` against *our* apex — so a customer's own page loading its own
+favicon reads as hotlinking and gets a 1011 on every image extension, but only when a referer is sent, which makes it
+look intermittent. Treat any zone-wide setting that keys off the request's hostname the same way before enabling it.
+
 ## Kubernetes manifest
 
 - **Namespace:** `public`

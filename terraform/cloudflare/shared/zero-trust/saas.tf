@@ -22,7 +22,7 @@ locals {
   # The scaffolding below stays in place while this is empty, so onboarding the
   # next customer really is one line plus an apply.
   saas_customers = {
-    "ownai.deepcraftstudio.com" =  "http://192.168.1.5:80"
+    "ownai.deepcraftstudio.com" = "http://192.168.1.5:80"
   }
 
   saas_fallback_origin = "saas.pavel-usanli.online"
@@ -79,4 +79,21 @@ resource "cloudflare_custom_hostname" "customer" {
   wait_for_ssl_pending_validation = false
 
   depends_on = [cloudflare_custom_hostname_fallback_origin.this]
+}
+
+# Hotlink Protection has to stay off.
+#
+# It is a zone-level setting, but a custom hostname is served by *this* zone and
+# inherits it, while the referer check still compares against pavel-usanli.online.
+# A customer's own page loading its own images therefore counts as third-party
+# hotlinking and is refused with a 1011.
+#
+# This resource reverts the zone's settings to their pre-apply values on destroy,
+# not just the one named here.
+resource "cloudflare_zone_settings_override" "this" {
+  zone_id = data.cloudflare_zone.this.id
+
+  settings {
+    hotlink_protection = "off"
+  }
 }
