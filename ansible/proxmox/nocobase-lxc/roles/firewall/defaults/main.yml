@@ -1,0 +1,20 @@
+---
+# Canonical value lives in ansible/inventories/hosts.yml as a host var; this is
+# only the fallback for a direct role invocation. Must appear in the accepted
+# set below, or the ruleset locks Ansible out of the host it just configured.
+nocobase_ssh_port: 22022
+
+# Reachable from anywhere, because the SaaS traffic arrives from cloudflared on
+# the LAN and the LAN is a subset of "anywhere". Port 443 is accepted even though
+# nothing listens on it today: Cloudflare terminates TLS at the edge, so an
+# origin certificate here is a later decision, not a firewall change.
+nocobase_firewall_public_ports: [80, 443]
+
+# SSH is not public. Restricting it to the LAN is what makes "80 and 443 only"
+# true from the internet while `just configure nocobase-lxc` keeps working from
+# the self-hosted runner, which sits on this range.
+nocobase_firewall_admin_cidr: "192.168.0.0/16"
+
+# The container's only external interface (set by modules/proxmox-lxc). Traffic
+# on any other interface — loopback, a Docker bridge — is left alone.
+nocobase_firewall_wan_interface: "eth0"

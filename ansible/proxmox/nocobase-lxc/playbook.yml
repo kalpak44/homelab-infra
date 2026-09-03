@@ -1,13 +1,13 @@
 ---
-- name: Harden SSH on nocobase
+- name: Harden nocobase
   hosts: nocobase
   become: true
   # Facts are gathered by hand below: the play has to discover which port sshd is
-  # answering on before it can connect at all.
+  # answering on before it can completely connect.
   gather_facts: false
 
   pre_tasks:
-    # First run reaches a fresh container on 22; every later run finds the hardened
+    # The first run reaches a fresh container on 22; every later run finds the hardened
     # port. Probing both keeps `just configure nocobase-lxc` idempotent either way.
     - name: Find the port sshd is answering on
       ansible.builtin.wait_for:
@@ -34,4 +34,8 @@
       ansible.builtin.setup:
 
   roles:
+    # Order matters: the firewall's SSH rule is written from nocobase_ssh_port, so
+    # sshd has to already be answering there before the ruleset closes everything
+    # else. Reversed, a first run would filter for a port nothing listens on yet.
     - ssh-hardening
+    - firewall

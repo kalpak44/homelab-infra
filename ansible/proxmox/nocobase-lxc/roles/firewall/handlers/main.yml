@@ -1,0 +1,7 @@
+---
+# Type=oneshot + RemainAfterExit, and its ExecReload re-reads /etc/nftables.conf —
+# so a reload swaps the ruleset in place with no window where the host is unfiltered.
+- name: Reload nftables
+  ansible.builtin.systemd:
+    name: nftables.service
+    state: reloaded

@@ -1,0 +1,52 @@
+#!/usr/sbin/nft -f
+#
+# Managed by ansible/proxmox/nocobase-lxc/roles/firewall — edits here are lost on
+# the next `just configure nocobase-lxc`.
+#
+# Replaces only this table, deliberately not `flush ruleset`: Docker installs its
+# own tables and chains in the ip family, and flushing everything would drop them
+# until dockerd is restarted, taking every published port with it. Declaring the
+# table before deleting it is what makes the delete safe on a first run.
+table inet homelab_ingress
+delete table inet homelab_ingress
+
+table inet homelab_ingress {
+    # Everything that arrives on the external interface is judged here.
+    chain ext_guard {
+        # The Proxmox veth firewall is stateful and so is this: return traffic for
+        # connections the container opened itself is accepted before any port rule
+        # runs, which is why the live SSH session survives applying this file.
+        ct state established,related accept
+        ct state invalid drop
+
+        # The only two ports the internet may reach.
+        tcp dport { {{ nocobase_firewall_public_ports | join(', ') }} } accept
+
+        # Admin access, LAN-only — see the role's defaults.
+        ip saddr {{ nocobase_firewall_admin_cidr }} tcp dport {{ nocobase_ssh_port }} accept
+
+        # Path-MTU discovery and plain reachability. Dropping ICMP silently breaks
+        # connections that need to be told to fragment rather than failing loudly.
+        icmp type { echo-request, destination-unreachable, time-exceeded } accept
+        icmpv6 type { echo-request, destination-unreachable, packet-too-big, time-exceeded, nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
+
+        # Rate-limited so a port scan cannot fill the journal, but loud enough to
+        # tell "the firewall refused it" from "the service is down".
+        log prefix "nft-ingress-drop " level info limit rate 5/minute
+        drop
+    }
+
+    # prerouting, not input, and the priority is the whole point.
+    #
+    # A Docker-published port is DNAT'd in nat/prerouting (priority -100) and then
+    # delivered through forward, never touching the input hook — so an input-hook
+    # ruleset would leave every published port wide open. Filtering at priority
+    # mangle (-150) runs after conntrack (-200), so `ct state` above is meaningful,
+    # but before that DNAT, so `tcp dport` is still the port the client asked for.
+    # One chain therefore covers host processes and containers alike.
+    chain prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+
+        iifname "{{ nocobase_firewall_wan_interface }}" jump ext_guard
+    }
+}

@@ -185,6 +185,18 @@ It deliberately skips `_shared/enable-root-ssh.yml`, which would otherwise force
 on, and it disables `ssh.socket` — Ubuntu 24.04 socket-activates sshd, which makes the `Port` directive a silent
 no-op until systemd hands the port back. Root keeps its password for `pct enter 207` from the node as break-glass.
 
+The same run installs an nftables ruleset: inbound on the container's `eth0` is default-deny, with **80 and 443 open
+to anyone** and SSH (22022) accepted only from `192.168.0.0/16`. It filters in the `prerouting` hook at priority
+`mangle` — after conntrack, before NAT — so a Docker-published port cannot slip past it the way it would past an
+`input`-hook ruleset, and so `ct state` still works. Only this table is replaced on apply, never `flush ruleset`,
+which would take Docker's own tables with it. Egress policy stays where it was, on the Proxmox veth firewall.
+
+Cloudflare's edge is the other half, and the origin cannot reach it: a proxied hostname is also served on 8080, 8880,
+2052, 2082, 2086, 2095 (HTTP) and 2053, 2083, 2087, 2096, 8443 (HTTPS), and the tunnel forwards all of them to the
+same `http://192.168.1.5:80` — so `ownai.deepcraftstudio.com:8080` was this box's port 80, not a service on 8080.
+`shared/zero-trust/edge-ports.tf` blocks anything the edge did not accept on 80 or 443. It needs **Zone:WAF:Edit** on
+`CLOUDFLARE_API_TOKEN`, which the current token does not have.
+
 **Portainer** - Docker + nginx + certbot inside the VM. UI at `https://portainer.internal.pavel-usanli.online`. First
 visit shows a setup wizard – create the admin there within 5 minutes of the first launch (
 `sudo docker restart portainer` to re-open if it times out).

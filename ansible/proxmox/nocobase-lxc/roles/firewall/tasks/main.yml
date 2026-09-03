@@ -1,0 +1,69 @@
+---
+# Default-deny inbound on the container's external interface: 80 and 443 from
+# anywhere, SSH from the LAN, nothing else. Egress is not touched here — the
+# Proxmox veth firewall in terraform/proxmox/nocobase-lxc already owns that half,
+# and two layers writing outbound policy would make neither one readable.
+
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+
+# validate: is the lockout guard. A ruleset that does not parse fails here with
+# the file unwritten and the old one still loaded, rather than at reload time on
+# a host we would then have to reach through `pct enter 207` to fix.
+- name: Install the ingress ruleset
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  notify: Reload nftables
+
+- name: Enable nftables at boot
+  ansible.builtin.systemd:
+    name: nftables.service
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Apply the ruleset now, before we verify
+  ansible.builtin.meta: flush_handlers
+
+# On disk and enabled is not the same as loaded. Ask the kernel.
+- name: Verify the ruleset is live
+  ansible.builtin.command: nft list table inet homelab_ingress
+  changed_when: false
+  register: _nft_live
+
+# nft prints a multi-port match as a set and a single port bare, so build the
+# expected text the same way rather than assuming there will always be two.
+- name: Work out how nft will have printed the public-port rule
+  ansible.builtin.set_fact:
+    _nft_public_match: >-
+      tcp dport {{ (nocobase_firewall_public_ports | length > 1)
+                   | ternary('{ ' ~ nocobase_firewall_public_ports | join(', ') ~ ' }',
+                             nocobase_firewall_public_ports | first) }} accept
+
+- name: Fail if the accept rules did not make it into the kernel
+  ansible.builtin.assert:
+    that:
+      - _nft_public_match in _nft_live.stdout
+      - "'tcp dport ' ~ nocobase_ssh_port ~ ' accept' in _nft_live.stdout"
+      - "'iifname \"' ~ nocobase_firewall_wan_interface ~ '\" jump ext_guard' in _nft_live.stdout"
+    fail_msg: "Loaded ruleset is missing the public-port, SSH, or interface-guard rule"
+
+# Same check the ssh-hardening role ends on, repeated because the ruleset above is
+# the other thing that can take this port away. Reached from the controller, which
+# is on the LAN — the only source the SSH rule accepts.
+- name: Verify SSH is still reachable through the firewall
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ nocobase_ssh_port }}"
+    timeout: 30
+    state: started
+  delegate_to: localhost
+  become: false

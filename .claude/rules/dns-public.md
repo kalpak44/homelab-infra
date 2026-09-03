@@ -89,6 +89,14 @@ settings while the check still compares the `Referer` against *our* apex — so 
 favicon reads as hotlinking and gets a 1011 on every image extension, but only when a referer is sent, which makes it
 look intermittent. Treat any zone-wide setting that keys off the request's hostname the same way before enabling it.
 
+**The edge answers on more than 80 and 443, and no origin-side firewall can change that.** Every proxied hostname —
+custom hostnames included — is also served on 8080, 8880, 2052, 2082, 2086, 2095 (HTTP) and 2053, 2083, 2087, 2096,
+8443 (HTTPS), with no per-record opt-out. The client's port never reaches the origin: ingress matches on Host alone
+and forwards to the port its service URL names, so `:8080` and `:80` both land on the same origin socket. Closing
+them is therefore a WAF custom rule (`edge-ports.tf`, `not (cf.edge.server_port in {80 443})`), never a guest
+firewall — filtering 8080 on the box drops nothing, because nothing ever arrives there. The rule needs
+**Zone:WAF:Edit** on `CLOUDFLARE_API_TOKEN`; without it the apply fails with a bare `Authentication error`.
+
 ## Kubernetes manifest
 
 - **Namespace:** `public`
