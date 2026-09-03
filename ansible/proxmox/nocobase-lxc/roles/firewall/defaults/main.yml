@@ -10,10 +10,16 @@ nocobase_ssh_port: 22022
 # origin certificate here is a later decision, not a firewall change.
 nocobase_firewall_public_ports: [80, 443]
 
-# SSH is not public. Restricting it to the LAN is what makes "80 and 443 only"
-# true from the internet while `just configure nocobase-lxc` keeps working from
-# the self-hosted runner, which sits on this range.
-nocobase_firewall_admin_cidr: "192.168.0.0/16"
+# Source restriction on the SSH rule. Empty means any source, which is the
+# default because nothing restricts *reaching* this port in the first place:
+# there is no WAN port-forward, so 22022 is only routable from the LAN and over
+# the WARP private route in terraform/cloudflare/shared/zero-trust/warp.tf. A
+# CIDR here narrows it further — "192.168.0.0/16" keeps WARP clients out while
+# still letting the self-hosted runner in.
+#
+# What actually guards this port is the ssh-hardening role: key-only auth,
+# PasswordAuthentication no, PermitRootLogin prohibit-password.
+nocobase_firewall_admin_cidr: ""
 
 # The container's only external interface (set by modules/proxmox-lxc). Traffic
 # on any other interface — loopback, a Docker bridge — is left alone.

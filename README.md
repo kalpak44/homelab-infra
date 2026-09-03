@@ -185,8 +185,11 @@ It deliberately skips `_shared/enable-root-ssh.yml`, which would otherwise force
 on, and it disables `ssh.socket` — Ubuntu 24.04 socket-activates sshd, which makes the `Port` directive a silent
 no-op until systemd hands the port back. Root keeps its password for `pct enter 207` from the node as break-glass.
 
-The same run installs an nftables ruleset: inbound on the container's `eth0` is default-deny, with **80 and 443 open
-to anyone** and SSH (22022) accepted only from `192.168.0.0/16`. It filters in the `prerouting` hook at priority
+The same run installs an nftables ruleset: inbound on the container's `eth0` is default-deny, with **80, 443 and SSH
+(22022) open** and nothing else — notably not NocoBase's own `0.0.0.0:13000`, which every LAN and WARP client could
+reach before. `nocobase_firewall_admin_cidr` narrows SSH to one source range if wanted; it is empty by default,
+because what guards that port is key-only sshd, and no WAN port-forward routes to it in the first place. It filters
+in the `prerouting` hook at priority
 `mangle` — after conntrack, before NAT — so a Docker-published port cannot slip past it the way it would past an
 `input`-hook ruleset, and so `ct state` still works. Only this table is replaced on apply, never `flush ruleset`,
 which would take Docker's own tables with it. Egress policy stays where it was, on the Proxmox veth firewall.

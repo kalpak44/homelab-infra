@@ -22,8 +22,9 @@ table inet homelab_ingress {
         # The only two ports the internet may reach.
         tcp dport { {{ nocobase_firewall_public_ports | join(', ') }} } accept
 
-        # Admin access, LAN-only — see the role's defaults.
-        ip saddr {{ nocobase_firewall_admin_cidr }} tcp dport {{ nocobase_ssh_port }} accept
+        # Admin access. Open to any source unless nocobase_firewall_admin_cidr is
+        # set — see the role's defaults for why that is the default here.
+        {% if nocobase_firewall_admin_cidr %}ip saddr {{ nocobase_firewall_admin_cidr }} {% endif %}tcp dport {{ nocobase_ssh_port }} accept
 
         # Path-MTU discovery and plain reachability. Dropping ICMP silently breaks
         # connections that need to be told to fragment rather than failing loudly.
