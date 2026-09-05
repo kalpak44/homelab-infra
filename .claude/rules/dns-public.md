@@ -83,6 +83,14 @@ served by that zone's own proxy and never reaches the custom-hostname path (oran
 enablement). This is the case for the simulated `app.proklinator.online` customer, whose record is deliberately *not*
 managed by Terraform — it stands in for a record at a provider we don't control.
 
+**`always_use_https` is the half of the edge-port problem that does not need a WAF token.** It is a zone setting
+(`cloudflare_zone_settings_override` in `saas.tf`), inherited by custom hostnames, and it turns all six alternate
+*HTTP* ports into a 301 to `https://<host>/` — port-less, so they funnel onto 443. That matters more than the port
+count: without it the edge answered plain HTTP with a 200 and served the whole admin UI, sign-in form and session
+cookie included, in cleartext. The origin cannot fix this — nginx only ever sees the tunnel's decrypted leg, so by
+the time `X-Forwarded-Proto` tells it the client used HTTP the credentials have already crossed the internet. The
+five alternate *HTTPS* ports still answer; `edge-ports.tf` is the only thing that closes those.
+
 **Zone-level protections apply to custom hostnames, but their referer checks do not.** Hotlink Protection is off on
 `pavel-usanli.online` (`cloudflare_zone_settings_override` in `saas.tf`) because a custom hostname inherits the zone's
 settings while the check still compares the `Referer` against *our* apex — so a customer's own page loading its own

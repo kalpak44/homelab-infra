@@ -81,19 +81,20 @@ resource "cloudflare_custom_hostname" "customer" {
   depends_on = [cloudflare_custom_hostname_fallback_origin.this]
 }
 
-# Hotlink Protection has to stay off.
-#
-# It is a zone-level setting, but a custom hostname is served by *this* zone and
-# inherits it, while the referer check still compares against pavel-usanli.online.
-# A customer's own page loading its own images therefore counts as third-party
-# hotlinking and is refused with a 1011.
-#
-# This resource reverts the zone's settings to their pre-apply values on destroy,
-# not just the one named here.
+# Custom hostnames inherit these, which cuts both ways. Destroying this resource
+# reverts every zone setting to its pre-apply value, not just the ones named here.
 resource "cloudflare_zone_settings_override" "this" {
   zone_id = data.cloudflare_zone.this.id
 
   settings {
+    # The referer check compares against pavel-usanli.online even on an inherited
+    # custom hostname, so a customer's own images read as hotlinking (1011).
     hotlink_protection = "off"
+
+    # Off, the edge served the admin UI over cleartext HTTP. nginx cannot fix that
+    # — it only sees the tunnel's decrypted leg, so by the time X-Forwarded-Proto
+    # says http:// the credentials are already sent. Covers the alternate HTTP
+    # ports too; their HTTPS twins are edge-ports.tf's job.
+    always_use_https = "on"
   }
 }
