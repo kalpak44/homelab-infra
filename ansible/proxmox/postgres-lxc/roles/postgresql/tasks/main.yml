@@ -41,12 +41,16 @@
 
 # --- Install --------------------------------------------------------------
 
+# `latest`, not `present`: the major is already pinned by postgresql_version, so
+# this only ever moves within 18.x and never crosses a major. With `present` the
+# minor releases were instead picked up incidentally by the pgadmin role's
+# `upgrade: full`, which ran after this role's cluster config had already applied.
 - name: Install PostgreSQL {{ postgresql_version }}
   ansible.builtin.apt:
     name:
       - "postgresql-{{ postgresql_version }}"
       - "postgresql-{{ postgresql_version }}-pgvector"
-    state: present
+    state: latest
     update_cache: true
 
 # --- Ensure cluster exists ------------------------------------------------
@@ -166,6 +170,22 @@
     cmd: >
       psql -d "{{ postgresql_db }}"
       -c "CREATE EXTENSION IF NOT EXISTS {{ item }};"
+  become_user: postgres
+  loop: "{{ postgresql_extensions }}"
+  changed_when: true
+  when:
+    - postgresql_db != ""
+    - postgresql_extensions | length > 0
+
+# Upgrading the extension's package ships new SQL but leaves every database on the
+# version it was created with - CREATE EXTENSION IF NOT EXISTS is a no-op once it
+# exists. Without this the .so and the catalogue drift apart silently (pgvector sat
+# at 0.8.3 against a 0.8.6 binary). ALTER ... UPDATE is a no-op when already current.
+- name: Update extensions in application database to the packaged version
+  ansible.builtin.command:
+    cmd: >
+      psql -d "{{ postgresql_db }}"
+      -c "ALTER EXTENSION {{ item }} UPDATE;"
   become_user: postgres
   loop: "{{ postgresql_extensions }}"
   changed_when: true
