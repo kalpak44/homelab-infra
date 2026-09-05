@@ -25,7 +25,7 @@ Both recipes accept an optional user (defaults to `root`).
 | `01-proxmox-setup.yml`     | Create Terraform role + user + API token; enable snippet storage on `local`                                                                      |
 | `02-proxmox-artifacts.yml` | Download Ubuntu 24.04 LXC template and patch it with SSH password-auth drop-in; create VM vendor-data snippet; download cloud image; create VM 9000 template |
 | `03-runner-vm.yml`         | Create runner VM (id=101) with password auth; install ansible/terraform/just/gh; auto-register the GitHub Actions runner                         |
-| `04-proxmox-tls.yml`       | Register Let's Encrypt ACME account, add Cloudflare DNS-01 plugin, order cert                                                                    |
+| `04-proxmox-tls.yml`       | Register Let's Encrypt ACME account, add/refresh Cloudflare DNS-01 plugin token, order cert                                                      |
 
 `main.yml` runs all four in order. Each is also runnable standalone:
 
@@ -36,6 +36,11 @@ ansible-playbook -i "192.168.1.50," -u root bootstrap/04-proxmox-tls.yml \
   -e "letsencrypt_email=$LETSENCRYPT_EMAIL" \
   -e "cloudflare_api_token=$CLOUDFLARE_API_TOKEN"
 ```
+
+Phase 4 is also the repair path for the node's web-UI cert: `just bootstrap-tls` re-runs it alone against the
+standing inventory. Run it whenever `CLOUDFLARE_API_TOKEN` is rotated — the node stores its own copy in
+`/etc/pve/priv/acme/plugins.cfg`, and a stale one makes `pve-daily-update` fail DNS-01 every night with a misleading
+`invalid domain` until the cert expires.
 
 ## Required inputs
 

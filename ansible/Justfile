@@ -114,11 +114,21 @@ bootstrap-pw ip user='root': setup
       -e "github_repo=${GITHUB_REPO:-}" \
       bootstrap/main.yml
 
+# Re-run only the Proxmox TLS phase (renew cert / refresh a rotated Cloudflare token)
+bootstrap-tls: setup
+    ansible-playbook --limit proxmox_host \
+      -e "host_password=${HOST_PASSWORD:-}" \
+      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
+      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
+      -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
+      bootstrap/04-proxmox-tls.yml
+
 # List every configurable resource
 list:
     @echo "Bootstrap (one-time, fresh Proxmox node):"
     @printf "  %-24s %s\n" "bootstrap <ip>"    "Full bootstrap - Terraform user, base artifacts, runner VM, TLS cert"
     @printf "  %-24s %s\n" "bootstrap-pw <ip>" "Same, but prompts for SSH password (no key access yet)"
+    @printf "  %-24s %s\n" "bootstrap-tls" "TLS phase only - renew the cert or refresh a rotated Cloudflare token"
     @echo
     @echo "Configure (per-service, run after Terraform provisions the host):"
     @printf "  %-24s %s\n" "adguard-lxc"      "AdGuard Home - network-wide DNS ad-blocker"
