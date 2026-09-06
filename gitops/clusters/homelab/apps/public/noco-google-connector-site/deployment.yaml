@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: plugin-noco-tools
+  name: noco-google-connector-site
   namespace: public
 spec:
   replicas: 1
@@ -12,16 +12,16 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      app: plugin-noco-tools
+      app: noco-google-connector-site
   template:
     metadata:
       labels:
-        app: plugin-noco-tools
+        app: noco-google-connector-site
     spec:
       automountServiceAccountToken: false
       containers:
-        - name: plugin-noco-tools
-          image: "ghcr.io/kalpak44/noco-tools-site:31b1e26"
+        - name: noco-google-connector-site
+          image: "ghcr.io/kalpak44/noco-tools-site:94d1aac"
           ports:
             - containerPort: 80
           resources:

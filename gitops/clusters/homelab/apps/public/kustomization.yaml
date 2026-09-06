@@ -8,5 +8,5 @@ resources:
   - bunker-game-app
 #  - google-assistant-mcp
   - nocobase
-  - plugin-noco-tools
+  - noco-google-connector-site
   - proklinator
