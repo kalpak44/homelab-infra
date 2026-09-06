@@ -21,7 +21,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: noco-google-connector-site
-          image: "ghcr.io/kalpak44/noco-tools-site:94d1aac"
+          image: "ghcr.io/kalpak44/noco-tools-site:63b7bbd"
           ports:
             - containerPort: 80
           resources:
