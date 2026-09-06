@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - public-web-secure
   routes:
-    - match: Host(`noco-google-connector.deepcraftstudio.com`)
+    - match: Host(`noco-google-connector.pavel-usanli.online`)
       kind: Rule
       services:
         - name: noco-google-connector-site

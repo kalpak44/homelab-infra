@@ -29,6 +29,7 @@ locals {
     "mite-assistant"        = "mite-assistant.pavel-usanli.online"
     "google-assistant"      = "google-assistant.pavel-usanli.online"
     "shopify-gpt-assistant" = "shopify-gpt-assistant.pavel-usanli.online"
+    "noco-google-connector" = "noco-google-connector.pavel-usanli.online"
   }
 
   proklinator_apps = {
@@ -51,11 +52,9 @@ locals {
   # also means it bypasses Traefik — so no cert-manager, and no CrowdSec.
   traefik_origin = "https://192.168.1.120"
 
-  # Currently only the SaaS customers. Each names its own origin, because they do
-  # not all land in the same place: ownai reaches nginx on nocobase-lxc over plain
-  # HTTP (Cloudflare terminates TLS at the edge and cloudflared crosses the LAN, so
-  # that box needs no certificate and never listens on 443), while the connector
-  # site is an ordinary k3s app and points back at Traefik.
+  # Currently only the SaaS customers, which reach nginx on nocobase-lxc over
+  # plain HTTP: Cloudflare terminates TLS at the edge and cloudflared crosses
+  # the LAN, so that box needs no certificate and never listens on 443.
   ingress_overrides = local.saas_customers
 
   ingress_services = {

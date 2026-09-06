@@ -26,7 +26,7 @@ gitops/clusters/homelab/
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
     │   ├── google-assistant-mcp/  # Google MCP server
     │   ├── nocobase/              # NocoBase no-code platform
-    │   ├── noco-google-connector-site/ # Noco Google connector site (noco-google-connector.deepcraftstudio.com)
+    │   ├── noco-google-connector-site/ # Noco Google connector site (noco-google-connector.pavel-usanli.online)
     │   └── proklinator/           # proklinator.online — nginx placeholder
     └── private/
         ├── private-home-page/               # Internal services dashboard
