@@ -81,7 +81,10 @@ jobs:
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
 
       # SonarCloud coordinates for pass 2. The project is private on SonarCloud, so
-      # every API read needs the token.
+      # every API read needs the token. This workflow is never Dependabot-triggered — it
+      # runs on schedule and dispatch — so the Actions copy is the one it reads. build.yml
+      # is the one that also needs the Dependabot-store copy, for the reason main.tf in
+      # terraform/github/bunker-party records.
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST: https://sonarcloud.io
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
@@ -922,6 +925,15 @@ jobs:
           check and section 17 already forbids merging on a failing check. The gate is
           therefore enforced automatically; you do not need a separate confirmation
           step.
+
+          That enforcement depends on SONAR_TOKEN reaching the PR's own check run.
+          GitHub withholds Actions secrets from Dependabot-triggered runs, so the token
+          has to be in the repository's DEPENDABOT secret store as well as its Actions
+          one — terraform/github/bunker-party/main.tf writes both. With only the Actions
+          copy, build.yml's `if: env.SONAR_TOKEN != ''` guard skips the analysis and the
+          check goes green having gated nothing, which is what happened on PR #3. If a
+          dependency PR's check passes suspiciously fast, confirm the SonarCloud step
+          actually ran rather than assuming the gate held.
 
           Mention the Sonar work in the PR's single final comment: which conditions were
           failing, which rules you addressed, why each change preserves behaviour, and
