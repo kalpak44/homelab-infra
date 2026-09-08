@@ -33,3 +33,10 @@ variable "sonar_organization" {
   type        = string
   default     = "kalpak44"
 }
+
+variable "sonar_token" {
+  description = "SonarCloud token, mirrored into the Dependabot secret store so the quality gate runs on Dependabot PRs"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

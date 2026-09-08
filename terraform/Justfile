@@ -15,7 +15,7 @@
 #   CLOUDFLARE_API_TOKEN                                                     (cloudflare layer)
 #   PROXMOX_ENDPOINT, PROXMOX_USERNAME, PROXMOX_PASSWORD,
 #   SSH_PUBLIC_KEY, SSH_PRIVATE_KEY, HOST_PASSWORD                          (proxmox layer)
-#   GH_ADMIN_TOKEN, GH_OWNER, DEEPSEEK_APIKEY                                (github layer)
+#   GH_ADMIN_TOKEN, GH_OWNER, DEEPSEEK_APIKEY, SONAR_TOKEN                   (github layer)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
@@ -41,6 +41,7 @@ deploy layer resource:
     export TF_VAR_github_owner="${GH_OWNER:-kalpak44}"
     export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"
     export TF_VAR_deepseek_api_key="${DEEPSEEK_APIKEY:-}"
+    export TF_VAR_sonar_token="${SONAR_TOKEN:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform apply -auto-approve -input=false
@@ -64,6 +65,7 @@ destroy layer resource:
     export TF_VAR_github_owner="${GH_OWNER:-kalpak44}"
     export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"
     export TF_VAR_deepseek_api_key="${DEEPSEEK_APIKEY:-}"
+    export TF_VAR_sonar_token="${SONAR_TOKEN:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform destroy -auto-approve -input=false

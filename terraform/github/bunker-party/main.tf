@@ -71,8 +71,28 @@ resource "github_actions_variable" "pr_check_workflow" {
 
 # --- SonarCloud ---------------------------------------------------------------------
 # The agent's second phase reads the quality gate and open issues from the SonarCloud
-# API. SONAR_TOKEN itself belongs to the repo (it predates this layer and is also used
-# by build.yml) — only the non-secret coordinates live here.
+# API, and build.yml's analysis step waits on the gate. The Actions copy of SONAR_TOKEN
+# predates this layer and is still owned by the repo; only the non-secret coordinates
+# and the Dependabot mirror below live here.
+
+# The same key in the second store, for the same reason DEEPSEEK_APIKEY is in both:
+# GitHub withholds Actions secrets from Dependabot-triggered runs, so on exactly the PRs
+# the agent is meant to merge, SONAR_TOKEN was empty and build.yml's `if: env.SONAR_TOKEN
+# != ''` guard skipped the analysis. Measured on PR #3 — the check went green in 34s with
+# `SonarCloud analysis -> skipped`, so the quality gate was not gating the merge at all,
+# only the push to main afterwards.
+#
+# `count` guards the value rather than the resource: an apply with SONAR_TOKEN unset in
+# the environment would otherwise overwrite the stored secret with an empty string and
+# silently disable the gate again. Deploying this repo without the variable leaves
+# whatever is already there untouched.
+resource "github_dependabot_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository      = github_repository.this.name
+  secret_name     = "SONAR_TOKEN"
+  plaintext_value = var.sonar_token
+}
 
 resource "github_actions_variable" "sonar_project_key" {
   repository    = github_repository.this.name
