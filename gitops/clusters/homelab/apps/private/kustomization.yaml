@@ -4,4 +4,3 @@ resources:
   - private-home-page
   - crowdsec-web-ui
   - headlamp
-  - playwright-mcp
