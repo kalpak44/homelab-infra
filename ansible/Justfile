@@ -136,7 +136,6 @@ list:
     @printf "  %-24s %s\n" "postgres-lxc"     "PostgreSQL + pgAdmin - database and web UI"
     @printf "  %-24s %s\n" "redis-lxc"        "Redis + Redis Commander - cache and web UI"
     @printf "  %-24s %s\n" "rabbitmq-lxc"     "RabbitMQ - message broker"
-    @printf "  %-24s %s\n" "whisper-lxc"      "whisper.cpp server - speech-to-text (large-v3-q5_0 model)"
     @printf "  %-24s %s\n" "nocobase-lxc"     "SSH hardening + nftables ingress - 80/443 and SSH 22022 open, nothing else"
     @printf "  %-24s %s\n" "nfs-vm"           "NFS server - persistent volumes for k3s"
     @printf "  %-24s %s\n" "portainer-vm"     "Portainer - Docker container management UI"

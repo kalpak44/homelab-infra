@@ -14,7 +14,6 @@ on:
           - redis-lxc
           - rabbitmq-lxc
           - cloudflared-lxc
-          - whisper-lxc
           - nocobase-lxc
           - nfs-vm
           - portainer-vm
