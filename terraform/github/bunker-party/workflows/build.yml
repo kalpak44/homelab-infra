@@ -20,7 +20,7 @@
 # next `just deploy github bunker-party`, and Dependabot cannot watch the copy in
 # homelab-infra either — it only scans `.github/workflows/`. checkout and setup-java were
 # left on v4 long enough to start warning that they run on a deprecated Node.js 20.
-name: Build, Test, SonarCloud, Publish
+name: Build, Publish, Deploy
 
 on:
   pull_request:

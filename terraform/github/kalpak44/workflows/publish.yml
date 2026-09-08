@@ -22,7 +22,7 @@
 # authoritative producer of what ships — its Dockerfile compiles the Java, runs the same
 # tests and renders the same PDF from scratch, so the two verified jobs exist for fast,
 # separately attributable failure signals, not because the image trusts their output.
-name: Build and Publish
+name: Build, Publish, Deploy
 
 on:
   push:

@@ -14,7 +14,7 @@
 # The action versions here are bumped by hand. Dependabot cannot watch this file: it only
 # scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
 # `terraform/`. A bump merged into the target repo is reverted by the next apply.
-name: Build and Publish
+name: Build, Publish, Deploy
 
 on:
   push:

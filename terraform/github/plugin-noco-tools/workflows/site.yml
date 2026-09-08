@@ -9,7 +9,7 @@
 # cannot change this build under us (CWE-829). That pin used to be maintained by the
 # `github-actions` Dependabot entry; now that this file is generated here, the SHAs are
 # bumped by hand in homelab-infra — see the note in dependabot.yml.
-name: site
+name: Build, Publish, Deploy
 
 on:
   push:

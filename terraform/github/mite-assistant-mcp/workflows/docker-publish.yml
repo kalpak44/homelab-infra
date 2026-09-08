@@ -10,7 +10,7 @@
 # The action versions here are bumped by hand. Dependabot cannot watch this file: it only
 # scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
 # `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
-name: Build And Publish Docker Image
+name: Build, Publish, Deploy
 
 on:
   push:
