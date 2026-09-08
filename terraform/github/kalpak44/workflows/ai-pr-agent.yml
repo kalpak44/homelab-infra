@@ -2,14 +2,15 @@
 # Edits made here in the target repo are overwritten by `just deploy github kalpak44`.
 #
 # One job, once a day (or on demand): Codex CLI driving DeepSeek, with the gh CLI,
-# walks every open Dependabot PR oldest first, fixes whatever the upgrade breaks on
-# the same PR branch, validates, and merges. The objective is an empty queue, not a
+# walks every open Dependabot PR the oldest first, fixes whatever the upgrade breaks on
+# the same PR branch, validates, and merges. The goal is an empty queue, not a
 # sampled one — a PR left open is an exception that has to be justified.
 #
-# This copy is specialised for kalpak44 and has diverged from the other repos' copies:
-# it sets up both of the project's toolchains and states its validation commands
-# outright, instead of asking the model to discover them. Every repo under
-# terraform/github/ already keeps its own copy, so that divergence is the norm.
+# This copy is specialized for kalpak44 and has diverged from the other repos' copies:
+# it sets up both of the project's toolchains, JDK 25 and Node 24, because the pom's
+# enforcer refuses anything older and the agent would misread that as the upgrade
+# breaking the build. Every repo under terraform/github/ already keeps its own copy,
+# so that divergence is the norm.
 #
 # The policy lives in the prompt below, not in bash. There is no matrix or auto-merge.
 # The agent itself performs the review, repair, validation, CI gate, and merge.
@@ -37,10 +38,7 @@ concurrency:
 jobs:
   agent:
     runs-on: ubuntu-latest
-    # Raised from 45 when the per-run limit of 10 PRs was dropped: the objective is now
-    # an empty queue, and a grouped npm PR spanning eighteen packages can need several
-    # repair-validate rounds on its own.
-    timeout-minutes: 90
+    timeout-minutes: 45
 
     env:
       # gh is preinstalled on GitHub-hosted runners; this authenticates it.
@@ -114,7 +112,7 @@ jobs:
           EOF
 
       - name: Smoke-test the model
-        # One cheap call so credential/model/API issues fail immediately instead
+        # One inexpensive call so credential/model/API issues fail immediately instead
         # of halfway through a PR sweep.
         run: |
           set -euo pipefail
@@ -242,7 +240,7 @@ jobs:
 
           NEVER operate on a human-authored PR.
 
-          Handle at most 10 PRs in one run.
+          Work through every open Dependabot PR. There is no per-run limit.
 
           ----------------------------------------------------------------------
           2. PROCESS ONE PR AT A TIME
@@ -371,61 +369,30 @@ jobs:
           7. UNDERSTAND HOW THIS REPOSITORY IS VALIDATED
           ----------------------------------------------------------------------
 
-          This repository is known. Do not go looking for a build system.
+          Inspect the repository before deciding how to test it.
 
-          It holds two independent components, and a dependency PR touches one of them:
+          Look for:
+            - .github/workflows
+            - package.json
+            - pnpm/yarn/npm scripts
+            - Makefile
+            - justfile
+            - Taskfile
+            - pyproject.toml
+            - requirements files
+            - Cargo.toml
+            - go.mod
+            - composer.json
+            - Gemfile
+            - pom.xml
+            - Gradle files
+            - Terraform configuration
+            - repository documentation
+            - lint/test/build scripts
 
-            cv-pdf-generator  Java 25 / Maven. Renders the CV to a PDF. pom.xml.
-            web-page-app      Node 24 / npm / Vite. The site. package.json.
+          Prefer commands already used by CI or repository tooling.
 
-          The toolchains are already installed in this job: JDK 25 (temurin) and Node 24.
-          Do not install or switch either one.
-
-          Validate the Java component with:
-
-            cd cv-pdf-generator
-            mvn -B --no-transfer-progress verify
-
-          That single command runs the enforcer rules and all 8 tests, one of which
-          renders a real PDF through a real embedded server. It is the whole gate.
-
-          Validate the Node component with:
-
-            cd web-page-app
-            npm ci
-            npm run format:check
-            npm run lint
-            npm run build
-
-          `npm run format:check` fails on formatting alone. If a dependency bump
-          reformats or a fix of yours does, run `npm run format` and commit that.
-
-          The image build is what actually ships, and it rebuilds both components from
-          source. It is the strongest check available to you locally, and worth running
-          for anything beyond a patch bump:
-
-            docker build -f web-page-app/docker/Dockerfile .
-
-          THINGS ABOUT THIS PROJECT THAT WILL MISLEAD YOU IF YOU DO NOT KNOW THEM:
-
-          - The pom enforces `dependencyConvergence`. A bump can fail it by pulling a
-            second version of an existing transitive dependency, with an error that names
-            no test. The fix is a `dependencyManagement` entry pinning that dependency —
-            NEVER by removing the rule. slf4j-api is already pinned this way, because
-            spark-core and slf4j-simple disagree about it.
-          - The pom enforces Java >= 25. If you see "invalid target release" or the
-            enforcer refusing, the JDK is wrong, not the dependency.
-          - `maven.compiler.release` is 25 deliberately. Never lower it to make something
-            compile.
-          - The base image tags in web-page-app/docker/Dockerfile are pinned to LTS on
-            purpose: `maven:...-eclipse-temurin-25` and `node:24-slim`. Both are held in
-            .github/dependabot.yml, so a PR moving either should not appear. If one does,
-            do NOT merge it — close it and say why.
-          - web-page-app/public/assets/resume.pdf is generated and gitignored. Its
-            absence is normal and breaks nothing; the site references it by URL.
-          - The PDF renders through openhtmltopdf and freemarker. A bump to either can
-            change the PDF without failing a test. For those two, run the render and
-            confirm the output is still a valid multi-page PDF.
+          Do not invent unnecessary validation tooling.
 
           ----------------------------------------------------------------------
           8. VALIDATE THE UPGRADE LOCALLY
@@ -695,23 +662,6 @@ jobs:
 
           Every relevant expected check must conclude successfully.
 
-          WHICH CHECKS TO EXPECT ON A PULL REQUEST HERE:
-
-          The check workflow is publish.yml and it has four jobs. Only two of them run
-          on a pull request:
-
-            Verify CV generator   runs — must succeed
-            Verify web page       runs — must succeed
-            Publish image         SKIPPED — gated to pushes on main
-            Deploy to cluster      SKIPPED — needs the image
-
-          A skipped job is NOT a failure and NOT an absent check. Do not wait for
-          Publish image or Deploy to cluster on a pull request; they will never start,
-          and treating them as pending means you never merge anything. The two verify
-          jobs are the complete gate for a PR.
-
-          Those two run in parallel and take roughly half a minute each.
-
           ----------------------------------------------------------------------
           18. INVESTIGATE CI FAILURES
           ----------------------------------------------------------------------
@@ -840,41 +790,30 @@ jobs:
           - NEVER assume major means impossible; investigate carefully.
           - Major upgrades may be merged only when the migration is clear, contained,
             tested, understood, and safe.
-          - NEVER make a change you cannot explain in the PR comment.
-          - NEVER remove or weaken an enforcer rule to make a bump pass.
-          - NEVER lower maven.compiler.release, and never move the Dockerfile's
-            maven or node base image off its pinned LTS tag.
+          - NEVER make a change you cannot explain.
           - If you modify a PR branch, review the FINAL combined diff before merging.
           - Every CI decision must refer to the FINAL pushed head commit.
-          - Work through EVERY open Dependabot PR. There is no per-run limit: an empty
-            queue is the objective. If the job's remaining time will not fit another PR,
-            finish the one in hand, merge or leave it in a clean state, and say in the
-            summary which PRs you did not reach — never abandon a PR mid-repair.
-          - A skipped CI job is not a failure. See section 17.
+          - A SKIPPED check is not a failure and not an absent check. This repository's
+            check workflow gates some of its jobs to pushes on the default branch, so
+            those jobs never start on a pull request. Never wait on a skipped job — the
+            checks that actually ran are the gate.
+          - There is no per-run PR limit. An empty Dependabot queue is the objective.
 
           ----------------------------------------------------------------------
           FINAL OUTPUT
           ----------------------------------------------------------------------
 
-          Finish with exactly one concise summary line for every PR you handled, then a
-          final line stating how many Dependabot PRs remain open and why.
+          Finish with exactly one concise summary line for every PR you handled.
 
           Format:
 
-            #<number> — <dependency/version> — <merged|left open|not reached> — <fixes committed|no fixes> — <reason>
+            #<number> — <dependency/version> — <merged|left open> — <fixes committed|no fixes> — <reason>
 
           Examples:
 
             #123 — example-lib 2.4.1 → 2.5.0 — merged — no fixes — validation and final CI passed
             #124 — foo 7.2 → 8.0 — merged — fixes committed — migrated removed API; tests and final CI passed
-            #125 — bar 3.1 → 4.0 — left open — no fixes — replacing the library is a product decision
-            #126 — baz 1.2 → 1.3 — not reached — no fixes — job time ran out
-
-          Then, last:
-
-            QUEUE: <n> Dependabot PRs still open (<reason for each, or "none">)
-
-          QUEUE: 0 is the expected result. Any other number needs its reason stated.
+            #125 — bar 3.1 → 4.0 — left open — no fixes — migration requires an architectural decision
           AGENT_PROMPT
 
           codex exec \
