@@ -23,7 +23,7 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 # gitops app dir | source repo | publish workflow | image(s), comma-separated, no tag
-apps := "personal-web-page|kalpak44/kalpak44|publish-frontend.yml|ghcr.io/kalpak44/kalpak44
+apps := "personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak44
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
 bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party
 proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api"

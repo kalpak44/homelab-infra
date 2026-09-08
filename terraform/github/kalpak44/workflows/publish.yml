@@ -1,0 +1,164 @@
+# Managed by homelab-infra — terraform/github/kalpak44/workflows/publish.yml
+# Edits made here in the target repo are overwritten by `just deploy github kalpak44`.
+#
+# Builds and publishes this repo's site image, then tells the cluster to roll it out.
+# Both of this repo's workflows are generated from that one directory, so it is the only
+# place either is edited.
+#
+# Renaming this file means renaming it in homelab-infra too, in three places: the `apps`
+# list in gitops/Justfile, which finds the last successful run here to read a tag from,
+# the PR_CHECK_WORKFLOW variable in terraform/github/kalpak44, which the PR agent
+# dispatches when a pull request has no checks, and the `paths` filters below.
+name: Frontend Build and Publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cv-pdf-generator/**"
+      - "web-page-app/**"
+      - ".gitignore"
+      - ".dockerignore"
+      - ".github/workflows/publish.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "cv-pdf-generator/**"
+      - "web-page-app/**"
+      - ".gitignore"
+      - ".dockerignore"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: web-page-app/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Cache Maven repository
+        uses: actions/cache@v4
+        with:
+          path: .mvn/repository
+          key: maven-${{ hashFiles('cv-pdf-generator/pom.xml') }}
+          restore-keys: maven-
+
+      - name: Install dependencies
+        working-directory: web-page-app
+        run: npm ci
+
+      - name: Check formatting
+        working-directory: web-page-app
+        run: npm run format:check
+
+      - name: Run linter
+        working-directory: web-page-app
+        run: npm run lint
+
+      - name: Build resume PDF
+        working-directory: web-page-app
+        run: npm run build:resume
+
+      - name: Build site
+        working-directory: web-page-app
+        run: npm run build
+
+  publish-frontend:
+    needs: lint-and-build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract short SHA (no prefix)
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push Docker image (multi-platform)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: web-page-app/docker/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Generate build report
+        run: |
+          echo "### Docker Image Build Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** \`linux/amd64\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** \`${{ steps.push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+            [ -n "$tag" ] && echo "| \`${tag}\` |" >> $GITHUB_STEP_SUMMARY
+          done
+
+  deploy:
+    # Only runs once the image is actually in GHCR — publish-frontend is itself gated to
+    # pushes on main, so this inherits that gate through `needs`.
+    needs: publish-frontend
+    runs-on: ubuntu-latest
+    steps:
+      # The image is in GHCR — point the cluster at it. Both inputs are required: this
+      # workflow's own run is still in_progress here, so homelab-infra's "last successful
+      # publish" query would resolve to the previous commit and deploy a stale image.
+      #
+      # `app` is the gitops directory name, which is not this repo's name — it is
+      # personal-web-page. It must match the `apps` list in homelab-infra's
+      # gitops/Justfile, or the dispatch fails with "no app named ... is tracked".
+      - name: Trigger cluster deploy
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+        run: |
+          gh workflow run gitops-bump-images.yml \
+            --repo kalpak44/homelab-infra \
+            -f app=personal-web-page \
+            -f sha="${GITHUB_SHA}"
+          echo "Dispatched \`gitops-bump-images\` for \`personal-web-page\` @ \`${GITHUB_SHA:0:7}\`." >> $GITHUB_STEP_SUMMARY

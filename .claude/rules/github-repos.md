@@ -12,8 +12,9 @@ terraform/github/<repo>/
 ├── providers.tf            # provider "github" { owner, token }
 ├── variables.tf            # github_owner, github_token, deepseek_api_key, deepseek_model, ruleset toggles
 ├── main.tf                 # import block + repo settings + secrets + workflow file + optional ruleset
+├── dependabot.yml          # optional; pushed to .github/dependabot.yml (kalpak44 only)
 └── workflows/
-    └── ai-pr-agent.yml     # pushed into the target repo via github_repository_file
+    └── ai-pr-agent.yml     # pushed into .github/workflows/ via github_repository_file
 ```
 
 ## What each dir manages
@@ -33,6 +34,20 @@ No `github_repository_ruleset`. One was tried and removed — see the last non-n
 `pr-check.yml` was seeded from here and then handed over with a `removed` block using `lifecycle { destroy = false }` —
 dropped from state, left in the repo. Use that pattern rather than deleting the resource: a plain delete would remove
 the file, and with no green check the agent would stop merging.
+
+**Exception — `kalpak44` centralizes all of `.github/`.** Its `publish.yml`, `ai-pr-agent.yml` and `dependabot.yml` are
+all `github_repository_file`s, so `terraform/github/kalpak44/` is the only place any of them is edited. The reason is
+`publish.yml`'s last job: it dispatches `gitops-bump-images` with `app=personal-web-page`, a name that must match
+`gitops/Justfile`'s `apps` list, and keeping the workflow and that list in one repo means a rename cannot break the
+deploy silently. Renaming the file is therefore a four-place change — `workflows/publish.yml`, its own `paths:` filter,
+`PR_CHECK_WORKFLOW`, and the `apps` list.
+
+**A centralized workflow must not also be Dependabot's target.** `kalpak44`'s `dependabot.yml` deliberately omits the
+`github-actions` ecosystem: an action bump merged into a generated workflow is reverted by the next
+`just deploy github kalpak44` and then reopened on Dependabot's next run. Action versions in generated workflows are
+bumped here instead, and Dependabot cannot watch them here either — it only scans `.github/workflows/`, and in this
+repo they are ordinary files under `terraform/`. The mirror layout is deliberate: `<repo>/workflows/` maps to
+`.github/workflows/`, `<repo>/dependabot.yml` to `.github/dependabot.yml`.
 
 **Exception — `proklinator-app` gets a second agent.** `workflows/ai-pr-review.yml` handles the PRs `ai-pr-agent.yml`
 refuses: human-authored ones. It is `pull_request_target`-driven, so its allowlist gate (`PR_REVIEW_ALLOWLIST`, an

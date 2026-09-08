@@ -279,7 +279,7 @@ layers.
 |-------------------------------|-----------------------------|-------------------------------------------------------------------------------------|
 | `kalpak44/bunker-party`       | `github/bunker-party`       | same, plus a second agent pass that fixes SonarCloud issues behaviour-preservingly; PR check is the repo's own `build.yml`, which also publishes `ghcr.io/kalpak44/bunker-party` |
 | `kalpak44/code-viewer-bot`    | `github/code-viewer-bot`    | same as below, but no `pull_request` workflow - agent reviews and comments without merging |
-| `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, AI PR agent workflow |
+| `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, and **every file the repo has under `.github/`**: the AI PR agent, `publish.yml` (its CI, which publishes `ghcr.io/kalpak44/kalpak44` and dispatches **GitOps - Bump images** for `personal-web-page` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
 | `kalpak44/kubectl-awscli`     | `github/kubectl-awscli`     | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
 | `kalpak44/mac-calendar-mcp`   | `github/mac-calendar-mcp`   | same - but the repo has no `pull_request` workflow, so the agent reviews and comments without ever merging |
 | `kalpak44/mite-assistant-mcp` | `github/mite-assistant-mcp` | same                                                        |
@@ -287,13 +287,15 @@ layers.
 | `kalpak44/postgres-awscli`    | `github/postgres-awscli`    | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
 | `kalpak44/proklinator-app`    | `github/proklinator-app`    | same; PR check is the repo's own `publish.yml`, which also publishes `ghcr.io/kalpak44/proklinator-app` and dispatches **GitOps - Bump images** to deploy it. Also gets `GH_ADMIN_TOKEN` for that dispatch, plus a closed agent loop: `ai-issue-agent.yml` implements an `ai:ready` issue and opens a PR, `ai-pr-review.yml` browser-tests it and merges or hands it back, capped by `AI_MAX_REVIEW_ROUNDS` |
 
-**CI stays with the repo.** This layer ships the agent and points it at the repo's own check via the
-`PR_CHECK_WORKFLOW` variable (`publish-frontend.yml` / `pr-check.yml`) - it does not manage the check itself. A repo
-with no `pull_request` workflow will never have a green check, so the agent will never merge anything there.
+**CI stays with the repo, mostly.** This layer ships the agent and points it at the repo's own check via the
+`PR_CHECK_WORKFLOW` variable (`publish.yml` / `pr-check.yml`) - for most repos it does not manage the check itself. A
+repo with no `pull_request` workflow will never have a green check, so the agent will never merge anything there.
 
-The two `*-awscli` container-image repos are the exception: their build workflow *is* managed here, because the agent
-that bumps the tool versions and the workflow that publishes the resulting image are the same file. See
-[Release agent](#release-agent) below.
+Three repos are the exception. The two `*-awscli` container-image repos: their build workflow *is* managed here,
+because the agent that bumps the tool versions and the workflow that publishes the resulting image are the same file -
+see [Release agent](#release-agent) below. And `kalpak44/kalpak44`, whose `publish.yml` is both its CI and its cluster
+deploy trigger; every file it has under `.github/` is generated from `github/kalpak44/` so the workflow and the
+`gitops/Justfile` entry it has to agree with cannot drift apart.
 
 Deploy: `just deploy github <repo>` (or the **GitHub - Deploy** workflow).
 
