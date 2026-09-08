@@ -65,6 +65,22 @@ resource "github_actions_variable" "pr_check_workflow" {
 
 # --- The agent itself ---------------------------------------------------------------
 
+# --- Cluster deploy trigger ---------------------------------------------------------
+# The agent authenticates `gh` with this, and that is what makes its merges reach the
+# cluster. GitHub starts no push-triggered run for a push made with GITHUB_TOKEN, so
+# every merge this agent made landed on main and stopped dead — measured on 2026-09-08:
+# PRs #9, #10, #11, #12 and #13 all merged, and not one of their merge commits appears
+# among docker-publish.yml's push runs. The cluster sat on `446772e` while main was at
+# `c8e4846`, five dependency updates behind, since 2026-08-20.
+#
+# Same credential homelab-infra already uses — Terraform only copies it here, it is not
+# a new secret to rotate.
+resource "github_actions_secret" "homelab_dispatch" {
+  repository  = github_repository.this.name
+  secret_name = "GH_ADMIN_TOKEN"
+  value       = var.github_token
+}
+
 resource "github_repository_file" "agent_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
@@ -74,4 +90,6 @@ resource "github_repository_file" "agent_workflow" {
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+
+  depends_on = [github_actions_secret.homelab_dispatch]
 }

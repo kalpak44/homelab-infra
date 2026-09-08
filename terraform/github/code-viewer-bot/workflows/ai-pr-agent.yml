@@ -35,7 +35,13 @@ jobs:
 
     env:
       # gh is preinstalled on GitHub-hosted runners; this authenticates it.
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A PAT, not GITHUB_TOKEN. GitHub starts no push-triggered run for a push made with
+      # GITHUB_TOKEN, which means neither a merge to main nor a fix this agent pushes to a
+      # PR branch raises any workflow run. On a repo that publishes, that silently skips
+      # the build; everywhere it makes the PR check depend on the dispatch fallback rather
+      # than firing naturally. Measured on mite-assistant-mcp on 2026-09-08: five merged
+      # dependency PRs, no publish run for any of their merge commits.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
 
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
@@ -48,7 +54,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # The agent may check out PR branches and commit fixes.
           fetch-depth: 0
@@ -62,7 +68,7 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 

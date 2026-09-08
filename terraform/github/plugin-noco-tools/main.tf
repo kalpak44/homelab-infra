@@ -66,6 +66,17 @@ resource "github_actions_variable" "pr_check_workflow" {
 
 # --- The agent itself ---------------------------------------------------------------
 
+# --- The agent's git credential -----------------------------------------------------
+# The agent authenticates `gh` with this instead of GITHUB_TOKEN, so that a push it makes
+# — to a PR branch or to main — actually raises workflow runs. GitHub starts none for a
+# GITHUB_TOKEN push. Same credential homelab-infra already uses; Terraform only copies it
+# here, it is not a new secret to rotate.
+resource "github_actions_secret" "homelab_dispatch" {
+  repository  = github_repository.this.name
+  secret_name = "GH_ADMIN_TOKEN"
+  value       = var.github_token
+}
+
 resource "github_repository_file" "agent_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
@@ -75,4 +86,6 @@ resource "github_repository_file" "agent_workflow" {
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+
+  depends_on = [github_actions_secret.homelab_dispatch]
 }
