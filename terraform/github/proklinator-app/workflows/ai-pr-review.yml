@@ -1,6 +1,12 @@
 # Managed by homelab-infra — terraform/github/proklinator-app/workflows/ai-pr-review.yml
 # Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
 #
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml. checkout
+# and setup-node were left on v4 long enough to start warning that they run on a
+# deprecated Node.js 20.
+#
 # The human-PR counterpart of ai-pr-agent.yml. That one owns bot dependency PRs and may
 # push fixes to them. This one owns PRs written by people on the allowlist, NEVER touches
 # their branch, and instead:
@@ -312,7 +318,7 @@ jobs:
 
     steps:
       - name: Checkout the merge result
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.ref }}
           fetch-depth: 0
@@ -321,7 +327,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24" # what publish.yml builds with
           cache: npm
@@ -1522,7 +1528,7 @@ jobs:
 
       - name: Upload QA evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pr-${{ needs.gate.outputs.pr }}-qa
           path: ${{ runner.temp }}/qa

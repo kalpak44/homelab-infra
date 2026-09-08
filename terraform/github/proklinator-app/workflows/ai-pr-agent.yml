@@ -1,6 +1,12 @@
 # Managed by homelab-infra — terraform/github/<repo>/workflows/ai-pr-agent.yml
 # Edits made here in the target repo are overwritten by `just deploy github <repo>`.
 #
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml. checkout
+# and setup-node were left on v4 long enough to start warning that they run on a
+# deprecated Node.js 20.
+#
 # One job, once a day (or on demand): Codex CLI driving DeepSeek, with the gh CLI,
 # walks open bot-authored dependency PRs oldest first, reviews them carefully,
 # fixes upgrade-related breakages on the same PR branch when safe to do so,
@@ -62,7 +68,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: true
@@ -81,7 +87,7 @@ jobs:
       # on 24 looks fine. Either way it debugs a discrepancy that exists only inside this
       # job. Codex itself is happy on any current Node.
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 

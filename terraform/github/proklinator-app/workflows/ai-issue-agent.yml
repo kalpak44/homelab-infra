@@ -1,6 +1,12 @@
 # Managed by homelab-infra — terraform/github/proklinator-app/workflows/ai-issue-agent.yml
 # Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
 #
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml. checkout
+# and setup-node were left on v4 long enough to start warning that they run on a
+# deprecated Node.js 20.
+#
 # The implementer. Third and last agent in the loop:
 #
 #   issue labelled ai:ready
@@ -321,7 +327,7 @@ jobs:
       # executing an outsider's code — the branch is either main or a branch this agent
       # wrote itself — so leaving the credential in .git/config is acceptable here.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_ADMIN_TOKEN }}
@@ -356,7 +362,7 @@ jobs:
           echo "On $(git branch --show-current) at $(git rev-parse --short HEAD)"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
