@@ -28,12 +28,21 @@ updates:
       day: monday
       time: "05:00"
       timezone: Etc/UTC
-    # The agent merges sequentially — it waits for checks, merges one PR, confirms it
-    # landed, then starts the next. A high limit here just lengthens that queue.
-    open-pull-requests-limit: 5
-    # Minor and patch bumps arrive as one PR per ecosystem, so the lockfile is resolved at
-    # once. Majors stay separate: they are the ones that actually break the build, and
-    # the agent's review is worth more when it is looking at one of them at a time.
+    # The agent's objective is an empty queue and it has no per-run limit, so this is
+    # sized to not withhold proposals. It throttles how many sit open at once, not how
+    # many exist.
+    open-pull-requests-limit: 10
+    # Dependabot proposes only DIRECT dependencies unless told otherwise; a transitive
+    # package would otherwise move only when an advisory forced it. `all` includes
+    # indirect ones, which for npm are lockfile-only changes and fold into the group
+    # below rather than arriving as separate PRs.
+    allow:
+      - dependency-type: all
+    # Minor and patch bumps arrive as one PR, so the lockfile is resolved once. Majors
+    # are deliberately NOT in this group: they arrive as one PR each, which is what makes
+    # a break attributable to a single package. They are still proposed — slf4j 1.7 to
+    # 2.0 and junit 5 to 6 both came through this way. Do not add `major` here to "enable
+    # majors"; that only batches them.
     groups:
       npm-minor-and-patch:
         patterns:
@@ -49,7 +58,11 @@ updates:
       day: monday
       time: "05:00"
       timezone: Etc/UTC
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
+    # Maven's transitive tree is where the convergence problems live — spark-core's
+    # slf4j-api is exactly such a case — so proposing indirect updates is worth the noise.
+    allow:
+      - dependency-type: all
     groups:
       maven-minor-and-patch:
         patterns:
@@ -65,7 +78,7 @@ updates:
       day: monday
       time: "05:00"
       timezone: Etc/UTC
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     ignore:
       # The maven tag encodes the JDK (`3.9.16-eclipse-temurin-25`), and Java 25 is an
       # LTS chosen deliberately. Dependabot treats the whole tag as the version and will

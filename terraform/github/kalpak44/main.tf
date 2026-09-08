@@ -32,6 +32,28 @@ resource "github_repository" "this" {
   archive_on_destroy = true
 }
 
+# --- Advisory-driven updates --------------------------------------------------------
+# A separate mechanism from the scheduled updates in dependabot.yml: these fire when an
+# advisory lands rather than waiting for Monday, and they reach transitive dependencies.
+# Their PRs are the `npm_and_yarn group` ones, distinct from `*-minor-and-patch`.
+#
+# Both were already enabled on the live repo; declaring them makes that guaranteed rather
+# than incidental. The alerts resource is the prerequisite — with no advisories there is
+# nothing to act on — hence the explicit dependency. `vulnerability_alerts` on
+# github_repository would also work, but the provider deprecates it in favour of this.
+
+resource "github_repository_vulnerability_alerts" "this" {
+  repository = github_repository.this.name
+  enabled    = true
+}
+
+resource "github_repository_dependabot_security_updates" "this" {
+  repository = github_repository.this.name
+  enabled    = true
+
+  depends_on = [github_repository_vulnerability_alerts.this]
+}
+
 # --- DeepSeek credentials -----------------------------------------------------------
 # Two stores, deliberately. Workflow runs triggered by a Dependabot PR read from the
 # Dependabot secret store, not the Actions one — the same key has to live in both or
