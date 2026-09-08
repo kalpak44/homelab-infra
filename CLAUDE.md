@@ -69,10 +69,10 @@ homelab-infra/
 │   ├── README.md
 │   ├── Justfile                    # just deploy | destroy | list
 │   ├── cloudflare/
-│   │   ├── dns/private/<name>/     # 14 dirs, one per LAN record set
+│   │   ├── dns/private/<name>/     # 16 dirs, one per LAN record set
 │   │   └── shared/<name>/          # non-DNS Cloudflare (email routing, Zero Trust tunnel + public DNS)
 │   ├── proxmox/
-│   │   └── <service>/              # 8 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
+│   │   └── <service>/              # 10 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   ├── github/
 │   │   └── <repo>/                 # repo settings + DeepSeek PR agent (workflows/ai-pr-agent.yml)
 │   └── modules/{proxmox-lxc,proxmox-vm}/
