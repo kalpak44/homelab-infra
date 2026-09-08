@@ -99,6 +99,7 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `GH_ADMIN_TOKEN`                                                     | PAT used by the `github/` Terraform layer – see [Managed GitHub repos](#managed-github-repos)                |
 | `GH_OWNER`                                                           | GitHub user/org owning the managed repos, e.g. `kalpak44` (optional; defaults to `kalpak44`)                 |
 | `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI PR agent                                        |
+| `SONAR_TOKEN`                                                        | SonarCloud token – optional, `bunker-party` only; mirrored into its Dependabot secret store so the quality gate runs on Dependabot PRs |
 
 ### 4. Cloudflare API token - required scopes
 
