@@ -28,8 +28,9 @@ env:
 
 jobs:
   docker:
-    name: build & push site image
+    name: Publish site image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       short-sha: ${{ steps.sha.outputs.short }}
       digest:    ${{ steps.push.outputs.digest }}
@@ -38,7 +39,7 @@ jobs:
 
       - name: Compute short SHA
         id: sha
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -90,3 +91,32 @@ jobs:
             echo "docker run --rm -p 8080:80 ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to cluster
+    # Gated on the image existing. `docker` runs on a push to main touching site/** and on
+    # dispatch; both produce a real image at GITHUB_SHA, so both are worth deploying — the
+    # sha is passed explicitly rather than looked up, which is what makes dispatch work.
+    needs: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Until this job existed the site image was published and then never rolled: the app
+      # was not in homelab-infra's `apps` list at all, so neither the nightly sweep nor any
+      # dispatch touched it, and its Deployment tag moved only by hand.
+      #
+      # `app` is the gitops directory name, which is neither this repo's name nor the
+      # image's — it is noco-google-connector-site. It must match the `apps` list in
+      # homelab-infra's gitops/Justfile, or the dispatch fails with "no app named ... is
+      # tracked". A PAT, not GITHUB_TOKEN: the job's own token is scoped to this repo and
+      # cannot dispatch a workflow in another one.
+      - name: Trigger cluster deploy
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          TAG: ${{ needs.docker.outputs.short-sha }}
+        run: |
+          gh workflow run gitops-bump-images.yml \
+            --repo kalpak44/homelab-infra \
+            -f app=noco-google-connector-site \
+            -f sha="${GITHUB_SHA}"
+          echo "Dispatched \`gitops-bump-images\` for \`noco-google-connector-site\` @ \`${TAG}\`." >> "$GITHUB_STEP_SUMMARY"

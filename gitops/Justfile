@@ -26,7 +26,8 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 apps := "personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak44
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|docker-publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
 bunker-game-app|kalpak44/bunker-party|build.yml|ghcr.io/kalpak44/bunker-party
-proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api"
+proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api
+noco-google-connector-site|kalpak44/plugin-noco-tools|site.yml|ghcr.io/kalpak44/noco-tools-site"
 
 _help:
     @just --list

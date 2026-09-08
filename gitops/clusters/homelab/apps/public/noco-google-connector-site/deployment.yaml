@@ -21,7 +21,12 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: noco-google-connector-site
-          image: "ghcr.io/kalpak44/noco-tools-site:63b7bbd"
+          # Unquoted on purpose. gitops/Justfile finds this line with
+          # `grep -rlE "^ *image: <repo>:"` and rewrites it with sed, so a quoted
+          # value is invisible to it — `just bump-images` prints "no image line,
+          # skipping" and the app silently never deploys. Keep the
+          # `image: <repo>:<tag>` shape on one line.
+          image: ghcr.io/kalpak44/noco-tools-site:63b7bbd
           ports:
             - containerPort: 80
           resources:
