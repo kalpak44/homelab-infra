@@ -22,7 +22,6 @@ gitops/clusters/homelab/
     │   ├── personal-web-page/     # Personal website
     │   ├── mite-assistant-mcp/    # Mite time-tracking MCP server
     │   ├── capacity-planner/      # Capacity planner tool (Sablier scale-on-demand)
-    │   ├── shopify-gpt-assistant/ # Shopify GPT assistant
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
     │   ├── google-assistant-mcp/  # Google MCP server
     │   ├── nocobase/              # NocoBase no-code platform
@@ -114,21 +113,6 @@ vault kv put secret/nocobase-secrets \
   db-user="<db-user>" \
   db-password="<db-password>" \
   app-key="$(openssl rand -hex 32)"
-```
-
-### `secret/shopify-gpt-assistant-secrets`
-
-| Property | Description |
-|---|---|
-| `api-key` | Shopify app API key |
-| `api-secret` | Shopify app API secret |
-| `database-url` | Database connection string used by the app |
-
-```bash
-vault kv put secret/shopify-gpt-assistant-secrets \
-  api-key="<shopify-api-key>" \
-  api-secret="<shopify-api-secret>" \
-  database-url="<database-url>"
 ```
 
 ### Manual k8s secret - `cloudflare-api-token` (namespace: `kube-system`)
