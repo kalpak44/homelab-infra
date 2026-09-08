@@ -23,7 +23,6 @@ gitops/clusters/homelab/
     │   ├── mite-assistant-mcp/    # Mite time-tracking MCP server
     │   ├── capacity-planner/      # Capacity planner tool (Sablier scale-on-demand)
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
-    │   ├── google-assistant-mcp/  # Google MCP server
     │   ├── nocobase/              # NocoBase no-code platform
     │   ├── noco-google-connector-site/ # Noco Google connector site (noco-google-connector.pavel-usanli.online)
     │   └── proklinator/           # proklinator.online — nginx placeholder

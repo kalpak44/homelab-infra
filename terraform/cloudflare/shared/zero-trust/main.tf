@@ -27,7 +27,6 @@ locals {
     "planner"               = "planner.pavel-usanli.online"
     "bunker"                = "bunker.pavel-usanli.online"
     "mite-assistant"        = "mite-assistant.pavel-usanli.online"
-    "google-assistant"      = "google-assistant.pavel-usanli.online"
     "noco-google-connector" = "noco-google-connector.pavel-usanli.online"
   }
 

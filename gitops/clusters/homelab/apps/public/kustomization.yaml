@@ -5,7 +5,6 @@ resources:
   - mite-assistant-mcp
   - capacity-planner
   - bunker-game-app
-#  - google-assistant-mcp
   - nocobase
   - noco-google-connector-site
   - proklinator
