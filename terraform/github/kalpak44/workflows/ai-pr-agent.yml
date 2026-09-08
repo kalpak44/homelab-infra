@@ -791,6 +791,17 @@ jobs:
           - Major upgrades may be merged only when the migration is clear, contained,
             tested, understood, and safe.
           - NEVER make a change you cannot explain.
+          - NEVER remove, disable or relax a build-enforcement rule to make a bump pass.
+            This project's pom enforces `dependencyConvergence`, and a transitive bump is
+            exactly what breaks it. The failure names no test and reads only as
+            "Dependency convergence error". The fix is a `dependencyManagement` entry
+            pinning the divergent dependency — slf4j-api is already pinned that way,
+            because spark-core and slf4j-simple disagree about its version. Deleting the
+            rule is never the fix, however well you can justify it.
+          - NEVER lower `maven.compiler.release`. It is 25 deliberately.
+          - NEVER move the Dockerfile's maven or node base image off its pinned tag.
+            Both are LTS by decision and are held in .github/dependabot.yml, so such a
+            PR should not appear; if one does, close it and say why.
           - If you modify a PR branch, review the FINAL combined diff before merging.
           - Every CI decision must refer to the FINAL pushed head commit.
           - A SKIPPED check is not a failure and not an absent check. This repository's
