@@ -23,7 +23,6 @@ locals {
   public_k3s_apps = {
     "pavel-usanli.online"   = "pavel-usanli.online"
     "www"                   = "www.pavel-usanli.online"
-    "nocobase"              = "nocobase.pavel-usanli.online"
     "planner"               = "planner.pavel-usanli.online"
     "bunker"                = "bunker.pavel-usanli.online"
     "mite-assistant"        = "mite-assistant.pavel-usanli.online"

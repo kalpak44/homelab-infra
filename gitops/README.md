@@ -23,7 +23,6 @@ gitops/clusters/homelab/
     │   ├── mite-assistant-mcp/    # Mite time-tracking MCP server
     │   ├── capacity-planner/      # Capacity planner tool (Sablier scale-on-demand)
     │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
-    │   ├── nocobase/              # NocoBase no-code platform
     │   ├── noco-google-connector-site/ # Noco Google connector site (noco-google-connector.pavel-usanli.online)
     │   └── proklinator/           # proklinator.online — nginx placeholder
     └── private/
@@ -97,21 +96,6 @@ vault kv put secret/mite-assistant-mcp-secrets \
 vault kv put secret/ciela-secrets \
   username="<username>" \
   password="<password>"
-```
-
-### `secret/nocobase-secrets`
-
-| Property | Description |
-|---|---|
-| `db-user` | PostgreSQL username |
-| `db-password` | PostgreSQL password |
-| `app-key` | Secret key used to encrypt user tokens (generate once, never rotate) |
-
-```bash
-vault kv put secret/nocobase-secrets \
-  db-user="<db-user>" \
-  db-password="<db-password>" \
-  app-key="$(openssl rand -hex 32)"
 ```
 
 ### Manual k8s secret - `cloudflare-api-token` (namespace: `kube-system`)
