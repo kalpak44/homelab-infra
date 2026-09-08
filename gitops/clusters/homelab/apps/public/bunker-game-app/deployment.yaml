@@ -19,7 +19,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: bunker
-          image: ghcr.io/kalpak44/bunker-party:6f04712
+          image: ghcr.io/kalpak44/bunker-party:eecb180
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
