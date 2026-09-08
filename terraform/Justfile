@@ -127,6 +127,6 @@ list:
     @printf "  %-20s %s\n" "kubectl-awscli"     "kalpak44/kubectl-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-20s %s\n" "mac-calendar-mcp"   "kalpak44/mac-calendar-mcp · same (no PR CI yet → agent reviews only)"
     @printf "  %-20s %s\n" "mite-assistant-mcp" "kalpak44/mite-assistant-mcp · same"
-    @printf "  %-20s %s\n" "plugin-noco-tools"  "kalpak44/plugin-noco-tools · same + site.yml (PR check, publish, deploy) + dependabot"
+    @printf "  %-20s %s\n" "plugin-noco-tools"  "kalpak44/plugin-noco-tools · same + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-20s %s\n" "postgres-awscli"    "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-20s %s\n" "proklinator-app"    "kalpak44/proklinator-app · 3 AI agents + publish.yml (PR check, 2 images, deploy) + GH_ADMIN_TOKEN"

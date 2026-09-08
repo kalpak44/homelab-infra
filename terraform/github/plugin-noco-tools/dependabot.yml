@@ -12,10 +12,10 @@
 # homelab-infra instead, and Dependabot cannot watch them there either: it only scans
 # `.github/workflows/`, and in homelab-infra they are ordinary files under `terraform/`.
 #
-# That absence has a cost worth naming here. site.yml pins its four actions to commit
+# That absence has a cost worth naming here. publish.yml pins its four actions to commit
 # SHAs so a retagged release cannot change the build (CWE-829), and this file used to
 # carry a `github-actions` entry precisely so those pins did not rot into unpatched
-# dependencies. Now that site.yml and ai-pr-agent.yml are both generated in homelab-infra,
+# dependencies. Now that publish.yml and ai-pr-agent.yml are both generated in homelab-infra,
 # that entry would propose a bump, the agent would merge it, and the next
 # `just deploy github plugin-noco-tools` would revert it — then Dependabot would re-open
 # it the next morning, for ever. The SHAs move by hand in homelab-infra instead.

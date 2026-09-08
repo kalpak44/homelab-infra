@@ -1,9 +1,9 @@
 locals {
-  repository      = "plugin-noco-tools"
-  default_branch  = "main"
-  agent_workflow  = ".github/workflows/ai-pr-agent.yml"
-  site_workflow   = ".github/workflows/site.yml"
-  dependabot_file = ".github/dependabot.yml"
+  repository       = "plugin-noco-tools"
+  default_branch   = "main"
+  agent_workflow   = ".github/workflows/ai-pr-agent.yml"
+  publish_workflow = ".github/workflows/publish.yml"
+  dependabot_file  = ".github/dependabot.yml"
 }
 
 # The repo already exists — adopt it instead of creating it. The import block is a no-op
@@ -58,12 +58,12 @@ resource "github_actions_variable" "deepseek_model" {
   value         = var.deepseek_model
 }
 
-# The repo's own CI. site.yml runs on pull_request and also has a workflow_dispatch
+# The repo's own CI. publish.yml runs on pull_request and also has a workflow_dispatch
 # trigger, which is what the agent needs to start it on a PR that has no check runs.
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
-  value         = "site.yml"
+  value         = "publish.yml"
 }
 
 # --- The agent itself ---------------------------------------------------------------
@@ -92,11 +92,11 @@ resource "github_repository_file" "agent_workflow" {
   depends_on = [github_actions_secret.homelab_dispatch]
 }
 
-resource "github_repository_file" "site_workflow" {
+resource "github_repository_file" "publish_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
-  file                = local.site_workflow
-  content             = file("${path.module}/workflows/site.yml")
+  file                = local.publish_workflow
+  content             = file("${path.module}/workflows/publish.yml")
   commit_message      = "chore: sync site workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
