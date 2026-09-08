@@ -11,7 +11,22 @@
 # bumped by hand in homelab-infra — see the note in dependabot.yml.
 name: Build, Publish, Deploy
 
+# This is also the workflow the AI PR agent gates on (PR_CHECK_WORKFLOW=site.yml). It
+# refuses to merge without a green check, and it dispatches this workflow for a PR whose
+# head commit has no checks — so `workflow_dispatch` is load-bearing.
+#
+# The `pull_request` trigger is what makes that gate real. Before it, PR_CHECK_WORKFLOW
+# named `build.yml`, a file this repo has never had, and nothing here ran on a pull
+# request at all — so a dependency PR never got a check and the agent could not merge it.
+# Every Dependabot PR between 2026-08-20 and 2026-09-08 was closed rather than merged.
+# The paths match the push trigger because the only manifest Dependabot watches here is
+# site/Dockerfile, which is under site/**.
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
   push:
     branches: [main]
     paths:
@@ -51,12 +66,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
+      # `push` is false on a pull request, so the image is still built — which is the
+      # actual check, a broken Dockerfile fails here — but nothing reaches the registry
+      # from an unmerged branch.
       - name: Build and push
         id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: site
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
             ${{ env.IMAGE }}:latest
@@ -98,6 +116,7 @@ jobs:
     # dispatch; both produce a real image at GITHUB_SHA, so both are worth deploying — the
     # sha is passed explicitly rather than looked up, which is what makes dispatch work.
     needs: docker
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

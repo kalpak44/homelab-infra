@@ -50,7 +50,7 @@ repo they are ordinary files under `terraform/`. The mirror layout is deliberate
 `.github/workflows/`, `<repo>/dependabot.yml` to `.github/dependabot.yml`.
 
 **Exception — `bunker-party` centralizes all of `.github/` too, and uses Dependabot because Renovate cost a
-credential.** Its `ai-pr-agent.yml`, `build.yml` and `dependabot.yml` are all `github_repository_file`s. `build.yml`
+credential.** Its `ai-pr-agent.yml`, `publish.yml` and `dependabot.yml` are all `github_repository_file`s. `publish.yml`
 is one job that formats, builds, tests and runs SonarCloud with `-Dsonar.qualitygate.wait=true`, publishes
 `ghcr.io/kalpak44/bunker-party` only when the ref is main, and then dispatches `gitops-bump-images` for
 **`bunker-game-app`** — a gitops dir name that is not the repo name, which is why the workflow and `gitops/Justfile`'s
@@ -205,7 +205,7 @@ validated. The remediation steps snapshot the Dockerfile to `/tmp/sec/Dockerfile
 | `TF_VAR_github_token`     | `GH_ADMIN_TOKEN`  | classic `repo` + `workflow`, or fine-grained with write on Administration / Contents / Secrets / Dependabot secrets / Variables / Workflows |
 | `TF_VAR_github_owner`     | `GH_OWNER`        | defaults to `kalpak44`                                         |
 | `TF_VAR_deepseek_api_key` | `DEEPSEEK_APIKEY` | already present in the shell locally and as a repo secret in CI |
-| `TF_VAR_sonar_token`      | `SONAR_TOKEN`     | `bunker-party` only, and optional: mirrors the key into the Dependabot store so build.yml's quality gate runs on Dependabot PRs. Unset leaves the stored secret untouched |
+| `TF_VAR_sonar_token`      | `SONAR_TOKEN`     | `bunker-party` only, and optional: mirrors the key into the Dependabot store so publish.yml's quality gate runs on Dependabot PRs. Unset leaves the stored secret untouched |
 
 Secret names cannot start with `GITHUB_` (reserved by GitHub) — hence `GH_ADMIN_TOKEN` / `GH_OWNER`.
 

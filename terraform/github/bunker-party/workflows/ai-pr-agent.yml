@@ -11,7 +11,7 @@
 #            clearly safe.
 #
 # A merge here deploys. The squash lands on main as an ordinary push, which runs
-# build.yml, which publishes the image to GHCR and then dispatches homelab-infra's
+# publish.yml, which publishes the image to GHCR and then dispatches homelab-infra's
 # gitops-bump-images for the cluster. That chain depends entirely on the token in `env`
 # below being a PAT; see the comment there before changing it.
 #
@@ -82,7 +82,7 @@ jobs:
 
       # SonarCloud coordinates for pass 2. The project is private on SonarCloud, so
       # every API read needs the token. This workflow is never Dependabot-triggered — it
-      # runs on schedule and dispatch — so the Actions copy is the one it reads. build.yml
+      # runs on schedule and dispatch — so the Actions copy is the one it reads. publish.yml
       # is the one that also needs the Dependabot-store copy, for the reason main.tf in
       # terraform/github/bunker-party records.
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -930,7 +930,7 @@ jobs:
           GitHub withholds Actions secrets from Dependabot-triggered runs, so the token
           has to be in the repository's DEPENDABOT secret store as well as its Actions
           one — terraform/github/bunker-party/main.tf writes both. With only the Actions
-          copy, build.yml's `if: env.SONAR_TOKEN != ''` guard skips the analysis and the
+          copy, publish.yml's `if: env.SONAR_TOKEN != ''` guard skips the analysis and the
           check goes green having gated nothing, which is what happened on PR #3. If a
           dependency PR's check passes suspiciously fast, confirm the SonarCloud step
           actually ran rather than assuming the gate held.

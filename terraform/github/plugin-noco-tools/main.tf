@@ -58,12 +58,12 @@ resource "github_actions_variable" "deepseek_model" {
   value         = var.deepseek_model
 }
 
-# The repo's own CI. build.yml runs on pull_request and also has a workflow_dispatch
+# The repo's own CI. site.yml runs on pull_request and also has a workflow_dispatch
 # trigger, which is what the agent needs to start it on a PR that has no check runs.
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
-  value         = "build.yml"
+  value         = "site.yml"
 }
 
 # --- The agent itself ---------------------------------------------------------------

@@ -7,8 +7,7 @@
 # list in gitops/Justfile, which finds the last successful run here to read a tag from,
 # and the `publish_workflow` local in terraform/github/mite-assistant-mcp/main.tf. It was
 # `docker-publish.yml` until 2026-09-08; every image here is a container image, so the
-# qualifier named nothing, and the other publishing repos already call this `publish.yml`
-# or `build.yml`.
+# qualifier named nothing, and the other publishing repos already call this `publish.yml`.
 #
 # The action versions here are bumped by hand. Dependabot cannot watch this file: it only
 # scans `.github/workflows/`, and in homelab-infra this is an ordinary file under

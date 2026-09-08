@@ -1,9 +1,9 @@
 locals {
-  repository      = "bunker-party"
-  default_branch  = "main"
-  agent_workflow  = ".github/workflows/ai-pr-agent.yml"
-  build_workflow  = ".github/workflows/build.yml"
-  dependabot_file = ".github/dependabot.yml"
+  repository       = "bunker-party"
+  default_branch   = "main"
+  agent_workflow   = ".github/workflows/ai-pr-agent.yml"
+  publish_workflow = ".github/workflows/publish.yml"
+  dependabot_file  = ".github/dependabot.yml"
 }
 
 # The repo already exists — adopt it instead of creating it. The import block is a no-op
@@ -59,25 +59,25 @@ resource "github_actions_variable" "deepseek_model" {
 }
 
 # Tells the agent which workflow to dispatch when a PR has no check runs at all.
-# build.yml is the repo's single pipeline — `pull_request`, push to main, and
+# publish.yml is the repo's single pipeline — `pull_request`, push to main, and
 # `workflow_dispatch`: fmt:check, mvn verify, then SonarCloud with the quality gate
 # waited on. It only publishes an image when the ref is main, so the agent can safely
 # dispatch it on a dependency PR branch.
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
-  value         = "build.yml"
+  value         = "publish.yml"
 }
 
 # --- SonarCloud ---------------------------------------------------------------------
 # The agent's second phase reads the quality gate and open issues from the SonarCloud
-# API, and build.yml's analysis step waits on the gate. The Actions copy of SONAR_TOKEN
+# API, and publish.yml's analysis step waits on the gate. The Actions copy of SONAR_TOKEN
 # predates this layer and is still owned by the repo; only the non-secret coordinates
 # and the Dependabot mirror below live here.
 
 # The same key in the second store, for the same reason DEEPSEEK_APIKEY is in both:
 # GitHub withholds Actions secrets from Dependabot-triggered runs, so on exactly the PRs
-# the agent is meant to merge, SONAR_TOKEN was empty and build.yml's `if: env.SONAR_TOKEN
+# the agent is meant to merge, SONAR_TOKEN was empty and publish.yml's `if: env.SONAR_TOKEN
 # != ''` guard skipped the analysis. Measured on PR #3 — the check went green in 34s with
 # `SonarCloud analysis -> skipped`, so the quality gate was not gating the merge at all,
 # only the push to main afterwards.
@@ -107,7 +107,7 @@ resource "github_actions_variable" "sonar_organization" {
 }
 
 # --- Cluster deploy trigger ---------------------------------------------------------
-# Two consumers, one credential. build.yml's deploy job dispatches homelab-infra's
+# Two consumers, one credential. publish.yml's deploy job dispatches homelab-infra's
 # gitops-bump-images once the image is in GHCR, and the job's own GITHUB_TOKEN is scoped
 # to this repo and cannot dispatch another one. ai-pr-agent.yml authenticates `gh` with
 # it too, because a merge pushed with GITHUB_TOKEN starts no push-triggered run and so
@@ -124,14 +124,14 @@ resource "github_actions_secret" "homelab_dispatch" {
 # only place either one is edited. A copy hand-edited in the target repo is overwritten
 # on the next apply.
 #
-# build.yml is this repo's CI *and* its deploy trigger, which is why it lives here rather
+# publish.yml is this repo's CI *and* its deploy trigger, which is why it lives here rather
 # than in the repo: the `deploy` job it ends with dispatches homelab-infra's own
 # gitops-bump-images workflow, and the app name it passes (`bunker-game-app`) has to
 # agree with gitops/Justfile's `apps` list. Splitting the two halves across repos means a
 # rename in one silently breaks the other.
 #
 # A content change here pushes a commit with the PAT, and a PAT push does start workflows
-# — so editing build.yml runs a full build, publish and deploy. That is intended, and it
+# — so editing publish.yml runs a full build, publish and deploy. That is intended, and it
 # is also why the file is only rewritten when it really changes.
 
 resource "github_repository_file" "agent_workflow" {
@@ -145,11 +145,11 @@ resource "github_repository_file" "agent_workflow" {
   overwrite_on_create = true
 }
 
-resource "github_repository_file" "build_workflow" {
+resource "github_repository_file" "publish_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
-  file                = local.build_workflow
-  content             = file("${path.module}/workflows/build.yml")
+  file                = local.publish_workflow
+  content             = file("${path.module}/workflows/publish.yml")
   commit_message      = "chore: sync build workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"

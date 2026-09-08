@@ -1,4 +1,4 @@
-# Managed by homelab-infra — terraform/github/bunker-party/workflows/build.yml
+# Managed by homelab-infra — terraform/github/bunker-party/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github bunker-party`.
 #
 # One pipeline for every trigger: format, build, test, coverage, SonarCloud. The GHCR
@@ -6,14 +6,17 @@
 # being built is main and never on a pull request, so a dependency bump is fully
 # validated without pushing an image.
 #
-# This is also the workflow the AI PR agent gates on (PR_CHECK_WORKFLOW=build.yml). It
+# This is also the workflow the AI PR agent gates on (PR_CHECK_WORKFLOW=publish.yml). It
 # refuses to merge without a green check here, and it can dispatch this workflow on a PR
 # branch whose head commit has no checks — hence workflow_dispatch.
 #
 # Renaming this file means renaming it in homelab-infra too, in three places: the `apps`
 # list in gitops/Justfile, which finds the last successful run here to read a tag from,
 # the PR_CHECK_WORKFLOW variable in terraform/github/bunker-party/main.tf, and the
-# `build_workflow` local in that same file, which is what pushes this copy.
+# `publish_workflow` local in that same file, which is what pushes this copy. It was
+# `build.yml` until 2026-09-08; `build` named the least of what it does — it also
+# publishes the image and rolls the cluster — and a file called build.yml that deploys to
+# production reads as safe when it is not.
 #
 # The action versions here are bumped by hand, in this file. `github-actions` is absent
 # from dependabot.yml because a bump merged into a generated workflow is reverted by the
