@@ -98,10 +98,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract short SHA (no prefix)
+      # Exactly seven characters, no prefix: homelab-infra's `just bump-images` rewrites
+      # the manifest to "${sha:0:7}", so any other shape points the cluster at a tag that
+      # does not exist and the Deployment lands in ImagePullBackOff.
+      #
+      # `${GITHUB_SHA:0:7}` and not `git rev-parse --short=7 HEAD`, which was here before:
+      # `--short=N` is a MINIMUM, not a width. Git expands the abbreviation until it is
+      # unique in the repository, so it returns eight characters once the object count
+      # makes seven ambiguous — measured in this repo on 2026-09-08, `--short=1` returned
+      # four. The tag would then be eight characters while the manifest still gets seven.
+      # A slice of GITHUB_SHA cannot drift, because it never consults the object store.
+      - name: Derive the image tag
         if: ${{ env.PUBLISH == 'true' }}
         id: vars
-        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha_short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push image to GHCR
         if: ${{ env.PUBLISH == 'true' }}

@@ -70,7 +70,7 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------------
-  # Plan — decide the mode and whether to run at all. No repository code executed here.
+  # Plan — decide the mode and whether to run at all. No repository code is executed here.
   # ---------------------------------------------------------------------------------
   plan:
     name: Decide what to work on
