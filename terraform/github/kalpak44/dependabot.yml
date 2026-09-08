@@ -28,7 +28,7 @@ updates:
       day: monday
       time: "05:00"
       timezone: Etc/UTC
-    # The agent's objective is an empty queue and it has no per-run limit, so this is
+    # The agent's goal is an empty queue, and it has no per-run limit, so this is
     # sized to not withhold proposals. It throttles how many sit open at once, not how
     # many exist.
     open-pull-requests-limit: 10
@@ -38,7 +38,7 @@ updates:
     # below rather than arriving as separate PRs.
     allow:
       - dependency-type: all
-    # Minor and patch bumps arrive as one PR, so the lockfile is resolved once. Majors
+    # Minor and patch bumps arrive as one PR, so the lockfile is resolved at once. Majors
     # are deliberately NOT in this group: they arrive as one PR each, which is what makes
     # a break attributable to a single package. They are still proposed — slf4j 1.7 to
     # 2.0 and junit 5 to 6 both came through this way. Do not add `major` here to "enable
@@ -88,6 +88,6 @@ updates:
       # next LTS. It is a build-stage tool that never ships, so a stale patch is inexpensive.
       - dependency-name: maven
       # Node 24 is the LTS and is what verify-web runs, so the shipped bundle must be
-      # built on it too. Dependabot proposed 26 and the agent merged it, which left the
+      # built on it too. Dependabot proposed 26, and the agent merged it, which left the
       # bundle built on a runtime CI never exercised — held here for the same reason.
       - dependency-name: node
