@@ -6,6 +6,11 @@
 # the same PR branch, validates, and merges. The goal is an empty queue, not a
 # sampled one — a PR left open is an exception that has to be justified.
 #
+# A merge here deploys. The squash lands on main as an ordinary push, which runs
+# publish.yml, which builds and publishes the image and then dispatches homelab-infra's
+# gitops-bump-images for the cluster. That chain depends entirely on the token in `env`
+# below being a PAT; see the comment there before changing it.
+#
 # This copy is specialized for kalpak44 and has diverged from the other repos' copies:
 # it sets up both of the project's toolchains, JDK 25 and Node 24, because the pom's
 # enforcer refuses anything older and the agent would misread that as the upgrade
@@ -42,14 +47,32 @@ jobs:
 
     env:
       # gh is preinstalled on GitHub-hosted runners; this authenticates it.
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #
+      # A PAT, not GITHUB_TOKEN, and that is what makes a merge here reach the cluster.
+      # GitHub starts no push-triggered run for a push made with GITHUB_TOKEN, so every
+      # merge this agent made landed on main and then stopped dead: no build, no image,
+      # no deploy. Measured on 2026-09-08 — PRs #33, #34, #35 and #37 merged, and not one
+      # of their merge commits appears among publish.yml's push runs. The updates only
+      # went live because an unrelated human push swept them along.
+      #
+      # A dispatch step instead of a PAT looks equivalent and is not: gitops/Justfile
+      # finds the image to deploy with `--event push --branch main`, so a
+      # workflow_dispatch publish is invisible to the nightly sweep, which would then
+      # resolve an older push run and rewrite the cluster backwards.
+      #
+      # The cost is real: this token reaches every repo the owner has, where GITHUB_TOKEN
+      # reaches only this one. Same trade proklinator-app's reviewer already makes.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
 
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
 
       REPO: ${{ github.repository }}
 
-      # Optional workflow to trigger when a PR head commit has no checks.
+      # Optional workflow to trigger when a PR head commit has no checks. Now a fallback
+      # rather than the normal path: with the PAT above, a fix the agent pushes to a PR
+      # branch raises its own pull_request checks. It still matters for a PR opened before
+      # the check existed, which gets none retroactively.
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
 
     steps:
