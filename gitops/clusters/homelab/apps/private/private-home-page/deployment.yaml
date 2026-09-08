@@ -13,6 +13,7 @@ spec:
       labels:
         app: private-home-page
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: nginx
           image: nginx:alpine
