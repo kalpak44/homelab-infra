@@ -2,7 +2,7 @@ locals {
   repository       = "mite-assistant-mcp"
   default_branch   = "main"
   agent_workflow   = ".github/workflows/ai-pr-agent.yml"
-  publish_workflow = ".github/workflows/docker-publish.yml"
+  publish_workflow = ".github/workflows/publish.yml"
   check_workflow   = ".github/workflows/pr-check.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
@@ -73,7 +73,7 @@ resource "github_actions_variable" "pr_check_workflow" {
 # cluster. GitHub starts no push-triggered run for a push made with GITHUB_TOKEN, so
 # every merge this agent made landed on main and stopped dead — measured on 2026-09-08:
 # PRs #9, #10, #11, #12 and #13 all merged, and not one of their merge commits appears
-# among docker-publish.yml's push runs. The cluster sat on `446772e` while main was at
+# among its publish workflow's push runs. The cluster sat on `446772e` while main was at
 # `c8e4846`, five dependency updates behind, since 2026-08-20.
 #
 # Same credential homelab-infra already uses — Terraform only copies it here, it is not
@@ -101,7 +101,7 @@ resource "github_repository_file" "publish_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
   file                = local.publish_workflow
-  content             = file("${path.module}/workflows/docker-publish.yml")
+  content             = file("${path.module}/workflows/publish.yml")
   commit_message      = "chore: sync image publish workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
