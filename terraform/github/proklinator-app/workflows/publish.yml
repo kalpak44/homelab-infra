@@ -65,7 +65,7 @@ jobs:
         continue-on-error: true
         run: npm run lint
 
-      - name: Build site
+      - name: Build the site
         run: npm run build
 
   publish-images:
@@ -103,7 +103,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract short SHA (no prefix)
+      - name: Derive the image tag
         id: vars
         run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -116,7 +116,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ steps.vars.outputs.sha_short }}
 
-      - name: Build and push Docker image
+      - name: Build and push the image
         id: push
         uses: docker/build-push-action@v7
         with:

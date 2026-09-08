@@ -73,6 +73,7 @@ jobs:
   # Plan — decide the mode and whether to run at all. No repository code executed here.
   # ---------------------------------------------------------------------------------
   plan:
+    name: Decide what to work on
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -103,7 +104,7 @@ jobs:
       INPUT_FORCE: ${{ inputs.force }}
 
     steps:
-      - name: Decide what to do
+      - name: Resolve the run mode and target
         id: plan
         run: |
           set -euo pipefail
@@ -272,6 +273,7 @@ jobs:
   # Work
   # ---------------------------------------------------------------------------------
   work:
+    name: Implement the change
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
@@ -318,7 +320,7 @@ jobs:
       # real account or nothing downstream fires. Unlike the reviewer, this job is not
       # executing an outsider's code — the branch is either main or a branch this agent
       # wrote itself — so leaving the credential in .git/config is acceptable here.
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -331,7 +333,7 @@ jobs:
           git config user.name "kalpak44"
           git config user.email "kalpak44@users.noreply.github.com"
 
-      - name: Check out the working branch
+      - name: Checkout the working branch
         run: |
           set -euo pipefail
 
@@ -353,7 +355,7 @@ jobs:
 
           echo "On $(git branch --show-current) at $(git rev-parse --short HEAD)"
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"

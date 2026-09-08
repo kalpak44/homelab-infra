@@ -31,6 +31,7 @@ concurrency:
 
 jobs:
   agent:
+    name: Sweep dependency PRs
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -66,7 +67,7 @@ jobs:
       # the app never uses — an upgrade needing 24 looks broken to it, and one broken only
       # on 24 looks fine. Either way it debugs a discrepancy that exists only inside this
       # job. Codex itself is happy on any current Node.
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -116,7 +117,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run the agent
+      - name: Sweep and merge dependency PRs
         run: |
           set -euo pipefail
 

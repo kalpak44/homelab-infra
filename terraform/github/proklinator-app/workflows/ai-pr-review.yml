@@ -66,6 +66,7 @@ jobs:
   # Gate — no PR code is fetched in this job. Everything it reads comes from the API.
   # ---------------------------------------------------------------------------------
   gate:
+    name: Authorize the review
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -252,6 +253,7 @@ jobs:
   # Review — from here on the PR's own code is on disk and gets executed.
   # ---------------------------------------------------------------------------------
   review:
+    name: Review, QA and merge
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
@@ -318,7 +320,7 @@ jobs:
           # .git/config where an npm lifecycle script could reach it.
           persist-credentials: false
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24" # what publish.yml builds with
@@ -355,7 +357,7 @@ jobs:
           echo "${PIPESTATUS[0]}" > "$QA_DIR/format.status"
           exit 0
 
-      - name: Build
+      - name: Build the site
         run: |
           set -uo pipefail
 
@@ -896,7 +898,7 @@ jobs:
 
           rm -f smoke.json
 
-      - name: Run the reviewer
+      - name: Review the pull request
         run: |
           set -euo pipefail
 
