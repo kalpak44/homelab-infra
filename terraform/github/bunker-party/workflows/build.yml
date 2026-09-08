@@ -14,6 +14,12 @@
 # list in gitops/Justfile, which finds the last successful run here to read a tag from,
 # the PR_CHECK_WORKFLOW variable in terraform/github/bunker-party/main.tf, and the
 # `build_workflow` local in that same file, which is what pushes this copy.
+#
+# The action versions here are bumped by hand, in this file. `github-actions` is absent
+# from dependabot.yml because a bump merged into a generated workflow is reverted by the
+# next `just deploy github bunker-party`, and Dependabot cannot watch the copy in
+# homelab-infra either — it only scans `.github/workflows/`. checkout and setup-java were
+# left on v4 long enough to start warning that they run on a deprecated Node.js 20.
 name: Build, Test, SonarCloud, Publish
 
 on:
@@ -54,12 +60,12 @@ jobs:
     steps:
       - name: Checkout source
         # Full history: Sonar needs it for blame and new-code detection.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Java 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "25"
@@ -85,8 +91,8 @@ jobs:
 
       - name: Log in to GHCR
         if: ${{ env.PUBLISH == 'true' }}
-        # Pinned to the commit behind v3 — a tag can be moved, a SHA cannot.
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        # Pinned to the commit behind v4.6.0 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
