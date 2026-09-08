@@ -29,11 +29,11 @@ terraform/github/<repo>/
 
 No `github_repository_ruleset`. One was tried and removed — see the last non-negotiable.
 
-**CI belongs to the repo, not to this layer.** This layer ships the agent and names the repo's check via
-`PR_CHECK_WORKFLOW`; it does not own the check itself. `mite-assistant-mcp` had no `pull_request` workflow, so a
-`pr-check.yml` was seeded from here and then handed over with a `removed` block using `lifecycle { destroy = false }` —
-dropped from state, left in the repo. Use that pattern rather than deleting the resource: a plain delete would remove
-the file, and with no green check the agent would stop merging.
+**Every managed repo's entire `.github/` lives here.** Workflows and `dependabot.yml` alike are `github_repository_file`s, so `terraform/github/<repo>/` is the only place any of them is edited and a copy hand-edited in the target repo is overwritten on the next apply. This reverses an earlier rule that CI belonged to the repo: under it, `mite-assistant-mcp`'s `docker-publish.yml` sat unmanaged and had no deploy job at all, so publishing reached the cluster only through the nightly sweep, and its `ai-pr-agent.yml` merged with `GITHUB_TOKEN` — five dependency PRs merged between 2026-08-20 and 2026-09-03 and none of them ever built. Adopting a workflow means giving it the generated-file banner, wiring a local plus a `github_repository_file`, and bumping its actions by hand from then on.
+
+**`github-actions` is therefore absent from every `dependabot.yml`.** An action bump merged into a generated workflow is reverted by the next apply and re-opened by Dependabot the next morning, for ever. Dependabot cannot watch the copies here either — it only scans `.github/workflows/`, and here they are ordinary files under `terraform/`. This has a real cost in `plugin-noco-tools`, whose `site.yml` pins four actions to commit SHAs against a retagged release (CWE-829): that entry existed to keep the pins from rotting, and those SHAs now move by hand.
+
+**Dependabot runs daily at 05:00 UTC in every repo that has an agent**, an hour before the agent's `0 6 * * *` sweep, so a proposal never waits more than an hour. `kubectl-awscli` and `postgres-awscli` get no `dependabot.yml`: their `release.yml` agent resolves and writes the Dockerfile pins itself, so a second updater would fight it.
 
 **Exception — `kalpak44` centralizes all of `.github/`.** Its `publish.yml`, `ai-pr-agent.yml` and `dependabot.yml` are
 all `github_repository_file`s, so `terraform/github/kalpak44/` is the only place any of them is edited. The reason is

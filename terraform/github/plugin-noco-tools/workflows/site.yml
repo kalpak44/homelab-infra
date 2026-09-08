@@ -1,0 +1,92 @@
+# Managed by homelab-infra — terraform/github/plugin-noco-tools/workflows/site.yml
+# Edits made here in the target repo are overwritten by `just deploy github plugin-noco-tools`.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+#
+# The four actions below are pinned to commit SHAs, not tags, so a retagged release
+# cannot change this build under us (CWE-829). That pin used to be maintained by the
+# `github-actions` Dependabot entry; now that this file is generated here, the SHAs are
+# bumped by hand in homelab-infra — see the note in dependabot.yml.
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/noco-tools-site
+
+jobs:
+  docker:
+    name: build & push site image
+    runs-on: ubuntu-latest
+    outputs:
+      short-sha: ${{ steps.sha.outputs.short }}
+      digest:    ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: site
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
+            ${{ env.IMAGE }}:latest
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      - name: Image report
+        run: |
+          {
+            echo "## Site image"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Image** | \`${{ env.IMAGE }}\` |"
+            echo "| **Tag** | \`${{ steps.sha.outputs.short }}\` |"
+            echo "| **Also tagged** | \`latest\` |"
+            echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| **Commit** | [\`${{ steps.sha.outputs.short }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |"
+            echo "| **Run** | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            echo ""
+            echo "### Pull"
+            echo '```'
+            echo "docker pull ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}"
+            echo '```'
+            echo ""
+            echo "### Run locally"
+            echo '```'
+            echo "docker run --rm -p 8080:80 ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,9 @@
 locals {
-  repository     = "plugin-noco-tools"
-  default_branch = "main"
-  agent_workflow = ".github/workflows/ai-pr-agent.yml"
+  repository      = "plugin-noco-tools"
+  default_branch  = "main"
+  agent_workflow  = ".github/workflows/ai-pr-agent.yml"
+  site_workflow   = ".github/workflows/site.yml"
+  dependabot_file = ".github/dependabot.yml"
 }
 
 # The repo already exists — adopt it instead of creating it. The import block is a no-op
@@ -88,4 +90,26 @@ resource "github_repository_file" "agent_workflow" {
   overwrite_on_create = true
 
   depends_on = [github_actions_secret.homelab_dispatch]
+}
+
+resource "github_repository_file" "site_workflow" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.site_workflow
+  content             = file("${path.module}/workflows/site.yml")
+  commit_message      = "chore: sync site workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+resource "github_repository_file" "dependabot" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.dependabot_file
+  content             = file("${path.module}/dependabot.yml")
+  commit_message      = "chore: sync dependabot config from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
 }

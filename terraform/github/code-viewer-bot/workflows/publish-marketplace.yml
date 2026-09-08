@@ -1,0 +1,308 @@
+# Managed by homelab-infra — terraform/github/code-viewer-bot/workflows/publish-marketplace.yml
+# Edits made here in the target repo are overwritten by `just deploy github code-viewer-bot`.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+name: Release VS Code Extension
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (without leading v), for example 0.0.5"
+        required: true
+        type: string
+
+      publish_marketplace:
+        description: "Publish to Microsoft Visual Studio Marketplace"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-vscode-extension-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+
+    steps:
+      - name: Check out selected branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Prepare release
+        id: release
+        shell: bash
+        run: |
+          TAG="v${{ inputs.version }}"
+
+          echo "Selected branch: ${{ github.ref_name }}"
+          echo "Selected commit: $(git rev-parse HEAD)"
+          echo "Release version: ${{ inputs.version }}"
+          echo "Release tag: $TAG"
+
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Update package version
+        shell: bash
+        run: |
+          CURRENT_VERSION="$(node -p "require('./package.json').version")"
+          RELEASE_VERSION="${{ inputs.version }}"
+
+          echo "Current package.json version: $CURRENT_VERSION"
+          echo "Requested release version:   $RELEASE_VERSION"
+
+          npm version "$RELEASE_VERSION" \
+            --no-git-tag-version \
+            --allow-same-version
+
+          FINAL_VERSION="$(node -p "require('./package.json').version")"
+
+          echo "Final package.json version: $FINAL_VERSION"
+
+          if [[ "$FINAL_VERSION" != "$RELEASE_VERSION" ]]; then
+            echo "::error::Failed to update package.json version."
+            exit 1
+          fi
+
+      - name: Commit release version
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "Version files already up to date. Nothing to commit."
+          else
+            git add package.json
+
+            if [[ -f package-lock.json ]]; then
+              git add package-lock.json
+            fi
+
+            git commit -m "chore: release v${{ inputs.version }}"
+
+            echo "Pushing release commit to ${{ github.ref_name }}"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
+
+      - name: Create or update release tag
+        shell: bash
+        run: |
+          TAG="${{ steps.release.outputs.release_tag }}"
+          COMMIT="$(git rev-parse HEAD)"
+
+          echo "Setting $TAG -> $COMMIT"
+
+          git tag --force "$TAG" "$COMMIT"
+          git push origin "refs/tags/$TAG" --force
+
+      - name: Create or update GitHub release
+        shell: bash
+        run: |
+          TAG="${{ steps.release.outputs.release_tag }}"
+          COMMIT="$(git rev-parse HEAD)"
+
+          echo "Release tag: $TAG"
+          echo "Release commit: $COMMIT"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release $TAG already exists. Updating it."
+
+            gh release edit "$TAG" \
+              --target "$COMMIT" \
+              --title "$TAG" \
+              --latest
+          else
+            echo "Creating GitHub release $TAG."
+
+            gh release create "$TAG" \
+              --target "$COMMIT" \
+              --title "$TAG" \
+              --generate-notes \
+              --latest
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: Build ${{ matrix.target }}
+
+    needs:
+      - prepare-release
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            asset_name: code-viewer-bot-linux-x64.vsix
+
+          - os: macos-latest
+            target: darwin-arm64
+            asset_name: code-viewer-bot-darwin-arm64.vsix
+
+          - os: macos-15-intel
+            target: darwin-x64
+            asset_name: code-viewer-bot-darwin-x64.vsix
+
+          - os: windows-latest
+            target: win32-x64
+            asset_name: code-viewer-bot-win32-x64.vsix
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.release_tag }}
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install @vscode/vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libx11-dev \
+            libxi-dev \
+            libxtst-dev \
+            libpng++-dev \
+            pkg-config
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          SKIP_ROBOTJS_REBUILD: "1"
+
+      - name: Build extension bundle
+        run: npm run build
+
+      - name: Rebuild robotjs
+        run: npm rebuild robotjs || true
+
+      - name: Package VSIX
+        run: vsce package --target ${{ matrix.target }} --out ${{ matrix.asset_name }}
+
+      - name: Upload VSIX to GitHub release
+        shell: bash
+        run: |
+          gh release upload \
+            "${{ needs.prepare-release.outputs.release_tag }}" \
+            "${{ matrix.asset_name }}" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload VSIX as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+          if-no-files-found: error
+
+  publish-marketplace:
+    name: Publish to Microsoft Marketplace
+
+    if: ${{ inputs.publish_marketplace }}
+
+    needs:
+      - prepare-release
+      - build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install @vscode/vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Download VSIX artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: code-viewer-bot-*.vsix
+          path: dist
+          merge-multiple: true
+
+      - name: Verify expected VSIX artifacts
+        shell: bash
+        run: |
+          echo "Downloaded artifacts:"
+          ls -lah dist
+
+          expected=(
+            "code-viewer-bot-linux-x64.vsix"
+            "code-viewer-bot-darwin-arm64.vsix"
+            "code-viewer-bot-darwin-x64.vsix"
+            "code-viewer-bot-win32-x64.vsix"
+          )
+
+          missing=0
+
+          for file in "${expected[@]}"; do
+            if [[ ! -f "dist/$file" ]]; then
+              echo "::error::Missing expected artifact: $file"
+              missing=1
+            fi
+          done
+
+          if [[ "$missing" -ne 0 ]]; then
+            echo "::error::Release does not contain the full set of platform VSIX files."
+            exit 1
+          fi
+
+      - name: Publish VSIX files to Visual Studio Marketplace
+        shell: bash
+        run: |
+          files=(
+            "dist/code-viewer-bot-linux-x64.vsix"
+            "dist/code-viewer-bot-darwin-arm64.vsix"
+            "dist/code-viewer-bot-darwin-x64.vsix"
+            "dist/code-viewer-bot-win32-x64.vsix"
+          )
+
+          for file in "${files[@]}"; do
+            echo "Publishing $file"
+
+            vsce publish \
+              --packagePath "$file" \
+              --skip-duplicate
+          done
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
