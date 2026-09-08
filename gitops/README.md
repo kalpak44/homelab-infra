@@ -31,7 +31,6 @@ gitops/clusters/homelab/
         ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
         ├── lex-bg-connector/                # Lex background connector (data preloader)
         ├── playwright-mcp/                  # Microsoft Playwright MCP (browser automation; isolated per connection, NFS outputs, DuckDuckBot UA)
-        └── ciela-mcp/                       # Ciela MCP server (Bulgarian legislation search)
 ```
 
 ## Required secrets in Vault
@@ -83,19 +82,6 @@ echo "https://<account>.mite.de"
 
 vault kv put secret/mite-assistant-mcp-secrets \
   mite-url="https://<account>.mite.de"
-```
-
-### `secret/ciela-secrets`
-
-| Property | Description |
-|---|---|
-| `username` | Ciela (web7.ciela.net) account username |
-| `password` | Ciela account password |
-
-```bash
-vault kv put secret/ciela-secrets \
-  username="<username>" \
-  password="<password>"
 ```
 
 ### Manual k8s secret - `cloudflare-api-token` (namespace: `kube-system`)

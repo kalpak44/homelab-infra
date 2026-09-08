@@ -69,7 +69,7 @@ homelab-infra/
 │   ├── README.md
 │   ├── Justfile                    # just deploy | destroy | list
 │   ├── cloudflare/
-│   │   ├── dns/private/<name>/     # 16 dirs, one per LAN record set
+│   │   ├── dns/private/<name>/     # 15 dirs, one per LAN record set
 │   │   └── shared/<name>/          # non-DNS Cloudflare (email routing, Zero Trust tunnel + public DNS)
 │   ├── proxmox/
 │   │   └── <service>/              # 10 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
