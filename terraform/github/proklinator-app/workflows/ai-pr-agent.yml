@@ -37,7 +37,20 @@ jobs:
 
     env:
       # gh is preinstalled on GitHub-hosted runners; this authenticates it.
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #
+      # A PAT, not GITHUB_TOKEN, and that is what makes a merge here reach the cluster.
+      # GitHub starts no push-triggered run for a push made with GITHUB_TOKEN, so a merge
+      # this agent made would land on main and stop dead: no build, no images, no deploy.
+      # The bug hid here for a while because the dependency PRs that did deploy were
+      # merged by hand — #21, #23 and #24 all carry `committer=GitHub` with a human
+      # author, so publish.yml ran for the ordinary reason. The agent's own merges had
+      # never been exercised. Same failure measured on kalpak44 on 2026-09-08.
+      #
+      # A dispatch step instead of a PAT looks equivalent and is not: gitops/Justfile
+      # finds the image to deploy with `--event push --branch main`, so a
+      # workflow_dispatch publish is invisible to the nightly sweep, which would then
+      # resolve an older push run and rewrite the cluster backwards.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
 
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
