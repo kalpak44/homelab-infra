@@ -9,7 +9,20 @@
 # list in gitops/Justfile, which finds the last successful run here to read a tag from,
 # the PR_CHECK_WORKFLOW variable in terraform/github/kalpak44, which the PR agent
 # dispatches when a pull request has no checks, and the `paths` filters below.
-name: Frontend Build and Publish
+#
+# The repo holds two independent things, and the jobs below follow that split rather than
+# interleaving them:
+#
+#   verify-pdf   cv-pdf-generator  Java 25 / Maven — renders the CV, runs the tests
+#   verify-web   web-page-app      Node / Vite    — formatting, lint, site build
+#   publish-image                  needs both; the Dockerfile rebuilds from source
+#   deploy                         needs the image; hands off to the cluster
+#
+# verify-pdf and verify-web share nothing and run in parallel. The image build is the
+# authoritative producer of what ships — its Dockerfile compiles the Java, runs the same
+# tests and renders the same PDF from scratch, so the two verify jobs exist for fast,
+# separately-attributable failure signals, not because the image trusts their output.
+name: Build and Publish
 
 on:
   push:
@@ -32,9 +45,78 @@ on:
       - ".github/workflows/publish.yml"
   workflow_dispatch:
 
+# Least privilege by default; the one job that needs to write a package widens it itself.
+permissions:
+  contents: read
+
+# Superseding a pull request's run is free. Superseding a push to main is not: that run
+# ends in a cluster deploy, and cancelling it half way leaves the image published but the
+# manifest un-bumped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  lint-and-build:
+  verify-pdf:
+    name: Verify CV generator
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cv-pdf-generator
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # java-version must stay >= the pom's maven.compiler.release, which the enforcer
+      # checks — a lower JDK fails at `validate` with an explicit message rather than an
+      # obscure compiler error. `cache: maven` caches the default ~/.m2, which is why no
+      # -Dmaven.repo.local is passed here: the local npm script and the Dockerfile each
+      # use their own repository path and none of the three need to agree.
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Enforcer (JDK floor, dependency convergence) plus the unit and integration tests.
+      - name: Verify
+        run: mvn -B --no-transfer-progress verify
+
+      - name: Render the CV
+        env:
+          RESUME_DATA_DIR: data
+        run: |
+          mvn -B --no-transfer-progress exec:java \
+            -Dexec.mainClass=online.pavelusanli.resume.ResumeApp \
+            -Dexec.args="build target/resume.pdf"
+
+      # A zero-byte or non-PDF output is the failure this guards: every step above can
+      # succeed and still leave something unservable.
+      - name: Check the rendered PDF
+        run: |
+          test -s target/resume.pdf
+          head -c 5 target/resume.pdf | grep -q '^%PDF-'
+          echo "Rendered $(wc -c < target/resume.pdf) bytes." >> "$GITHUB_STEP_SUMMARY"
+
+      # Lets a reviewer open the actual rendered CV from the run, which is the only part
+      # of this repo that a diff cannot show.
+      - name: Upload the CV
+        uses: actions/upload-artifact@v7
+        with:
+          name: resume-pdf
+          path: cv-pdf-generator/target/resume.pdf
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-web:
+    name: Verify web page
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web-page-app
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -43,52 +125,35 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "24"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: web-page-app/package-lock.json
 
-      # Must stay >= the pom's maven.compiler.release, which the enforcer checks — a
-      # lower JDK here fails the build at `validate` with an explicit message rather
-      # than an obscure compiler error.
-      - name: Set up Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Cache Maven repository
-        uses: actions/cache@v6
-        with:
-          path: .mvn/repository
-          key: maven-${{ hashFiles('cv-pdf-generator/pom.xml') }}
-          restore-keys: maven-
-
       - name: Install dependencies
-        working-directory: web-page-app
         run: npm ci
 
       - name: Check formatting
-        working-directory: web-page-app
         run: npm run format:check
 
       - name: Run linter
-        working-directory: web-page-app
         run: npm run lint
 
-      - name: Build resume PDF
-        working-directory: web-page-app
-        run: npm run build:resume
-
+      # Compiles and bundles the site. The CV is not built here on purpose — it is
+      # verify-pdf's subject, and Vite copies public/ verbatim, so its absence changes
+      # nothing this job is checking.
       - name: Build site
-        working-directory: web-page-app
         run: npm run build
 
-  publish-frontend:
-    needs: lint-and-build
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main')
+  publish-image:
+    name: Publish image
+    needs: [verify-pdf, verify-web]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+    outputs:
+      tag: ${{ steps.vars.outputs.sha_short }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -103,9 +168,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract short SHA (no prefix)
+      # Exactly seven characters, no prefix: homelab-infra's `just bump-images` rewrites
+      # the manifest to "${sha:0:7}", so any other shape points the cluster at a tag that
+      # does not exist.
+      - name: Derive the image tag
         id: vars
-        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha_short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -116,7 +184,9 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ steps.vars.outputs.sha_short }}
 
-      - name: Build and push Docker image (multi-platform)
+      # The Dockerfile rebuilds everything from source, so the layer cache is what keeps
+      # that from being slow. type=gha is scoped to this repository by Actions.
+      - name: Build and push
         id: push
         uses: docker/build-push-action@v7
         with:
@@ -126,25 +196,31 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Generate build report
+      - name: Summarise
         run: |
-          echo "### Docker Image Build Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Platforms:** \`linux/amd64\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Digest:** \`${{ steps.push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Tag |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
-            [ -n "$tag" ] && echo "| \`${tag}\` |" >> $GITHUB_STEP_SUMMARY
-          done
+          {
+            echo "### Image published"
+            echo
+            echo "**Digest:** \`${{ steps.push.outputs.digest }}\`"
+            echo "**Platforms:** \`linux/amd64\`"
+            echo
+            echo "| Tag |"
+            echo "| :--- |"
+            echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+              [ -n "$tag" ] && echo "| \`${tag}\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    # Only runs once the image is actually in GHCR — publish-frontend is itself gated to
-    # pushes on main, so this inherits that gate through `needs`.
-    needs: publish-frontend
+    name: Deploy to cluster
+    # Gated on the image existing. publish-image is itself restricted to pushes on main,
+    # so this inherits that restriction through `needs`.
+    needs: publish-image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       # The image is in GHCR — point the cluster at it. Both inputs are required: this
       # workflow's own run is still in_progress here, so homelab-infra's "last successful
@@ -156,9 +232,10 @@ jobs:
       - name: Trigger cluster deploy
         env:
           GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          TAG: ${{ needs.publish-image.outputs.tag }}
         run: |
           gh workflow run gitops-bump-images.yml \
             --repo kalpak44/homelab-infra \
             -f app=personal-web-page \
             -f sha="${GITHUB_SHA}"
-          echo "Dispatched \`gitops-bump-images\` for \`personal-web-page\` @ \`${GITHUB_SHA:0:7}\`." >> $GITHUB_STEP_SUMMARY
+          echo "Dispatched \`gitops-bump-images\` for \`personal-web-page\` @ \`${TAG}\`." >> "$GITHUB_STEP_SUMMARY"
