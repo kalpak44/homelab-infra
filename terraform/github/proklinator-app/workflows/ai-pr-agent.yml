@@ -60,10 +60,16 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # 24 because that is what the app actually builds and ships on: publish.yml's verify
+      # job, both Dockerfiles' `node:24-slim`, and the other two agents all pin it. This job
+      # ran on 22, so the agent validated every dependency upgrade against a Node major
+      # the app never uses — an upgrade needing 24 looks broken to it, and one broken only
+      # on 24 looks fine. Either way it debugs a discrepancy that exists only inside this
+      # job. Codex itself is happy on any current Node.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex

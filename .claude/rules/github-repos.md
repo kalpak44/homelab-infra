@@ -66,8 +66,8 @@ verifies the site, builds **two** images from the same commit (`proklinator-app`
 tag) and dispatches `gitops-bump-images` for `proklinator`. Adding a third image means adding it to
 `gitops/Justfile`'s `apps` list too, or its Deployment sits on an older tag. Its `dependabot.yml` keeps the site and
 the API in separate npm entries with separate groups on purpose — one lockfile each, one image each, so a failure is
-attributable. `node` is held in the docker entry because Node 24 is pinned in four places at once: both Dockerfiles,
-`publish.yml`'s verify job and `ai-pr-review.yml`.
+attributable. `node` is held in the docker entry because Node 24 is pinned in six places at once: both Dockerfiles,
+`publish.yml`'s verify job and all three agents. Dependabot runs daily at 05:00, an hour before the sweep.
 
 **Exception — `proklinator-app` gets a second agent.** `workflows/ai-pr-review.yml` handles the PRs `ai-pr-agent.yml`
 refuses: human-authored ones. It is `pull_request_target`-driven, so its allowlist gate (`PR_REVIEW_ALLOWLIST`, an
