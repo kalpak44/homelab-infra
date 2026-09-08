@@ -26,7 +26,7 @@ spec:
           # value is invisible to it — `just bump-images` prints "no image line,
           # skipping" and the app silently never deploys. Keep the
           # `image: <repo>:<tag>` shape on one line.
-          image: ghcr.io/kalpak44/noco-tools-site:718ead1
+          image: ghcr.io/kalpak44/noco-tools-site:4080a14
           ports:
             - containerPort: 80
           resources:
