@@ -1,9 +1,11 @@
 locals {
-  repository      = "proklinator-app"
-  default_branch  = "main"
-  agent_workflow  = ".github/workflows/ai-pr-agent.yml"
-  review_workflow = ".github/workflows/ai-pr-review.yml"
-  issue_workflow  = ".github/workflows/ai-issue-agent.yml"
+  repository       = "proklinator-app"
+  default_branch   = "main"
+  agent_workflow   = ".github/workflows/ai-pr-agent.yml"
+  review_workflow  = ".github/workflows/ai-pr-review.yml"
+  issue_workflow   = ".github/workflows/ai-issue-agent.yml"
+  publish_workflow = ".github/workflows/publish.yml"
+  dependabot_file  = ".github/dependabot.yml"
 }
 
 # The repo already exists — adopt it instead of creating it. The import block is a no-op
@@ -131,6 +133,48 @@ resource "github_repository_file" "issue_workflow" {
   file                = local.issue_workflow
   content             = file("${path.module}/workflows/ai-issue-agent.yml")
   commit_message      = "chore: sync AI issue agent workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+# --- The repo's CI, which is also its PR check and its deploy trigger ---------------
+# publish.yml lives here rather than in the target repo because it is coupled to this
+# layer at three points: PR_CHECK_WORKFLOW above names it, the `deploy` job it ends with
+# dispatches homelab-infra's own gitops-bump-images, and the app name it passes
+# (`proklinator`) has to agree with gitops/Justfile's `apps` list. It publishes two
+# images from one commit, so adding a third means adding it to that list too or its
+# Deployment sits on an older tag.
+#
+# A content change here pushes a commit with the PAT, and a PAT push does start
+# workflows — so editing publish.yml runs a full verify, publish and deployment. That is
+# intended, and it is also why the file is only rewritten when it really changes.
+resource "github_repository_file" "publish_workflow" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.publish_workflow
+  content             = file("${path.module}/workflows/publish.yml")
+  commit_message      = "chore: sync publish workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+
+  # Pushing this file starts a run of it, and its deploy job reads GH_ADMIN_TOKEN. On a
+  # cold start Terraform is otherwise free to push the workflow before the secret exists,
+  # and the first run fails on an empty token — a red run that looks like a workflow bug.
+  depends_on = [github_actions_secret.homelab_dispatch]
+}
+
+# Dependabot is the agents' input side — no dependency PRs, nothing for ai-pr-agent.yml
+# to sweep, which is the state this repo was in: a daily sweep over an empty queue. It
+# lives beside `workflows/` here because it lands beside them in the target repo:
+# `workflows/` maps to .github/workflows/, this maps to .github/dependabot.yml.
+resource "github_repository_file" "dependabot" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.dependabot_file
+  content             = file("${path.module}/dependabot.yml")
+  commit_message      = "chore: sync dependabot config from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true

@@ -1,0 +1,167 @@
+# Managed by homelab-infra — terraform/github/proklinator-app/workflows/publish.yml
+# Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
+#
+# Builds and publishes both images this repository ships — the site and its API — and then
+# tells the cluster to roll them out. Named for what it does, rather than for the frontend
+# alone, which was all it built back when it was publish-frontend.yml.
+#
+# Renaming this file means renaming it in homelab-infra too, in three places: the `apps`
+# list in gitops/Justfile, which finds the last successful run here to read a tag from, the
+# PR_CHECK_WORKFLOW variable in terraform/github/proklinator-app/main.tf, which the agents
+# dispatch when a pull request has no checks, and the `publish_workflow` local in that same
+# file, which is what pushes this copy.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`. A bump merged into the target repo is reverted by the next apply.
+name: Build and Publish
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Least privilege by default; the one job that needs to write a package widens it itself.
+permissions:
+  contents: read
+
+# Superseding a pull request's run is free. Superseding a push to main is not: that run
+# ends in a cluster deployment, and cancelling it halfway leaves one or both images
+# published but the manifests still pointing at the previous tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify-site:
+    name: Verify site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Advisory only: a style nit must not block a release. The build below is
+      # what actually gates the publish.
+      - name: Check formatting
+        continue-on-error: true
+        run: npm run format:check
+
+      - name: Run linter
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Build site
+        run: npm run build
+
+  publish-images:
+    name: Publish images
+    needs: verify-site
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    # Both images are built from the same commit and carry the same short-SHA tag,
+    # so the cluster can move the site and its API in one step. Adding an image here
+    # means adding it to homelab-infra's `apps` list too, or its Deployment will sit
+    # on an older tag.
+    strategy:
+      matrix:
+        include:
+          - image: proklinator-app
+            dockerfile: docker/Dockerfile
+            build_args: ''
+          - image: proklinator-api
+            dockerfile: docker/Dockerfile.api
+            build_args: GIT_SHA
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract short SHA (no prefix)
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Only the image that declares the ARG gets it — passing it to the other
+          # would make buildx warn about an unconsumed build-arg on every run.
+          build-args: ${{ matrix.build_args != '' && format('{0}={1}', matrix.build_args, steps.vars.outputs.sha_short) || '' }}
+
+      - name: Generate build report
+        run: |
+          echo "### Docker Image Build Report — \`${{ matrix.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Platforms:** \`linux/amd64\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Digest:** \`${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| :--- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+            [ -n "$tag" ] && echo "| \`${tag}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  deploy:
+    name: Deploy to cluster
+    # Waits for every matrix leg, so the cluster is only bumped once both images
+    # exist at this commit's tag. publish-images is itself restricted to pushes on main,
+    # so this inherits that restriction through `needs` — a skipped dependency skips it.
+    needs: publish-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The images are in GHCR — point the cluster at them. Both inputs are required:
+      # this workflow's own run is still in_progress here, so homelab-infra's
+      # "last successful publish" query would resolve to the previous commit and
+      # deploy a stale image.
+      - name: Trigger cluster deploy
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+        run: |
+          gh workflow run gitops-bump-images.yml \
+            --repo kalpak44/homelab-infra \
+            -f app=proklinator \
+            -f sha="${GITHUB_SHA}"
+          echo "Dispatched \`gitops-bump-images\` for \`proklinator\` @ \`${GITHUB_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
