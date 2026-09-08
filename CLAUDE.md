@@ -53,6 +53,7 @@ See `gitops/README.md` for the in-cluster service list.
 @.claude/rules/github-repos.md
 @.claude/rules/workflows.md
 @.claude/rules/commits.md
+@.claude/rules/comments.md
 
 ---
 

@@ -74,3 +74,7 @@ updates:
       # 3 — so the whole image is held here, and the pin moves by hand when we choose the
       # next LTS. It is a build-stage tool that never ships, so a stale patch is inexpensive.
       - dependency-name: maven
+      # Node 24 is the LTS and is what verify-web runs, so the shipped bundle must be
+      # built on it too. Dependabot proposed 26 and the agent merged it, which left the
+      # bundle built on a runtime CI never exercised — held here for the same reason.
+      - dependency-name: node

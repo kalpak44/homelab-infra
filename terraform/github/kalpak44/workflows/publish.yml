@@ -13,15 +13,15 @@
 # The repo holds two independent things, and the jobs below follow that split rather than
 # interleaving them:
 #
-#   verify-pdf   cv-pdf-generator  Java 25 / Maven — renders the CV, runs the tests
-#   verify-web   web-page-app      Node / Vite    — formatting, lint, site build
-#   publish-image                  needs both; the Dockerfile rebuilds from source
-#   deploy                         needs the image; hands off to the cluster
+#   verify-pdf cv-pdf-generator Java 25 / Maven — renders the CV, runs the tests
+#   verify-web web-page-app Node / Vite — formatting, lint, site build
+#   publish-image needs both; the Dockerfile rebuilds from source
+#   deployment need the image; hands off to the cluster
 #
 # verify-pdf and verify-web share nothing and run in parallel. The image build is the
 # authoritative producer of what ships — its Dockerfile compiles the Java, runs the same
-# tests and renders the same PDF from scratch, so the two verify jobs exist for fast,
-# separately-attributable failure signals, not because the image trusts their output.
+# tests and renders the same PDF from scratch, so the two verified jobs exist for fast,
+# separately attributable failure signals, not because the image trusts their output.
 name: Build and Publish
 
 on:
@@ -50,8 +50,8 @@ permissions:
   contents: read
 
 # Superseding a pull request's run is free. Superseding a push to main is not: that run
-# ends in a cluster deploy, and cancelling it half way leaves the image published but the
-# manifest un-bumped.
+# ends in a cluster deployment, and cancelling it halfway leaves the image published but the
+# manifest unbumped.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -72,7 +72,7 @@ jobs:
       # checks — a lower JDK fails at `validate` with an explicit message rather than an
       # obscure compiler error. `cache: maven` caches the default ~/.m2, which is why no
       # -Dmaven.repo.local is passed here: the local npm script and the Dockerfile each
-      # use their own repository path and none of the three need to agree.
+      # use their own repository path, and none of the three need to agree.
       - name: Set up Java
         uses: actions/setup-java@v6
         with:
@@ -185,7 +185,7 @@ jobs:
             type=raw,value=${{ steps.vars.outputs.sha_short }}
 
       # The Dockerfile rebuilds everything from source, so the layer cache is what keeps
-      # that from being slow. type=gha is scoped to this repository by Actions.
+      # that from being slow. Actions scopes type=gha to this repository.
       - name: Build and push
         id: push
         uses: docker/build-push-action@v7
