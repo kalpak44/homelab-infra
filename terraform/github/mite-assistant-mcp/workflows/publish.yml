@@ -14,7 +14,19 @@
 # `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
 name: Build, Publish, Deploy
 
+# This is also the check ai-pr-agent.yml gates on (PR_CHECK_WORKFLOW=publish.yml). It
+# refuses to merge without a green run, and it dispatches this workflow for a PR whose
+# head commit has no checks — so `workflow_dispatch` is load-bearing.
+#
+# A separate pr-check.yml used to hold that role, which made this the only managed repo
+# with two workflows where the other four have one. It was folded in here on 2026-09-08:
+# its two checks, `npm ci` and a no-push image build, are the steps below. A comment in it
+# claimed a branch ruleset required its `build` check; the repo has no ruleset and no
+# branch protection, so nothing but PR_CHECK_WORKFLOW ever depended on the file.
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -37,13 +49,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+
+      # Fails on a broken or inconsistent lockfile, which is the signal that matters most
+      # for a dependency bump. Not covered by the image build below: the Dockerfile runs
+      # `npm ci --omit=dev`, so a devDependency that cannot install would go unnoticed.
+      - name: Install from lockfile
+        run: npm ci
+
+      # Only the multi-arch build needs emulation, and a pull request builds one platform.
       - name: Set up QEMU
+        if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
+        # Skipped on a pull request. Dependabot-triggered runs get a read-only
+        # GITHUB_TOKEN, so this would fail on exactly the PRs the check exists for — and
+        # nothing is pushed from a pull request anyway.
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -67,8 +97,11 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          # A pull request still builds the image — a dependency the image can no longer
+          # install fails here — but nothing reaches the registry from an unmerged branch,
+          # and one platform keeps the check fast.
+          push: ${{ github.event_name != 'pull_request' }}
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64,linux/arm/v7' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -97,6 +130,7 @@ jobs:
     # both produce a real image at GITHUB_SHA, so both are worth deploying — the sha is
     # passed explicitly rather than looked up, which is what makes the dispatch case work.
     needs: docker
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

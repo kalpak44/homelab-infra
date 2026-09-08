@@ -3,7 +3,6 @@ locals {
   default_branch   = "main"
   agent_workflow   = ".github/workflows/ai-pr-agent.yml"
   publish_workflow = ".github/workflows/publish.yml"
-  check_workflow   = ".github/workflows/pr-check.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
 
@@ -63,7 +62,7 @@ resource "github_actions_variable" "deepseek_model" {
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
-  value         = "pr-check.yml"
+  value         = "publish.yml"
 }
 
 # --- The agent itself ---------------------------------------------------------------
@@ -111,16 +110,6 @@ resource "github_repository_file" "publish_workflow" {
   depends_on = [github_actions_secret.homelab_dispatch]
 }
 
-resource "github_repository_file" "check_workflow" {
-  repository          = github_repository.this.name
-  branch              = local.default_branch
-  file                = local.check_workflow
-  content             = file("${path.module}/workflows/pr-check.yml")
-  commit_message      = "chore: sync PR check workflow from homelab-infra"
-  commit_author       = "homelab-infra"
-  commit_email        = "homelab-infra@users.noreply.github.com"
-  overwrite_on_create = true
-}
 
 resource "github_repository_file" "dependabot" {
   repository          = github_repository.this.name
@@ -131,4 +120,17 @@ resource "github_repository_file" "dependabot" {
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+}
+
+# pr-check.yml was folded into publish.yml on 2026-09-08 — see the note in that file.
+# `removed` with `destroy = true` is deliberate: the file must actually go, because two
+# workflows both triggering on pull_request would run the same checks twice on every
+# dependency PR. PR_CHECK_WORKFLOW above is moved to publish.yml in the same apply, so the
+# agent is never left naming a workflow that does not exist.
+removed {
+  from = github_repository_file.check_workflow
+
+  lifecycle {
+    destroy = true
+  }
 }
