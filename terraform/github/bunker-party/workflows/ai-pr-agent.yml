@@ -5,9 +5,15 @@
 # two passes over this repository.
 #
 #   Pass 1 — dependency PRs. Walks the open bot-authored dependency PRs oldest first
-#            (Renovate opens them here), reviews them, fixes upgrade breakage on the
-#            same PR branch when it is safe to do so, waits for CI on the final head
-#            commit, and merges only when the final state is clearly safe.
+#            (Dependabot opens them, from .github/dependabot.yml), reviews them, fixes
+#            upgrade breakage on the same PR branch when it is safe to do so, waits for
+#            CI on the final head commit, and merges only when the final state is
+#            clearly safe.
+#
+# A merge here deploys. The squash lands on main as an ordinary push, which runs
+# build.yml, which publishes the image to GHCR and then dispatches homelab-infra's
+# gitops-bump-images for the cluster. That chain depends entirely on the token in `env`
+# below being a PAT; see the comment there before changing it.
 #
 #   Pass 2 — SonarCloud. Reads the project's quality gate and open issues, and fixes
 #            what it can fix without changing behavior — on the head branch of the PR
@@ -46,14 +52,32 @@ jobs:
 
     env:
       # gh is preinstalled on GitHub-hosted runners; this authenticates it.
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A PAT, not GITHUB_TOKEN, and that is what makes a merge here reach the cluster.
+      # GitHub starts no push-triggered run for a push made with GITHUB_TOKEN, so a merge
+      # this agent made would land on main and stop dead: no build, no image, no deploy.
+      # kalpak44 was measured doing exactly that on 2026-09-08 — PRs #33, #34, #35 and
+      # #37 merged, and not one of their merge commits appears among its publish runs.
+      # This repo had not merged a bot PR yet, so it never surfaced here; the bug was
+      # latent, not absent.
+      #
+      # A dispatch step instead of a PAT looks equivalent and is not: gitops/Justfile
+      # finds the image to deploy with `--event push --branch main`, so a
+      # workflow_dispatch publish is invisible to the nightly sweep, which would then
+      # resolve an older push run and rewrite the cluster backwards.
+      #
+      # The cost is real: this token reaches every repo the owner has, where GITHUB_TOKEN
+      # reaches only this one. Same trade kalpak44 and proklinator-app already make.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
 
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
 
       REPO: ${{ github.repository }}
 
-      # Optional workflow to trigger when a PR head commit has no checks.
+      # Workflow to trigger when a PR head commit has no checks. Now a fallback rather
+      # than the normal path: with the PAT above, a fix the agent pushes to a PR branch
+      # raises its own pull_request checks. It still matters for a PR opened before the
+      # check existed, which gets none retroactively.
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
 
       # SonarCloud coordinates for pass 2. The project is private on SonarCloud, so
@@ -262,25 +286,22 @@ jobs:
           1a. WHICH PRS ARE IN SCOPE FOR PASS 1
           ----------------------------------------------------------------------
 
-          Dependency updates in this repository come from Renovate, which runs
-          self-hosted from .github/workflows/renovate.yml.
+          Dependency updates in this repository come from Dependabot, configured in
+          .github/dependabot.yml. It watches pom.xml and proposes maven updates only.
 
-          Renovate is authenticated with a personal access token, so the PRs it opens
-          may be attributed to the token owner and may therefore report is_bot false
-          even though no human wrote them.
+          Match on the bot flag in GitHub's metadata, NOT on the login. `gh pr list`
+          reports Dependabot as `app/dependabot`, not `dependabot[bot]`, so a login
+          comparison silently matches nothing and the run ends having done no work.
 
-          Treat a PR as an automated dependency PR when EITHER of these holds:
+          Treat a PR as an automated dependency PR only when GitHub metadata says its
+          author is a bot AND the diff touches only dependency coordinates (pom.xml)
+          plus whatever the upgrade itself requires.
 
-            - GitHub metadata says the author is a bot (for example a login such as
-              `app/dependabot` or `app/renovate`), OR
-            - the head branch name begins with `renovate/`, and the PR body/title is a
-              dependency update, and the diff touches only dependency coordinates
-              (pom.xml, renovate.json, lockfiles) plus whatever the upgrade requires.
+          A PR that does not satisfy both is a human PR. NEVER operate on a human PR.
 
-          A PR that satisfies neither is a human PR. NEVER operate on a human PR.
-
-          If a branch merely looks like `renovate/` but the diff is not a dependency
-          update, treat it as out of scope and leave it alone.
+          Renovate used to open the PRs here and no longer runs; its workflow and
+          renovate.json are gone. A stale `renovate/` branch is therefore not in scope —
+          leave it alone.
 
           Handle at most 10 PRs in one run.
 

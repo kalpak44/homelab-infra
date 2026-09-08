@@ -49,6 +49,17 @@ bumped here instead, and Dependabot cannot watch them here either — it only sc
 repo they are ordinary files under `terraform/`. The mirror layout is deliberate: `<repo>/workflows/` maps to
 `.github/workflows/`, `<repo>/dependabot.yml` to `.github/dependabot.yml`.
 
+**Exception — `bunker-party` centralizes all of `.github/` too, and uses Dependabot because Renovate cost a
+credential.** Its `ai-pr-agent.yml`, `build.yml` and `dependabot.yml` are all `github_repository_file`s. `build.yml`
+is one job that formats, builds, tests and runs SonarCloud with `-Dsonar.qualitygate.wait=true`, publishes
+`ghcr.io/kalpak44/bunker-party` only when the ref is main, and then dispatches `gitops-bump-images` for
+**`bunker-game-app`** — a gitops dir name that is not the repo name, which is why the workflow and `gitops/Justfile`'s
+`apps` list belong in one repo. The deploy job keys off the build job's `tag` output rather than repeating the
+event/ref test, so the publish and deploy conditions cannot drift apart. Self-hosted Renovate was removed rather than
+repaired: its `RENOVATE_TOKEN` had expired, and every nightly run extracted ten pending updates and then 403'd pushing
+each branch while still reporting success — no PR since February. Dependabot needs no token, so the fix removed a
+credential instead of adding one.
+
 **Exception — `proklinator-app` gets a second agent.** `workflows/ai-pr-review.yml` handles the PRs `ai-pr-agent.yml`
 refuses: human-authored ones. It is `pull_request_target`-driven, so its allowlist gate (`PR_REVIEW_ALLOWLIST`, an
 Actions variable) runs in its own job with no PR code on disk — never move a checkout above it. The allowlist matches

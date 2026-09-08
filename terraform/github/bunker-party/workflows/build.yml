@@ -1,0 +1,142 @@
+# Managed by homelab-infra — terraform/github/bunker-party/workflows/build.yml
+# Edits made here in the target repo are overwritten by `just deploy github bunker-party`.
+#
+# One pipeline for every trigger: format, build, test, coverage, SonarCloud. The GHCR
+# publish and the cluster deploy are the only conditional parts — they run when the ref
+# being built is main and never on a pull request, so a dependency bump is fully
+# validated without pushing an image.
+#
+# This is also the workflow the AI PR agent gates on (PR_CHECK_WORKFLOW=build.yml). It
+# refuses to merge without a green check here, and it can dispatch this workflow on a PR
+# branch whose head commit has no checks — hence workflow_dispatch.
+#
+# Renaming this file means renaming it in homelab-infra too, in three places: the `apps`
+# list in gitops/Justfile, which finds the last successful run here to read a tag from,
+# the PR_CHECK_WORKFLOW variable in terraform/github/bunker-party/main.tf, and the
+# `build_workflow` local in that same file, which is what pushes this copy.
+name: Build, Test, SonarCloud, Publish
+
+on:
+  pull_request:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+# Superseding a pull request's run is free. Superseding a push to main is not: that run
+# ends in a cluster deployment, and cancelling it halfway leaves the image published but
+# the manifest still pointing at the previous tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege by default; the job that needs to write a package widens it itself.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+
+    env:
+      # Job-level so the `if:` conditions below can test them. Secrets are not exposed
+      # to pull_request runs from a fork, so on those the analysis step skips itself
+      # rather than failing the check.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    outputs:
+      tag: ${{ steps.vars.outputs.sha_short }}
+
+    steps:
+      - name: Checkout source
+        # Full history: Sonar needs it for blame and new-code detection.
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Check formatting
+        run: mvn -B fmt:check
+
+      - name: Build, test, coverage
+        run: mvn -B verify
+
+      - name: SonarCloud analysis
+        # qualitygate.wait makes the gate an actual gate: a failing gate fails this
+        # check, so a PR cannot be merged past it.
+        if: ${{ env.SONAR_TOKEN != '' }}
+        run: |
+          mvn -B sonar:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.organization=kalpak44 \
+            -Dsonar.projectKey=bunker-party \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+            -Dsonar.qualitygate.wait=true
+
+      - name: Log in to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Pinned to the commit behind v3 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract short SHA (no prefix)
+        if: ${{ env.PUBLISH == 'true' }}
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push image to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Contexts go through env, never interpolated into the script body.
+        # The 7-char short SHA is the tag homelab-infra's `just bump-images` looks for
+        # when it points the cluster at a newly published image.
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
+        run: |
+          mvn -B package jib:build \
+            -Djib.to.image="$GHCR_IMAGE" \
+            -Djib.to.tags="latest,$IMAGE_TAG"
+
+  deploy:
+    name: Deploy to cluster
+    needs: build
+    # `tag` is set by a step that only runs when PUBLISH is true, so an empty tag means
+    # no image was pushed. Keying the deploy off the artifact rather than repeating the
+    # event/ref test means the two conditions cannot drift apart.
+    if: needs.build.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The image is in GHCR — point the cluster at it. Both inputs are required: this
+      # workflow's own run is still in_progress here, so homelab-infra's "last successful
+      # publish" query would resolve to the previous commit and deploy a stale image.
+      #
+      # `app` is the gitops directory name, which is not this repo's name — it is
+      # bunker-game-app. It must match the `apps` list in homelab-infra's gitops/Justfile,
+      # or the dispatch fails with "no app named ... is tracked".
+      #
+      # A PAT, not GITHUB_TOKEN: the job's own token is scoped to this repository and
+      # cannot dispatch a workflow in another one.
+      - name: Trigger cluster deploy
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          gh workflow run gitops-bump-images.yml \
+            --repo kalpak44/homelab-infra \
+            -f app=bunker-game-app \
+            -f sha="${GITHUB_SHA}"
+          echo "Dispatched \`gitops-bump-images\` for \`bunker-game-app\` @ \`${TAG}\`." >> "$GITHUB_STEP_SUMMARY"

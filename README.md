@@ -273,7 +273,7 @@ layers.
 
 | Repo                          | Terraform dir               | What it manages                                                                    |
 |-------------------------------|-----------------------------|-------------------------------------------------------------------------------------|
-| `kalpak44/bunker-party`       | `github/bunker-party`       | same, plus a second agent pass that fixes SonarCloud issues behaviour-preservingly; PR check is the repo's own `build.yml`, which also publishes `ghcr.io/kalpak44/bunker-party` |
+| `kalpak44/bunker-party`       | `github/bunker-party`       | squash-only merges, `DEEPSEEK_APIKEY`, and **every workflow the repo has**: the AI PR agent (with a second pass that fixes SonarCloud issues behaviour-preservingly), `build.yml` (its CI *and* its PR check, which publishes `ghcr.io/kalpak44/bunker-party` and dispatches **GitOps - Bump images** for `bunker-game-app` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
 | `kalpak44/code-viewer-bot`    | `github/code-viewer-bot`    | same as below, but no `pull_request` workflow - agent reviews and comments without merging |
 | `kalpak44/kalpak44`           | `github/kalpak44`           | squash-only merges, `DEEPSEEK_APIKEY`, and **every file the repo has under `.github/`**: the AI PR agent, `publish.yml` (its CI, which publishes `ghcr.io/kalpak44/kalpak44` and dispatches **GitOps - Bump images** for `personal-web-page` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
 | `kalpak44/kubectl-awscli`     | `github/kubectl-awscli`     | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
