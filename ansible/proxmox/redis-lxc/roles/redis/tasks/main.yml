@@ -1,9 +1,49 @@
 ---
-- name: Install Redis and Node.js
+# --- Repository -----------------------------------------------------------
+# Ubuntu noble's universe pocket caps redis-server at 7.0.15 and never moves off
+# it, so the official repo is the only route to a current Redis. Its packages
+# carry epoch 6 against Ubuntu's epoch 5, which is what makes them win the
+# version comparison — do not add an apt pin, there is nothing to break the tie.
+
+- name: Install prerequisites
   ansible.builtin.apt:
-    name: [redis-server, nodejs, npm]
+    name: [curl, gnupg]
     state: present
     update_cache: true
+
+- name: Add Redis GPG key
+  ansible.builtin.shell:
+    cmd: >
+      curl -fsSL https://packages.redis.io/gpg |
+      gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+    creates: /usr/share/keyrings/redis-archive-keyring.gpg
+
+- name: Add Redis apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg]
+      https://packages.redis.io/deb {{ ansible_distribution_release }} main
+    filename: redis
+    state: present
+
+# --- Packages -------------------------------------------------------------
+
+# `latest` rather than `present`, so a re-run picks up upstream releases; with
+# `present` the box would sit on whatever it first installed for ever.
+# force-confold keeps our redis.conf: the official package ships the same
+# conffile path, and dpkg would otherwise stop for an interactive prompt that
+# never gets answered on a CI run.
+- name: Install Redis
+  ansible.builtin.apt:
+    name: redis-server
+    state: latest
+    update_cache: true
+    dpkg_options: force-confold,force-confdef
+
+- name: Install Node.js
+  ansible.builtin.apt:
+    name: [nodejs, npm]
+    state: present
 
 - name: Set Redis password
   ansible.builtin.lineinfile:
@@ -12,6 +52,27 @@
     line: "requirepass {{ redis_password }}"
   notify: Restart Redis
   no_log: true
+
+# The official package's unit is Type=notify, while the redis.conf we carry over
+# from Ubuntu's package says `daemonize yes` and leaves `supervised` at its `no`
+# default. That combination starts the server, logs "Ready to accept
+# connections", and is then SIGTERMed by systemd for never sending readiness —
+# a start failure whose only clue is `result 'protocol'`, with a clean Redis log
+# beside it. Both lines are needed: daemonizing detaches the process systemd is
+# watching, and `supervised systemd` is what emits the notification.
+- name: Run Redis in the foreground under systemd
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^#?daemonize "
+    line: "daemonize no"
+  notify: Restart Redis
+
+- name: Let Redis signal readiness to systemd
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^#?supervised "
+    line: "supervised systemd"
+  notify: Restart Redis
 
 - name: Bind Redis to all interfaces
   ansible.builtin.lineinfile:

@@ -163,6 +163,8 @@ longer needs a manual unsealing via the UI each time.
 with password auth (scram-sha-256).
 
 **Redis** – Redis on `192.168.1.6:6379`, Commander UI at `http://redis.internal.pavel-usanli.online:8081`.
+Installed from `packages.redis.io`, not Ubuntu universe, which never moves off 7.0.15; `just configure
+redis-lxc` upgrades to the newest upstream release on every run.
 
 **RabbitMQ** – AMQP on `192.168.1.8:5672`. Management UI at `https://rabbitmq.internal.pavel-usanli.online`.
 
