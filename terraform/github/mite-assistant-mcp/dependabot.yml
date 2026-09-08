@@ -54,3 +54,13 @@ updates:
       time: "05:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 10
+    ignore:
+      # Node 20 is pinned in three places at once: the Dockerfile's `node:20-bookworm-slim`,
+      # pr-check.yml's `node-version: "20"`, and package.json's `engines: ">=20.0.0"`.
+      # Dependabot treats the whole tag as the version and proposed a jump to 26 within
+      # minutes of this file landing (PR #14 on 2026-09-08). Merging that ships an image
+      # built on Node 26 while the PR check still validates on 20, so the runtime that
+      # actually runs is never exercised — the same thing that happened on kalpak44, where
+      # the agent merged it. `engines` would not catch it either: `>=20.0.0` admits 26.
+      # Held here; the pin moves by hand, in all three places together.
+      - dependency-name: node
