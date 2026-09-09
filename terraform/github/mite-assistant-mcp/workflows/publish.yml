@@ -75,12 +75,20 @@ jobs:
       # between the push and the scan, and then the report would describe an image that is
       # not the one being deployed.
       digest: ${{ steps.push.outputs.digest }}
-      tag: ${{ steps.meta.outputs.version }}
+      # Derived here, not read from metadata-action's `version`: on main that output
+      # resolves to `latest`, so the scan report named a mutable tag and every run
+      # collided on the artifact name `image-scan-latest`. Measured on run 34326858891.
+      # Seven characters, matching the tag the image actually carries.
+      tag: ${{ steps.gate.outputs.tag }}
 
     steps:
       - name: Resolve the publish gate
         id: gate
-        run: echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+
+          echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         # Full history: Sonar needs it for blame and new-code detection.
