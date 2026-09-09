@@ -39,6 +39,11 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository }}
+  # Pinned rather than floating: an unpinned installer would change what the report says
+  # from one run to the next with no commit to attribute it to. Bumped by hand here, like
+  # the actions — Dependabot cannot see this file.
+  SYFT_VERSION: v1.51.1
+  GRYPE_VERSION: v0.118.0
 
 jobs:
   build:
@@ -66,6 +71,11 @@ jobs:
     # on the deployment job would let the publication and rollout conditions drift apart.
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
+      # The scan job addresses the image by digest, not by tag: a tag can be overwritten
+      # between the push and the scan, and then the report would describe an image that is
+      # not the one being deployed.
+      digest: ${{ steps.push.outputs.digest }}
+      tag: ${{ steps.meta.outputs.version }}
 
     steps:
       - name: Resolve the publish gate
@@ -206,14 +216,162 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Digest:** \`${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
 
+  scan:
+    name: Scan image
+    # Between publish and deploy so the report describes the exact image about to roll
+    # out. It is REPORT-ONLY and must stay that way: no --fail-on, no threshold, and the
+    # deploy job below is wired to ignore this job's result. The blocking security gate
+    # for this repo is Sonar in the job above; this is here to be read, not to stop a
+    # release, and turning it into a gate would deadlock on findings Debian has not
+    # packaged a fix for.
+    needs: build
+    # Only a published image can be pulled by digest. A pull request builds without
+    # pushing, so there is nothing in the registry to scan — the tradeoff is that the
+    # report arrives at deploy time rather than at review time.
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      # The package is private, so an anonymous pull fails. syft and grype both read
+      # ~/.docker/config.json, which this writes.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install syft and grype
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
+          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
+
+          syft version
+          grype version
+
+      # grype scans the SBOM rather than the image a second time, so the packages it
+      # matches against advisories are exactly the ones syft reported — two independent
+      # catalogings would let the report and the SBOM disagree.
+      #
+      # --platform is explicit because the digest is a manifest list of three platforms
+      # and the default would be whatever the runner happens to be. The report says which.
+      - name: Generate the SBOM and scan it
+        id: scan
+        run: |
+          set -euo pipefail
+
+          ref="${IMAGE_NAME}@${{ needs.build.outputs.digest }}"
+          echo "Scanning ${ref} (linux/amd64)"
+
+          syft --platform linux/amd64 "registry:${ref}" -o json > sbom.json
+          syft --platform linux/amd64 "registry:${ref}" -o spdx-json > sbom.spdx.json
+
+          grype "sbom:sbom.json" -o json > grype.json
+          grype "sbom:sbom.json" -o table > grype.txt
+
+          echo "packages=$(jq '.artifacts | length' sbom.json)" >> "$GITHUB_OUTPUT"
+
+      # Every count comes out of grype.json here rather than being parsed twice in the
+      # step below, so the totals in the summary and the table can never disagree.
+      - name: Report to the run summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ ! -f grype.json ]; then
+            echo "### Image scan — did not run" >> "$GITHUB_STEP_SUMMARY"
+            echo "syft or grype failed before producing a report; see the step log." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          jq '[.matches[]
+               | {id:       .vulnerability.id,
+                  severity: .vulnerability.severity,
+                  package:  .artifact.name,
+                  version:  .artifact.version,
+                  type:     .artifact.type,
+                  state:    (.vulnerability.fix.state // "unknown"),
+                  fixed_in: (.vulnerability.fix.versions // [])}]
+              | unique_by([.id, .package, .version])' grype.json > findings.json
+
+          count() { jq --arg s "$1" '[.[] | select(.severity == $s)] | length' findings.json; }
+          crit=$(count Critical); high=$(count High); med=$(count Medium)
+          low=$(count Low); neg=$(count Negligible); unk=$(count Unknown)
+          total=$(jq 'length' findings.json)
+          fixable=$(jq '[.[] | select(.state == "fixed" and (.fixed_in | length) > 0)] | length' findings.json)
+
+          {
+            echo "### Image scan — report only 🔍"
+            echo
+            echo "\`${IMAGE_NAME}:${{ needs.build.outputs.tag }}\` · \`linux/amd64\` ·"
+            echo "${{ steps.scan.outputs.packages }} packages · syft \`${SYFT_VERSION}\` · grype \`${GRYPE_VERSION}\`"
+            echo
+            echo "| Critical | High | Medium | Low | Negligible | Unknown | Total |"
+            echo "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+            echo "| ${crit} | ${high} | ${med} | ${low} | ${neg} | ${unk} | ${total} |"
+            echo
+            echo "${fixable} of ${total} have a fixed version published upstream. This job never"
+            echo "blocks the rollout — it is a report."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Only Critical and High are tabulated. A Debian base image routinely carries
+          # hundreds of Low/Negligible findings and a summary listing them all is one
+          # nobody reads, which is the same as no report at all.
+          if [ "$((crit + high))" -gt 0 ]; then
+            {
+              echo "#### Critical and High"
+              echo
+              echo "| Severity | Package | Version | Vulnerability | Fix |"
+              echo "| :--- | :--- | :--- | :--- | :--- |"
+              jq -r '[.[] | select(.severity == "Critical" or .severity == "High")]
+                     | sort_by(.severity, .package, .id)[]
+                     | "| \(.severity) | \(.package) | \(.version) | \(.id) | "
+                       + (if .state == "fixed" and (.fixed_in | length) > 0
+                          then (.fixed_in | join(", "))
+                          else "_none upstream_" end)
+                       + " |"' findings.json
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No Critical or High findings." >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The summary is truncated at 1 MB and is not machine-readable. The artifact is what
+      # a later triage actually needs, and the SPDX copy is the interchange format.
+      - name: Upload the SBOM and scan
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-scan-${{ needs.build.outputs.tag }}
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            sbom.json
+            sbom.spdx.json
+            grype.json
+            grype.txt
+
   deploy:
     name: Deploy to cluster
     # Gated on the image existing. `build` publishes on a push to main and on a dispatch
     # of main. Both produce a real image at GITHUB_SHA, so both are worth deploying —
     # the sha is passed explicitly rather than looked up, which is what makes the dispatch
     # case work.
-    needs: build
-    if: needs.build.outputs.publish == 'true'
+    # `needs` the scan only for ordering, so the report is in the summary before the
+    # rollout starts. `always()` plus an explicit build check is what keeps it ordering
+    # and nothing more: a scanner outage, a registry timeout or a findings table nobody
+    # likes must not strand a published image, while a failed build still blocks.
+    needs: [build, scan]
+    if: always() && needs.build.result == 'success' && needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
