@@ -88,35 +88,54 @@ repaired: its `RENOVATE_TOKEN` had expired, and every nightly run extracted ten 
 each branch while still reporting success — no PR since February. Dependabot needs no token, so the fix removed a
 credential instead of adding one.
 
-**`proklinator-app` centralizes all of `.github/` as well.** Its three agents, `publish.yml` and `dependabot.yml` are
-all `github_repository_file`s. `publish.yml` is its CI, its `PR_CHECK_WORKFLOW` and its deploy trigger in one: it
-verifies the site, builds **two** images from the same commit (`proklinator-app` and `proklinator-api`, same short-SHA
-tag) and dispatches `gitops-bump-images` for `proklinator`. Adding a third image means adding it to
-`gitops/Justfile`'s `apps` list too, or its Deployment sits on an older tag. Its `dependabot.yml` keeps the site and
-the API in separate npm entries with separate groups on purpose — one lockfile each, one image each, so a failure is
-attributable. `node` is held in the docker entry because Node 24 is pinned in six places at once: both Dockerfiles,
-`publish.yml`'s verify job and all three agents. Dependabot runs daily at 05:00, an hour before the sweep.
+**`proklinator-app` centralizes all of `.github/` as well, and it has exactly three workflows.** `publish.yml`,
+`ai-pr-agent.yml` and `ai-issue-resolver-agent.yml` are all `github_repository_file`s, as is `dependabot.yml`.
+`publish.yml` is its CI, its `PR_CHECK_WORKFLOW` and its deploy trigger in one: verify → image → scan → deploy, building
+**two** images from the same commit (`proklinator-app` and `proklinator-api`, same short-SHA tag) and dispatching
+`gitops-bump-images` for `proklinator`. Adding a third image means adding it to `gitops/Justfile`'s `apps` list too, or
+its Deployment sits on an older tag. Its `dependabot.yml` keeps the site and the API in separate npm entries with
+separate groups on purpose — one lockfile each, one image each, so a failure is attributable. Dependabot proposes at
+05:00 `Europe/Sofia` against the sweep's fixed 04:00 UTC, for the reason given above. `node` is held in the docker entry
+because Node 24 is pinned in five places at once: both Dockerfiles, `publish.yml`'s verify job and both agents.
 
-**Exception — `proklinator-app` gets a second agent.** `workflows/ai-pr-review.yml` handles the PRs `ai-pr-agent.yml`
-refuses: human-authored ones. It is `pull_request_target`-driven, so its allowlist gate (`PR_REVIEW_ALLOWLIST`, an
-Actions variable) runs in its own job with no PR code on disk — never move a checkout above it. The allowlist matches
-`.author.login` from the API, never git author name/email, which are unauthenticated free text. It never writes to the
-PR branch. `ALLOW_MERGE` is computed in bash from build + Playwright QA + mergeability, so the prompt can refuse a merge
-but never grant one. It merges with `GH_ADMIN_TOKEN`, because a `GITHUB_TOKEN` push does not start `publish.yml`.
+**Its gate is `format:check`, `lint`, two vitest suites and two waited-on SonarCloud gates — all blocking, and formatting
+and lint used to be `continue-on-error`.** Vitest, jsdom, Testing Library and supertest were added to the repo itself
+(not Terraform-managed: Terraform owns only `.github/`, and Dependabot has to be able to bump them). Two suites and two
+Sonar projects rather than one of each, because the site and the API are separate lockfiles and separate images:
+`proklinator-app` analyses `src/` against `coverage/site/lcov.info`, `proklinator-app-api` analyses `backend/src/`
+against `coverage/api/lcov.info`, and a failure names which half broke. Both scanners run in the same workspace, so each
+needs its own `sonar.working.directory`. Thresholds live in `vitest.site.config.js` and `vitest.api.config.js`, never in
+a CI step, so a step deleted from the workflow cannot silently disable them. `backend/src/app.js` is held at 100% by a
+per-file threshold — verified to fail by raising one — while `server.js` sits at 0: it binds a port at module scope, so
+v8 cannot see it and `test/api/server.test.js` spawns it as a real process instead. Leaving it in the report at 0 rather
+than excluding it is deliberate; an exclusion is the same move as lowering a threshold.
 
-**Exception — `proklinator-app` closes a loop.** `workflows/ai-issue-agent.yml` implements an issue labelled `ai:ready`
-and opens a PR; `ai-pr-review.yml` reviews it and either merges or hands it back. **The issue is the state machine**
-(`ai:*` labels), the PR is scratch space, and the round number is *derived* by counting `CHANGES_REQUESTED` reviews —
-never stored, so it cannot drift. Three constraints hold the design together and must not be relaxed:
+**Extracting `backend/src/app.js` was a precondition for testing the API, not a tidy-up.** `server.js` called `listen()`
+at module scope, so importing it bound a port and read the environment — no test could reach the catalog validation or
+the checkout session builder, which is where every price the buyer is charged is resolved. The app now takes its Stripe
+client and catalog as injectable parameters defaulting to the real ones.
 
-- **The implementer pushes and opens PRs with `GH_ADMIN_TOKEN`.** A PR opened with `GITHUB_TOKEN` triggers no workflow
-  runs at all, so neither the reviewer nor the repo's own `pull_request` check would ever fire. It also makes the author
-  a human account, which is why `ai-pr-agent.yml`'s bot sweep leaves these PRs alone with no change to that file.
-- **The reviewer hands back by `workflow_dispatch`, not by event.** Its review is posted with `GITHUB_TOKEN`, so a
-  `pull_request_review` trigger would never fire. That hand-back step must never be `if: always()` — on a crashed
-  review the previous `CHANGES_REQUESTED` is still the latest, `ROUND` does not increase, and the cap can never stop it.
-- **`AI_MAX_REVIEW_ROUNDS` is enforced independently in both workflows.** Each round is two model runs plus two browser
-  QA passes.
+**Exception — `proklinator-app` resolves issues end to end in one workflow.** `ai-issue-resolver-agent.yml` implements
+an issue labelled `ai:ready`, drives the built app in a browser, opens a pull request, waits for `publish.yml` and
+merges it. **The issue is the state machine** (`ai:*` labels), the pull request is scratch space, and the fix-round
+number is *derived* by counting the branch's failed check runs — never stored, so it cannot drift. A separate
+`ai-pr-review.yml` used to do the merging half; folding it in removed a second `pull_request_target` workflow and the
+review ping-pong between them. Five constraints hold the design together and must not be relaxed:
+
+- **The merge is computed in bash, in the `land` job, and no model runs there.** Browser QA in `work` and the check
+  conclusions in `land` are both evaluated before anything merges. The model implements and repairs; it has no path to
+  a merge those did not allow.
+- **`land` re-reads the head SHA and refuses if it moved during the wait.** Otherwise a push landing mid-wait merges on
+  a green that belongs to an older commit.
+- **The resolver pushes, opens and merges with `GH_ADMIN_TOKEN`.** A pull request opened with `GITHUB_TOKEN` triggers no
+  workflow runs at all, so it would never get the check it is waiting for, and a merge made with it starts nothing on
+  main — the images would never publish. It also makes the author a human account, which is why `ai-pr-agent.yml`'s bot
+  sweep leaves these pull requests alone with no change to that file. Issue labels and comments still go through
+  `GITHUB_TOKEN`; the PAT is read-only on issues.
+- **Browser QA blocks in `work`, before `land` is reached.** CI does not run a browser, so a change that builds and is
+  broken on screen would otherwise merge green. A blocking verdict fails the job, which skips `land` outright.
+- **`AI_MAX_FIX_ROUNDS` is enforced in both jobs.** `plan` refuses on the way in and `land` refuses to dispatch past it,
+  so neither half can run away alone. Each round is a model run plus a browser QA pass.
 
 **Exception — the container-image repos.** `kubectl-awscli` and `postgres-awscli` get `workflows/release.yml` instead
 of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow, and now one **job**, because every step needs

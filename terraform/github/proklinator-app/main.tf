@@ -2,8 +2,7 @@ locals {
   repository       = "proklinator-app"
   default_branch   = "main"
   agent_workflow   = ".github/workflows/ai-pr-agent.yml"
-  review_workflow  = ".github/workflows/ai-pr-review.yml"
-  issue_workflow   = ".github/workflows/ai-issue-agent.yml"
+  issue_workflow   = ".github/workflows/ai-issue-resolver-agent.yml"
   publish_workflow = ".github/workflows/publish.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
@@ -60,30 +59,91 @@ resource "github_actions_variable" "deepseek_model" {
   value         = var.deepseek_model
 }
 
-# Tells both agents which workflow to dispatch when a PR has no check runs at all.
+# Tells both agents which workflow to dispatch when a pull request has no check runs at
+# all, and which one the resolver waits on before it merges. publish.yml is this repo's
+# single pipeline — one variable for both uses, because the merge gate and the publisher
+# are the same file and a second variable naming it would be a second thing that drifts.
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
   value         = "publish.yml"
 }
 
-# Who ai-pr-review.yml is allowed to act on. A variable rather than a secret on purpose:
-# the reviewer prints it in its skip reason, and a login is not a credential. The gate
-# fails closed on an empty value, so the reviewer stays inert until this is set.
+# Who may spend model budget by labelling an issue `ai:ready`. A variable rather than a
+# secret on purpose: the resolver prints it in its skip reason, and a login is not a
+# credential. The gate fails closed on an empty value, so the loop stays inert until this
+# is set.
 resource "github_actions_variable" "pr_review_allowlist" {
   repository    = github_repository.this.name
   variable_name = "PR_REVIEW_ALLOWLIST"
   value         = join(",", var.pr_review_allowlist)
 }
 
-# How many times the reviewer may send an agent-authored PR back before the loop stops
-# and hands the issue to a human. The two agents will otherwise ping-pong indefinitely:
-# each round is a full model run plus a browser QA pass, so an uncapped loop is a bill,
-# not a bug. Both workflows read it, and both enforce it independently.
-resource "github_actions_variable" "ai_max_review_rounds" {
+# How many failed check runs the resolver may try to repair before it stops and hands
+# the issue to a human. A change that will not go green would otherwise burn a model run
+# and a browser QA pass per attempt, for ever. The plan job enforces it on the way in and
+# the land job refuses to dispatch past it, so neither half can run away on its own.
+resource "github_actions_variable" "ai_max_fix_rounds" {
   repository    = github_repository.this.name
-  variable_name = "AI_MAX_REVIEW_ROUNDS"
-  value         = tostring(var.ai_max_review_rounds)
+  variable_name = "AI_MAX_FIX_ROUNDS"
+  value         = tostring(var.ai_max_fix_rounds)
+}
+
+# AI_MAX_REVIEW_ROUNDS went with ai-pr-review.yml. `destroy = true` so it actually leaves
+# the repository: a stale Actions variable reads as configuration nothing consults.
+removed {
+  from = github_actions_variable.ai_max_review_rounds
+
+  lifecycle {
+    destroy = true
+  }
+}
+
+# --- SonarCloud ---------------------------------------------------------------------
+# Two projects, one per package, because the site and the API are separate lockfiles and
+# separate images and a gate failure has to be attributable to one of them. Both are
+# waited on in publish.yml, so either one failing fails the check the agents refuse to
+# merge without.
+#
+# `count` guards the value rather than the resource: an apply with SONAR_TOKEN unset in
+# the environment would otherwise overwrite the stored secret with an empty string, and
+# publish.yml's `SONAR_TOKEN != ''` guard would then skip the analysis while the check
+# still went green. Deploying this repo without the variable leaves what is there alone.
+resource "github_actions_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository  = github_repository.this.name
+  secret_name = "SONAR_TOKEN"
+  value       = var.sonar_token
+}
+
+# The same key in the second store, for the same reason DEEPSEEK_APIKEY is in both:
+# GitHub withholds Actions secrets from Dependabot-triggered runs, so on exactly the PRs
+# the agent is meant to merge the guard sees an empty token and skips the analysis.
+resource "github_dependabot_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository      = github_repository.this.name
+  secret_name     = "SONAR_TOKEN"
+  plaintext_value = var.sonar_token
+}
+
+resource "github_actions_variable" "sonar_organization" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_ORGANIZATION"
+  value         = var.sonar_organization
+}
+
+resource "github_actions_variable" "sonar_project_key_site" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEY_SITE"
+  value         = var.sonar_project_key_site
+}
+
+resource "github_actions_variable" "sonar_project_key_api" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEY_API"
+  value         = var.sonar_project_key_api
 }
 
 # --- Cluster deploy trigger ---------------------------------------------------------
@@ -99,11 +159,11 @@ resource "github_actions_secret" "homelab_dispatch" {
 }
 
 # --- The agents themselves ----------------------------------------------------------
-# Two, with a clean split of ownership. ai-pr-agent sweeps bot dependency PRs daily and
-# may push compatibility fixes to them. ai-pr-review reacts to a pull_request_target from
-# an allowlisted human, never writes to their branch, and merges only behind a merge gate
-# the workflow computes in bash. Each one refuses PRs belonging to the other, so they can
-# never fight over the same branch.
+# Two, with a clean split of ownership by branch. ai-pr-agent sweeps bot dependency PRs
+# daily and may push compatibility fixes to them. ai-issue-resolver-agent implements an
+# `ai:ready` issue on an `ai/issue-*` branch and merges it once the check run is green.
+# The resolver refuses any branch it did not create and the sweep only ever touches
+# bot-authored pull requests, so they cannot fight over one branch.
 
 resource "github_repository_file" "agent_workflow" {
   repository          = github_repository.this.name
@@ -116,26 +176,33 @@ resource "github_repository_file" "agent_workflow" {
   overwrite_on_create = true
 }
 
-resource "github_repository_file" "review_workflow" {
-  repository          = github_repository.this.name
-  branch              = local.default_branch
-  file                = local.review_workflow
-  content             = file("${path.module}/workflows/ai-pr-review.yml")
-  commit_message      = "chore: sync AI PR review workflow from homelab-infra"
-  commit_author       = "homelab-infra"
-  commit_email        = "homelab-infra@users.noreply.github.com"
-  overwrite_on_create = true
-}
-
 resource "github_repository_file" "issue_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
   file                = local.issue_workflow
-  content             = file("${path.module}/workflows/ai-issue-agent.yml")
-  commit_message      = "chore: sync AI issue agent workflow from homelab-infra"
+  content             = file("${path.module}/workflows/ai-issue-resolver-agent.yml")
+  commit_message      = "chore: sync AI issue resolver workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+
+  # It merges with this, and a merge made with GITHUB_TOKEN starts no run on main.
+  depends_on = [github_actions_secret.homelab_dispatch]
+}
+
+# ai-pr-review.yml is gone and its work is folded into the resolver. `destroy = true` is
+# deliberate: the file must actually leave the repository, because it triggers on
+# `pull_request_target` and would keep reviewing and merging on its own otherwise.
+#
+# ai-issue-agent.yml is the resolver's old name. `file` forces replacement, so Terraform
+# deletes the old path and writes the new one in the same apply — but only if the old
+# resource is removed from state rather than renamed, hence this block.
+removed {
+  from = github_repository_file.review_workflow
+
+  lifecycle {
+    destroy = true
+  }
 }
 
 # --- The repo's CI, which is also its PR check and its deploy trigger ---------------

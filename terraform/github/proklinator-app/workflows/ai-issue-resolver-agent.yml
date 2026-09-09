@@ -1,0 +1,1687 @@
+# Managed by homelab-infra — terraform/github/proklinator-app/workflows/ai-issue-resolver-agent.yml
+# Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
+#
+# The feature loop. An issue you label `ai:ready` becomes a merged pull request without
+# anyone in between:
+#
+#   issue labelled ai:ready
+#        │
+#        ▼
+#   plan ── claim it ──> work ── implement, run the gate, drive it in a browser ──> PR
+#                                                                                    │
+#                                                                    land ── wait for CI
+#                                                                         │          │
+#                                                              green ─────┘          └───── red
+#                                                                │                          │
+#                                                          squash merge              dispatch a fix
+#                                                          issue closes              round, or block
+#
+# STATE LIVES ON THE ISSUE. The `ai:*` labels are the loop's state machine and they are
+# what a human reads to know where something is. The pull request is scratch space. The
+# fix-round number is not stored anywhere: it is counted from the failed check runs on
+# the branch, so there is no marker that can drift out of sync with reality.
+#
+# THE MERGE IS DECIDED IN BASH, NEVER BY THE MODEL. Browser QA in `work` and the check
+# conclusions in `land` are evaluated before anything merges. The model implements and
+# repairs; it has no path to a merge that those did not allow.
+#
+# TOKENS. Two, and the split is forced, not stylistic:
+#   GITHUB_TOKEN   — issues: comment, label, close. The PAT is read-only on issues.
+#   GH_ADMIN_TOKEN — git push, `gh pr create` and the merge. A push or a merge made with
+#                    GITHUB_TOKEN starts no workflow run, so the pull request would get
+#                    no checks and the merge would never publish or deploy.
+#
+# The action versions here are bumped by hand. Dependabot does not scan a generated file.
+
+name: AI Issue Resolver Agent
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to implement"
+        required: false
+        type: string
+      pr:
+        description: "Pull request number to repair after a failed check run"
+        required: false
+        type: string
+      force:
+        description: "Ignore the fix-round cap — use after you have answered the blocker yourself"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+# Never cancel an implementation halfway — it would leave the issue claimed with no pull
+# request. Keyed per issue so unrelated work runs in parallel.
+concurrency:
+  group: ai-issue-resolver-${{ inputs.pr || inputs.issue || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------------
+  # Plan — decide the mode and whether to run at all. No repository code is executed here.
+  # ---------------------------------------------------------------------------------
+  plan:
+    name: Decide what to work on
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      mode: ${{ steps.plan.outputs.mode }}
+      issue: ${{ steps.plan.outputs.issue }}
+      pr: ${{ steps.plan.outputs.pr }}
+      branch: ${{ steps.plan.outputs.branch }}
+      round: ${{ steps.plan.outputs.round }}
+      max_rounds: ${{ steps.plan.outputs.max_rounds }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+
+      ALLOWLIST: ${{ vars.PR_REVIEW_ALLOWLIST }}
+      MAX_ROUNDS: ${{ vars.AI_MAX_FIX_ROUNDS || '3' }}
+      PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+
+      # Attacker-controlled text reaches this job through the event. Read it via env,
+      # never interpolated into the script body.
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_LABEL: ${{ github.event.label.name }}
+      EVENT_ISSUE: ${{ github.event.issue.number }}
+      EVENT_ACTOR: ${{ github.event.sender.login }}
+      INPUT_ISSUE: ${{ inputs.issue }}
+      INPUT_PR: ${{ inputs.pr }}
+      INPUT_FORCE: ${{ inputs.force }}
+
+    steps:
+      - name: Resolve the run mode and target
+        id: plan
+        run: |
+          set -euo pipefail
+
+          skip() {
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            { echo "## AI Issue Resolver — skipped"; echo; echo "$1"; } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          normalize() {
+            printf '%s' "$1" | tr 'A-Z' 'a-z' | tr ',;' '\n' | tr -s ' \t' '\n' | sed '/^$/d'
+          }
+          LIST="$(normalize "${ALLOWLIST:-}")"
+          [ -n "$LIST" ] || skip "\`PR_REVIEW_ALLOWLIST\` is empty — the agent loop is disabled. Fail-closed by design."
+          in_list() { printf '%s\n' "$LIST" | grep -Fxq "$(printf '%s' "$1" | tr 'A-Z' 'a-z')"; }
+
+          MODE=""
+          ISSUE=""
+          PR=""
+          BRANCH=""
+
+          case "$EVENT_NAME" in
+            issues)
+              # Only the ai:ready label starts work. Applying it needs write access to the
+              # repository, so it is already a privileged act; the allowlist check below
+              # narrows it further to the people trusted to spend model budget.
+              [ "$EVENT_LABEL" = "ai:ready" ] || skip "Label \`$EVENT_LABEL\` is not \`ai:ready\`."
+              in_list "$EVENT_ACTOR" || skip "\`$EVENT_ACTOR\` is not on \`PR_REVIEW_ALLOWLIST\`."
+              MODE=implement
+              ISSUE="$EVENT_ISSUE"
+              ;;
+            workflow_dispatch)
+              if [ -n "${INPUT_PR:-}" ]; then
+                MODE=fix
+                PR="$INPUT_PR"
+              elif [ -n "${INPUT_ISSUE:-}" ]; then
+                MODE=implement
+                ISSUE="$INPUT_ISSUE"
+              else
+                skip "Provide either an issue number or a pull request number."
+              fi
+              ;;
+            *)
+              skip "Unsupported event \`$EVENT_NAME\`."
+              ;;
+          esac
+
+          # ------------------------------------------------------------------- fix
+          if [ "$MODE" = "fix" ]; then
+            case "$PR" in ''|*[!0-9]*) skip "\`$PR\` is not a pull request number." ;; esac
+
+            gh pr view "$PR" --repo "$REPO" --json number,state,isDraft,headRefName,body > pr.json
+
+            STATE=$(jq -r '.state' pr.json)
+            BRANCH=$(jq -r '.headRefName' pr.json)
+
+            [ "$STATE" = "OPEN" ] || skip "PR #$PR is \`$STATE\`."
+
+            # Only ever push to a branch this agent created. A human's branch is not ours
+            # to rewrite, and nothing here reviews human pull requests.
+            case "$BRANCH" in
+              ai/issue-*) : ;;
+              *) skip "Branch \`$BRANCH\` was not created by this agent." ;;
+            esac
+
+            # The issue is recovered from the pull request body, which is the only place
+            # the link is recorded — and the same place GitHub reads it to close the issue
+            # on merge.
+            ISSUE=$(jq -r '.body' pr.json | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
+            [ -n "$ISSUE" ] || skip "PR #$PR does not reference an issue — refusing to guess which one it implements."
+
+            # The round number IS the count of check runs this branch has already failed.
+            # Nothing to store, nothing to drift, and it only ever goes up. Without the cap
+            # a pull request that cannot be made green burns a model run per attempt for ever.
+            ROUND=$(gh run list --repo "$REPO" --branch "$BRANCH" \
+                      --workflow "${PR_CHECK_WORKFLOW:-publish.yml}" --status completed \
+                      --json conclusion --limit 50 \
+                      --jq '[.[] | select(.conclusion != "success")] | length' 2>/dev/null || echo 0)
+
+            # `force` is the human override, and it is why the automatic path stays capped.
+            # `land` dispatches this workflow too, but it never passes force. A person
+            # ticking the box has, by definition, just looked at the thing.
+            if [ "$ROUND" -ge "$MAX_ROUNDS" ] && [ "${INPUT_FORCE:-false}" = "true" ]; then
+              echo "Round cap ($ROUND >= $MAX_ROUNDS) overridden by \`force\`."
+              gh issue edit "$ISSUE" --repo "$REPO" --remove-label "ai:blocked" || true
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "Continuing past the fix-round cap ($ROUND of \`$MAX_ROUNDS\`) — dispatched manually with \`force\`. The loop will still refuse to continue on its own, so each further round has to be started by hand." || true
+
+            elif [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+              gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:review" || true
+
+              CAP_NOTE="Stopping after $ROUND failed check runs on this branch — the cap is \`$MAX_ROUNDS\`.
+
+          A change that will not go green in $MAX_ROUNDS attempts usually needs a decision rather than another attempt. Issue #$ISSUE is now \`ai:blocked\`.
+
+          **To continue:** say what to do in a comment here or on issue #$ISSUE, then run **Actions → AI Issue Resolver Agent → Run workflow** with \`pr=$PR\` and **force** ticked. The agent reads this whole thread before it starts, so your answer is what it acts on. Without \`force\` it will stop here again — the round count only ever goes up."
+
+              gh pr comment "$PR" --repo "$REPO" --body "$CAP_NOTE" || true
+              # Also on the issue: that is where the state machine lives and where you look.
+              gh issue comment "$ISSUE" --repo "$REPO" --body "$CAP_NOTE" || true
+
+              skip "Fix-round cap reached for PR #$PR ($ROUND >= $MAX_ROUNDS) — issue #$ISSUE marked \`ai:blocked\`."
+            fi
+          fi
+
+          # --------------------------------------------------------------- implement
+          if [ "$MODE" = "implement" ]; then
+            case "$ISSUE" in ''|*[!0-9]*) skip "\`$ISSUE\` is not an issue number." ;; esac
+
+            gh issue view "$ISSUE" --repo "$REPO" --json number,state,labels,title > issue.json
+
+            STATE=$(jq -r '.state' issue.json)
+            [ "$STATE" = "OPEN" ] || skip "Issue #$ISSUE is \`$STATE\`."
+
+            HAS() { jq -e --arg l "$1" '.labels[] | select(.name == $l)' issue.json > /dev/null; }
+
+            # Re-applying `ai:ready` IS the unblock. Requiring `ai:blocked` to come off
+            # first was a trap: applying `ai:ready` while it was still on fired the event,
+            # got skipped here, and then removing `ai:blocked` fired nothing at all —
+            # the trigger is `types: [labeled]` — so the issue sat there looking ready and
+            # nothing was running. Whoever applies the label is allowlisted and has just
+            # read the hand-back, so treat it as the deliberate act it is.
+            if HAS "ai:blocked"; then
+              echo "Issue #$ISSUE was \`ai:blocked\`; \`ai:ready\` overrides it."
+              gh issue edit "$ISSUE" --repo "$REPO" --remove-label "ai:blocked" || true
+            fi
+
+            # The label swap below is the lock. If it is already claimed, another run owns
+            # it: two agents on one issue means two branches and a duplicate pull request.
+            if HAS "ai:in-progress"; then
+              skip "Issue #$ISSUE is already \`ai:in-progress\` — another run owns it."
+            fi
+
+            # An open pull request for this issue means it belongs in fix mode, not here.
+            EXISTING=$(gh pr list --repo "$REPO" --state open --head "ai/issue-$ISSUE" --json number -q '.[0].number' || true)
+            [ -z "$EXISTING" ] || skip "PR #$EXISTING already implements issue #$ISSUE — dispatch with \`pr=$EXISTING\` to repair it."
+
+            BRANCH="ai/issue-$ISSUE"
+            ROUND=0
+
+            # Claim it. Do this before any work so a concurrent run bounces off the check
+            # above rather than racing us.
+            gh issue edit "$ISSUE" --repo "$REPO" \
+              --add-label "ai:in-progress" --remove-label "ai:ready" || true
+          fi
+
+          {
+            echo "run=true"
+            echo "mode=$MODE"
+            echo "issue=$ISSUE"
+            echo "pr=$PR"
+            echo "branch=$BRANCH"
+            echo "round=$ROUND"
+            echo "max_rounds=$MAX_ROUNDS"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## AI Issue Resolver — $MODE"
+            echo
+            echo "| | |"
+            echo "| :--- | :--- |"
+            echo "| Issue | #$ISSUE |"
+            [ -n "$PR" ] && echo "| Pull request | #$PR |"
+            echo "| Branch | \`$BRANCH\` |"
+            echo "| Fix round | $ROUND of $MAX_ROUNDS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------
+  # Work — implement or repair, prove it in a browser, push, open the pull request.
+  # ---------------------------------------------------------------------------------
+  work:
+    name: Implement the change
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
+      head: ${{ steps.pr.outputs.head }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_PUSH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      # Stripe TEST keys, under the same variable names the API reads in the cluster,
+      # where the values come from Vault. Identical names, different values — that is
+      # what lets the API have no environment switch in it, and it lets this agent run a
+      # real checkout path rather than write one blind.
+      #
+      # Test keys only. Never the Vault values: this job runs model-written code.
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+
+      REPO: ${{ github.repository }}
+      MODE: ${{ needs.plan.outputs.mode }}
+      ISSUE: ${{ needs.plan.outputs.issue }}
+      PR: ${{ needs.plan.outputs.pr }}
+      BRANCH: ${{ needs.plan.outputs.branch }}
+      ROUND: ${{ needs.plan.outputs.round }}
+      MAX_ROUNDS: ${{ needs.plan.outputs.max_rounds }}
+      PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+
+      DEFAULT_BRANCH: main
+      JOB_TIMEOUT: "60"
+
+      APP_URL: http://127.0.0.1:4173/
+
+      # vite.config.js sends /api to API_PROXY_TARGET in both the dev and the preview
+      # server, defaulting to http://localhost:3000. The site polls /api/health on mount,
+      # so with nothing listening there every page load records a 502 and a console
+      # error — which the browser QA below correctly reads as a blocking failure. Pinned
+      # here so the port the API runs on and the port the proxy dials are one decision.
+      API_PROXY_TARGET: http://127.0.0.1:3000
+
+    steps:
+      # persist-credentials with the PAT: the push and the pull request both have to come
+      # from a real account or nothing downstream fires. Unlike a review of an outsider's
+      # branch, this job only ever runs code from main or from a branch this agent wrote.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          set -euo pipefail
+
+          git config user.name "kalpak44"
+          git config user.email "kalpak44@users.noreply.github.com"
+
+      - name: Checkout the working branch
+        run: |
+          set -euo pipefail
+
+          if [ "$MODE" = "fix" ]; then
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+          elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
+            # Implement mode, but the branch already exists: an earlier attempt got as far
+            # as pushing and its pull request was then closed (an open one would have been
+            # routed to fix mode by the plan job). Continue from it rather than branching
+            # fresh off main — a new branch from main would push as a non-fast-forward and
+            # strand the run, and it would throw away work whose history is on the issue.
+            echo "Branch \`$BRANCH\` already exists — continuing from the previous attempt."
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+          else
+            git checkout -b "$BRANCH"
+          fi
+
+          echo "On $(git branch --show-current) at $(git rev-parse --short HEAD)"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Install the site from its lockfile
+        run: npm ci
+
+      # The API is a separate package. Without this `npm run test:api` fails on a missing
+      # module and the agent debugs a problem that exists only inside this job.
+      - name: Install the API from its lockfile
+        run: npm ci --prefix backend --no-audit --no-fund
+
+      - name: Prepare the QA workspace
+        run: |
+          set -euo pipefail
+
+          QA_DIR="$RUNNER_TEMP/qa"
+          mkdir -p "$QA_DIR/screens"
+          : > "$QA_DIR/report.md"
+          echo "QA_DIR=$QA_DIR" >> "$GITHUB_ENV"
+
+      - name: Install Playwright
+        run: |
+          set -euo pipefail
+
+          PW_DIR="$RUNNER_TEMP/pw"
+          mkdir -p "$PW_DIR"
+          cd "$PW_DIR"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1 > /dev/null
+          "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
+          echo "PW_DIR=$PW_DIR" >> "$GITHUB_ENV"
+
+      # Codex runs every shell call in its own process group and SIGKILLs the whole group
+      # when the call returns, so a server the agent starts is dead by its next command —
+      # observed as `curl → preview 200` followed immediately by ERR_CONNECTION_REFUSED.
+      # `nohup` masks SIGHUP and nothing else; `setsid` puts the servers in a new session,
+      # out of the group being killed. A script rather than prose in the prompt, because
+      # the agent was otherwise re-deriving the kill/start/sleep dance on every probe.
+      - name: Write the serve helper
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/serve.sh" <<'SERVE'
+          #!/usr/bin/env bash
+          # Rebuild the site and (re)start it and the API. Returns only once both answer.
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          # Matched on the port and on the absolute script path, because `npm run preview`
+          # becomes `node .../vite preview --port 4173 ...` and a bare `node src/server.js`
+          # carries no directory — a pattern naming where it started matches neither.
+          pkill -f 'vite preview.*4173' 2>/dev/null || true
+          pkill -f "$GITHUB_WORKSPACE/backend/src/server.js" 2>/dev/null || true
+          sleep 0.5
+
+          if ! npm run build > "$RUNNER_TEMP/build.log" 2>&1; then
+            echo "build failed:" >&2
+            tail -30 "$RUNNER_TEMP/build.log" >&2
+            exit 1
+          fi
+
+          [ -d backend/node_modules ] || npm ci --prefix backend --no-audit --no-fund > /dev/null
+
+          # By absolute path from the workspace root rather than `cd backend` first: node
+          # resolves `express` from the script's own directory either way, and this puts a
+          # distinguishable path in the process list for the pkill above.
+          setsid --fork node "$GITHUB_WORKSPACE/backend/src/server.js" \
+            > "$RUNNER_TEMP/api.log" 2>&1 < /dev/null
+          setsid --fork npm run preview -- --port 4173 --strictPort --host 127.0.0.1 \
+            > "$RUNNER_TEMP/preview.log" 2>&1 < /dev/null
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "$APP_URL" -o /dev/null && curl -fsS "${APP_URL%/}/api/health" -o /dev/null; then
+              echo "app $APP_URL  api $(curl -sS "${APP_URL%/}/api/health")"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "servers did not come up:" >&2
+          tail -20 "$RUNNER_TEMP/preview.log" "$RUNNER_TEMP/api.log" >&2
+          exit 1
+          SERVE
+
+          chmod +x "$RUNNER_TEMP/serve.sh"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the required secret store?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 smoke.json
+            echo
+            exit 1
+          fi
+
+          rm -f smoke.json
+
+      # What earlier runs on this issue already tried. An issue reaches `ai:ready` a second
+      # time because the first attempt was handed back, and a run that cannot see why is
+      # condemned to make the same call again — the loop's most expensive failure mode.
+      - name: Collect prior attempts
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# Prior attempts on issue #$ISSUE"
+            echo
+
+            echo "## The issue and its full comment thread"
+            echo
+            gh issue view "$ISSUE" --repo "$REPO" --comments || echo "_could not read the issue_"
+            echo
+
+            # Every pull request ever opened from this branch, not just the open one: a
+            # closed one is usually an abandoned attempt, and its thread says why.
+            PRS=$(gh pr list --repo "$REPO" --state all --head "$BRANCH" --json number -q '.[].number' || true)
+
+            if [ -z "$PRS" ]; then
+              echo "## Pull requests from \`$BRANCH\`"
+              echo
+              echo "_none — no previous run got as far as opening one_"
+              echo
+            else
+              for N in $PRS; do
+                echo "## Pull request #$N"
+                echo
+                gh pr view "$N" --repo "$REPO" \
+                  --json number,title,state,isDraft,mergedAt,closedAt,body,comments \
+                  --template '{{.title}} — {{.state}}{{if .mergedAt}} (merged){{end}}
+
+          {{.body}}
+
+          ### Comments
+          {{range .comments}}- **{{.author.login}}**: {{.body}}
+          {{end}}' || echo "_could not read PR #$N_"
+                echo
+              done
+            fi
+          } > "$RUNNER_TEMP/history.md"
+
+          echo "Prior-attempt context: $(wc -l < "$RUNNER_TEMP/history.md") lines"
+
+      # In fix mode the whole point is the failure, so it is fetched rather than described.
+      # `--log-failed` prints only the steps that failed, which is what fits in a prompt.
+      - name: Collect the failing check run
+        if: needs.plan.outputs.mode == 'fix'
+        run: |
+          set -euo pipefail
+
+          HEAD_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)
+
+          RUN_ID=$(gh run list --repo "$REPO" --branch "$BRANCH" \
+                     --workflow "${PR_CHECK_WORKFLOW:-publish.yml}" --status completed \
+                     --json databaseId,headSha,conclusion --limit 20 \
+                     --jq "[.[] | select(.headSha == \"$HEAD_SHA\" and .conclusion != \"success\")] | .[0].databaseId" 2>/dev/null || true)
+
+          # Fall back to the newest failure on the branch: a run whose head has since moved
+          # is still the reason this repair was asked for.
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            RUN_ID=$(gh run list --repo "$REPO" --branch "$BRANCH" \
+                       --workflow "${PR_CHECK_WORKFLOW:-publish.yml}" --status completed \
+                       --json databaseId,conclusion --limit 20 \
+                       --jq '[.[] | select(.conclusion != "success")] | .[0].databaseId' 2>/dev/null || true)
+          fi
+
+          {
+            echo "# The check run you have to fix"
+            echo
+            if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+              echo "_No failed run could be found for this branch. Re-read the pull request"
+              echo "and the issue thread; the reason you were dispatched is in one of them._"
+            else
+              echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/$RUN_ID"
+              echo
+              gh run view "$RUN_ID" --repo "$REPO" || true
+              echo
+              echo '```'
+              gh run view "$RUN_ID" --repo "$REPO" --log-failed 2>/dev/null | tail -400 || echo "(no failed-step log available)"
+              echo '```'
+            fi
+          } > "$RUNNER_TEMP/ci-failure.md"
+
+          echo "Failure context: $(wc -l < "$RUNNER_TEMP/ci-failure.md") lines"
+
+      - name: Write the shared context
+        run: |
+          set -euo pipefail
+
+          # Everything both prompts need, in one place, so they differ only in what they
+          # instruct and not in what they know.
+          cat > "$RUNNER_TEMP/context.md" <<'CONTEXT'
+          ----------------------------------------------------------------------
+          ENVIRONMENT
+          ----------------------------------------------------------------------
+
+            REPO         the repository, owner/name
+            ISSUE        the issue number this work belongs to
+            PR           the pull request number (fix mode only; empty otherwise)
+            BRANCH       the branch you are on and the only branch you may push to
+            ROUND        which fix round this is
+            MAX_ROUNDS   the cap; exceeding it stops the loop
+            APP_URL      where the app serves once you build and start it
+            PW_DIR       a Playwright install with chromium already downloaded;
+                         write your browser scripts INTO this directory
+            RUNNER_TEMP/serve.sh
+                         rebuilds the site and (re)starts it and the API
+            RUNNER_TEMP/history.md
+                         what earlier runs on this issue already tried, and how each
+                         one ended — the issue thread plus every pull request ever
+                         opened from $BRANCH, including closed ones
+
+            STRIPE_SECRET_KEY       Stripe TEST secret key
+            STRIPE_PUBLISHABLE_KEY  Stripe TEST publishable key
+
+          `gh` and `git` are installed and authenticated. Dependencies are installed.
+
+          ----------------------------------------------------------------------
+          THE QUALITY GATE — RUN IT BEFORE YOU PUSH
+          ----------------------------------------------------------------------
+
+          .github/workflows/publish.yml is the check on your pull request, and it is
+          what decides whether this merges. Nothing merges without it green. It runs,
+          in this order:
+
+            npm ci
+            npm ci --prefix backend
+            npm run format:check
+            npm run lint
+            npm run test:site
+            npm run test:api
+            npm run build
+            SonarCloud on the site and on the API, both with the quality gate waited on
+            a docker build of docker/Dockerfile and docker/Dockerfile.api
+
+          Run everything up to the build locally before you push. Pushing and letting CI
+          find a formatting error costs a whole round.
+
+            npm run format
+            npm run lint:fix
+
+          are the sanctioned repairs for the first two.
+
+          Coverage thresholds live in vitest.site.config.js and vitest.api.config.js.
+          Vitest exits non-zero below them, so if your change adds code you must add
+          tests for it — under test/site for the site, test/api for the API.
+          backend/src/app.js is held at 100%: a new route or a new branch in it needs a
+          test in the same pull request.
+
+          The SonarCloud gates judge NEW code, which means your code. If one fails, read
+          the issues it raised and fix them.
+
+          The limit is absolute. Make the gate pass by fixing the code, NEVER by widening
+          .prettierignore, adding an eslint-disable, relaxing a rule in eslint.config.js,
+          lowering a coverage threshold, deleting or skipping a test, marking a Sonar
+          issue won't-fix, or excluding a path from analysis. Those turn a green check
+          into a lie, and the merge that follows one is worse than no merge.
+
+          ----------------------------------------------------------------------
+          THE API AND ITS CREDENTIALS
+          ----------------------------------------------------------------------
+
+          This repository ships two things. The site is a Vite + React app in `src/`. The
+          API is a small Express app in `backend/`, with its own `package.json`, served at
+          `/api` on the same host — Traefik routes `PathPrefix(/api)` to it. Routes are
+          declared with `/api` already on them; the prefix is not stripped.
+          `backend/src/app.js` builds the app and holds every route;
+          `backend/src/server.js` only reads the environment and listens.
+
+          The two STRIPE_ variables above are already in your environment. They are the
+          same names the API reads in production, where the values come from Vault. Only
+          the values differ. Here they are TEST keys, so you can run and exercise anything
+          that talks to Stripe without real money moving.
+
+          Read configuration from the environment with those exact names. Do not invent a
+          second name, do not add a `.env` file, do not read from a config file, and do not
+          pass a key as a Docker build arg — a build arg is recorded in the layer history
+          of a public image. Do not branch on NODE_ENV to choose a key: code that picks a
+          key by environment is code that can pick the wrong one.
+
+          You do not start the API yourself — `$RUNNER_TEMP/serve.sh` does, on the port the
+          preview server proxies `/api` to. Check it with:
+
+            curl -s "${APP_URL%/}/api/health"
+
+          `/api/health` reports `"stripe": "configured"` when both keys arrived. Use it to
+          prove your wiring works instead of assuming it does.
+
+          Absolute rules about these keys — breaking one is worse than not finishing:
+
+          - The SECRET key never leaves the server. Never in a response body, never in
+            anything the browser can fetch, never in `src/`, never in the built bundle.
+          - Never log either key, or any prefix or suffix of one, even at debug level.
+          - Never commit a key, or a real-looking key, anywhere — including tests,
+            fixtures, comments and documentation. Use an obvious placeholder.
+          - The publishable key is safe to send to the browser. That is the only one.
+
+          ----------------------------------------------------------------------
+          HOW TO RUN AND LOOK AT THE APP
+          ----------------------------------------------------------------------
+
+          One command rebuilds and restarts the site and the API, and returns only once
+          each answers:
+
+            "$RUNNER_TEMP/serve.sh"
+
+          Run it after every change you want to look at. Do NOT start servers yourself: each
+          of your shell calls runs in its own process group which is killed when the call
+          returns, so anything you background — with `nohup` or without — is gone by your
+          next command. `serve.sh` starts them with `setsid`, outside that group, so they
+          survive. If a page will not load, run `serve.sh` again rather than starting
+          `npm run preview` by hand; by hand it cannot work.
+
+          Then drive it with Playwright. Write your scripts INTO $PW_DIR — never inside the
+          repository, and never in $RUNNER_TEMP itself: node resolves `require('playwright')`
+          from the script's own directory, not from the working directory, so a script that
+          lives elsewhere fails with MODULE_NOT_FOUND no matter where you `cd` first.
+
+            cat > "$PW_DIR/look.js" <<'EOF'
+            const { chromium, devices } = require('playwright')
+            ;(async () => {
+              const browser = await chromium.launch()
+              for (const [name, opts] of [['desktop', { viewport: { width: 1440, height: 900 } }],
+                                          ['mobile', devices['iPhone 13']]]) {
+                const page = await (await browser.newContext(opts)).newPage()
+                page.on('console', m => m.type() === 'error' && console.log(name, 'CONSOLE', m.text()))
+                page.on('pageerror', e => console.log(name, 'PAGEERROR', e.message))
+                await page.goto(process.env.APP_URL)
+                await page.waitForTimeout(1500)
+                await page.screenshot({ path: `/tmp/${name}.png`, fullPage: true })
+              }
+              await browser.close()
+            })()
+            EOF
+
+            node "$PW_DIR/look.js"
+
+          This app's layout changes at 900px — a two-page spread above it, a single page
+          below. Anything you touch has to be checked on BOTH sides of that breakpoint.
+
+          After you push, this job runs its own browser QA on three viewports and treats an
+          uncaught exception, a console error, a failed request, a 4xx/5xx response or an
+          empty page as blocking. It runs whether you looked or not, so look first.
+
+          ----------------------------------------------------------------------
+          HARD RULES
+          ----------------------------------------------------------------------
+
+          - Push ONLY to $BRANCH. Never to main. Never force-push.
+          - NEVER merge anything. The merge is decided in bash after CI, not by you.
+          - Never edit anything under .github/ — those workflows are generated elsewhere
+            and your change would be silently overwritten.
+          - Never add a secret, token, key or credential to the repository.
+          - Never weaken, skip or delete a check, a test or a lint rule to make something
+            pass. Fix the cause.
+          - Never commit node_modules, dist, coverage, or editor files.
+          - The whole local gate MUST pass before you push. A failure CI could have caught
+            is a round spent for nothing.
+          - Keep the change as small as the task allows. No drive-by refactors, no
+            reformatting of files you did not otherwise need to touch, no new dependency
+            unless the task genuinely requires one.
+          - Match the conventions already in this repository — read neighbouring files
+            before writing new ones.
+          - If the task needs a product or architectural decision that is not already
+            settled in the issue, STOP and hand it back. Do not guess. Handing back is a
+            correct outcome; guessing is not.
+
+          ----------------------------------------------------------------------
+          HOW TO HAND SOMETHING BACK
+          ----------------------------------------------------------------------
+
+          When you cannot proceed, mark the issue blocked and say precisely why:
+
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" \
+              --remove-label "ai:in-progress"
+            gh issue comment "$ISSUE" --repo "$REPO" --body "<what is needed and why>"
+
+          Name the decision that has to be made and, where you can, list the options with
+          their consequences. "Blocked, needs clarification" is not good enough.
+
+          End the comment by telling the reader exactly how to restart you:
+
+            > Answer this in a comment on this issue, then apply `ai:ready`. That clears
+            > `ai:blocked` on its own. The next run reads this whole thread first, so it
+            > continues from your answer rather than starting over.
+
+          Write the question so that a one-line reply is enough to unblock it. You will be
+          the one reading that reply, and a question that invites an essay gets none.
+          CONTEXT
+
+      - name: Implement the issue
+        if: needs.plan.outputs.mode == 'implement'
+        run: |
+          set -euo pipefail
+
+          {
+            cat <<'AGENT_PROMPT'
+          You are the implementation agent for this repository. An issue has been triaged
+          as actionable and assigned to you. Your job is to implement it properly and open
+          a pull request that goes green and merges.
+
+          Nobody reviews your work by hand. What decides it is the quality gate described
+          below and a browser QA pass this job runs after you push. Write for those.
+
+          ----------------------------------------------------------------------
+          1. READ THE ISSUE, AND WHAT WAS ALREADY TRIED
+          ----------------------------------------------------------------------
+
+            cat "$RUNNER_TEMP/history.md"
+
+          That is the issue, its full comment thread, and every pull request ever opened
+          from this branch — including closed ones.
+
+          Work out what is actually being asked, including anything settled in the comment
+          thread rather than the description. Read the whole thread — a later comment often
+          overrides the original description.
+
+          Then work out whether you are the first attempt. If you are not, the history says
+          why the previous one stopped, and that is the most important thing you will read
+          today:
+
+            - If it was handed back as ambiguous and the thread has since answered the
+              question, build the answer that was given. Do not re-litigate it.
+            - If it was handed back as ambiguous and nothing has been answered, hand it back
+              again immediately, naming the same open question. Do not quietly pick one.
+            - If it was handed back for a technical reason, do not repeat the approach that
+              failed. Say in the pull request what you did differently.
+
+          Check what the branch already carries before you write anything:
+
+            git log --oneline main..HEAD
+
+          If it is not empty you are resuming an earlier attempt's branch, not starting
+          clean. Build on those commits. Do not revert them wholesale to start again, and
+          never force-push.
+
+          Decide, before writing anything, whether this is genuinely actionable:
+
+            - Is the desired outcome unambiguous?
+            - Would two reasonable engineers build the same thing from this description?
+            - Is any product decision left open — wording, visual design, pricing,
+              behaviour that is a matter of taste rather than correctness?
+            - Is it actually a bug report with no reproduction you can find?
+
+          If the task is ambiguous or needs a decision that is not yours to make, hand it
+          back now, before writing code. That is the cheapest possible moment to do it.
+
+          ----------------------------------------------------------------------
+          2. UNDERSTAND THE CODE BEFORE CHANGING IT
+          ----------------------------------------------------------------------
+
+          Read the repository README, then the files the change will touch and the files
+          around them. This app has a deliberate structure — components under
+          src/components, hooks and helpers under src/lib, content under src/data, the API
+          under backend/src, tests under test/site and test/api. Follow it.
+
+          Reproduce the problem first if this is a bug. A fix for a bug you never reproduced
+          is a guess.
+
+          ----------------------------------------------------------------------
+          3. IMPLEMENT, WITH THE TESTS THAT GO WITH IT
+          ----------------------------------------------------------------------
+
+          Make the smallest change that fully solves the issue, and write the tests for it
+          in the same pass. Coverage is a merge gate, so untested new code does not merge —
+          and a test written after the fact tends to assert what the code does rather than
+          what the issue asked for.
+
+          Then, without exception, run the whole local gate:
+
+            npm run format:check
+            npm run lint
+            npm run test:site
+            npm run test:api
+            "$RUNNER_TEMP/serve.sh"
+
+          `serve.sh` runs the build, so a non-zero exit from it is a build failure. Then look
+          at the app, on desktop and on mobile, as described above. Confirm with your own
+          eyes that the thing the issue asked for now happens, and that what worked before
+          still works.
+
+          Fix everything the gate reports, including in files you did not otherwise touch.
+          A red gate blocks this pull request and every later one behind it.
+
+          ----------------------------------------------------------------------
+          4. REVIEW YOUR OWN DIFF
+          ----------------------------------------------------------------------
+
+            git status
+            git diff
+
+          Check every hunk: is it necessary, is it minimal, is there debug code left, is
+          there stray formatting churn, did a temporary file get picked up. Remove anything
+          that is not part of the change.
+
+          ----------------------------------------------------------------------
+          5. COMMIT AND PUSH
+          ----------------------------------------------------------------------
+
+          Confirm the branch first — `git branch --show-current` must print $BRANCH.
+
+          Stage only the files you meant to change. Never `git add -A` blindly.
+
+            git add <files>
+            git commit -m "<concise imperative subject>"
+            git push -u origin "$BRANCH"
+
+          ----------------------------------------------------------------------
+          6. OPEN THE PULL REQUEST
+          ----------------------------------------------------------------------
+
+          The body MUST contain the literal line `Closes #<issue>` — that is how GitHub
+          closes the issue on merge, and it is the only record linking the two, so a later
+          fix round reads it back to find its way home.
+
+            gh pr create --repo "$REPO" --base main --head "$BRANCH" \
+              --title "<concise title>" \
+              --body "$(cat <<EOF
+          <what changed and why, in a short paragraph>
+
+          <how you verified it — what you ran, what you saw on desktop and on mobile>
+
+          Closes #$ISSUE
+          EOF
+          )"
+
+          Then move the issue to review:
+
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:review" --remove-label "ai:in-progress"
+
+          Do not merge, and do not comment that it is merged. This job checks your browser
+          QA and then waits for CI; the merge happens after both, in bash.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line:
+
+            #<issue> — <implemented and PR #n opened | handed back> — <what you did, or what decision is needed>
+          AGENT_PROMPT
+            cat "$RUNNER_TEMP/context.md"
+          } > "$RUNNER_TEMP/prompt.md"
+
+          # Teed, and the exit status kept, so the hand-back below can quote what actually
+          # went wrong instead of reporting a bare "produced no summary".
+          set +e
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$RUNNER_TEMP/summary.md" \
+            "$(cat "$RUNNER_TEMP/prompt.md")" 2>&1 | tee "$RUNNER_TEMP/agent.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/agent.status"
+          set -e
+
+          exit "$(cat "$RUNNER_TEMP/agent.status")"
+
+      - name: Repair the failing check run
+        if: needs.plan.outputs.mode == 'fix'
+        run: |
+          set -euo pipefail
+
+          {
+            cat <<'AGENT_PROMPT'
+          You are the implementation agent. The pull request you opened did not pass its
+          check run. Your job is to make it pass, on the same branch.
+
+          This is round $ROUND of at most $MAX_ROUNDS. Past the cap the loop stops and a
+          human is asked to step in, so treat this as a real attempt to converge rather
+          than a partial one.
+
+          ----------------------------------------------------------------------
+          1. READ WHAT FAILED
+          ----------------------------------------------------------------------
+
+            cat "$RUNNER_TEMP/ci-failure.md"
+
+          That is the failing run and the log of the steps that failed. Read the actual
+          error, not the job name. Then read what the loop has already said about this
+          work, so you can tell a new failure from one you have already tried to fix:
+
+            cat "$RUNNER_TEMP/history.md"
+
+          And the pull request as it stands:
+
+            gh pr view "$PR" --repo "$REPO" --comments
+            gh pr diff "$PR" --repo "$REPO"
+
+          ----------------------------------------------------------------------
+          2. FIND THE CAUSE BEFORE YOU CHANGE ANYTHING
+          ----------------------------------------------------------------------
+
+          Reproduce the failure locally first. Every gate in CI has a local equivalent:
+
+            npm run format:check
+            npm run lint
+            npm run test:site
+            npm run test:api
+            npm run build
+
+          A failure you cannot reproduce is one of three things, and they are not repaired
+          the same way:
+
+            - your code, which is yours to fix
+            - a SonarCloud finding, which is not reproducible locally: read the issues it
+              raised on the pull request and fix what they describe
+            - infrastructure — a runner outage, a registry timeout, a network failure.
+              That is not code and you cannot fix it on a branch. Say so and stop; do not
+              start changing code to appease it.
+
+          If the failure is that coverage fell below a threshold, the repair is a test, not
+          a lower threshold.
+
+          ----------------------------------------------------------------------
+          3. FIX, THEN VERIFY THE WHOLE GATE
+          ----------------------------------------------------------------------
+
+          Make the smallest change that fixes the cause. Then run the entire local gate
+          again, not just the part that failed — a fix that breaks something else spends
+          another round.
+
+            npm run format:check
+            npm run lint
+            npm run test:site
+            npm run test:api
+            "$RUNNER_TEMP/serve.sh"
+
+          and look at the app on desktop and mobile. If the failure was visual or
+          behavioural, reproduce it first and then confirm your fix removes it. Do not
+          claim a fix you have not observed working.
+
+          ----------------------------------------------------------------------
+          4. COMMIT AND PUSH
+          ----------------------------------------------------------------------
+
+          Confirm `git branch --show-current` prints $BRANCH, stage only what you intended,
+          then commit and push. A normal commit — never amend, never force-push.
+
+            git add <files>
+            git commit -m "<what you fixed>"
+            git push
+
+          Then leave one short comment on the pull request saying what failed and what you
+          changed. Do not merge: this job waits for the new check run and merges in bash if
+          it is green.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line:
+
+            #$PR — round $ROUND — <what failed> — <what you changed, or why it is not fixable here>
+          AGENT_PROMPT
+            cat "$RUNNER_TEMP/context.md"
+          } > "$RUNNER_TEMP/prompt.md"
+
+          set +e
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$RUNNER_TEMP/summary.md" \
+            "$(cat "$RUNNER_TEMP/prompt.md")" 2>&1 | tee "$RUNNER_TEMP/agent.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/agent.status"
+          set -e
+
+          exit "$(cat "$RUNNER_TEMP/agent.status")"
+
+      # Objective browser evidence, run whether the agent looked or not. Deliberately not
+      # a test of this app's markup: a selector-level assertion here would go stale on the
+      # first legitimate redesign and block merges for no reason. What it catches is the
+      # class of change that builds cleanly and is broken in a browser.
+      - name: Write the browser QA suite
+        if: always()
+        run: |
+          set -euo pipefail
+
+          cat > "$PW_DIR/qa.js" <<'QA_SUITE'
+          const fs = require('fs')
+          const path = require('path')
+          const { chromium, devices } = require('playwright')
+
+          const URL_UNDER_TEST = process.env.QA_TARGET
+          const OUT = process.env.QA_DIR
+          const SHOTS = path.join(OUT, 'screens')
+
+          const PROFILES = [
+            { id: 'desktop', label: 'Desktop — 1440×900', context: { viewport: { width: 1440, height: 900 } } },
+            { id: 'tablet', label: 'Tablet — iPad Air', context: devices['iPad Air'] },
+            { id: 'mobile', label: 'Mobile — iPhone 13', context: devices['iPhone 13'] },
+          ]
+
+          async function probe(browser, profile) {
+            const context = await browser.newContext({ ...profile.context })
+            const page = await context.newPage()
+
+            const consoleErrors = []
+            const pageErrors = []
+            const requestFailures = []
+            const badResponses = []
+
+            page.on('console', (m) => {
+              if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 400))
+            })
+            page.on('pageerror', (e) => pageErrors.push(String((e && e.stack) || e).slice(0, 600)))
+            page.on('requestfailed', (r) => {
+              const why = r.failure() ? r.failure().errorText : 'unknown'
+              requestFailures.push(`${r.method()} ${r.url()} — ${why}`)
+            })
+            page.on('response', (r) => {
+              if (r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`)
+            })
+
+            let status = 0
+            let navError = null
+            try {
+              const response = await page.goto(URL_UNDER_TEST, { waitUntil: 'load', timeout: 45000 })
+              status = response ? response.status() : 0
+              await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {})
+              await page.waitForTimeout(1500)
+            } catch (e) {
+              navError = String((e && e.message) || e).slice(0, 400)
+            }
+
+            let metrics = {}
+            if (!navError) {
+              metrics = await page.evaluate(() => {
+                const root = document.getElementById('root') || document.body
+                const brokenImages = Array.from(document.images)
+                  .filter((i) => i.complete && i.naturalWidth === 0)
+                  .map((i) => i.currentSrc || i.src)
+                return {
+                  title: document.title,
+                  rootChildren: root ? root.childElementCount : 0,
+                  textLength: ((root && root.innerText) || '').trim().length,
+                  scrollWidth: document.documentElement.scrollWidth,
+                  innerWidth: window.innerWidth,
+                  viewportMeta: !!document.querySelector('meta[name="viewport"]'),
+                  interactive: document.querySelectorAll('button, a[href], [role="button"], input, select, textarea').length,
+                  brokenImages,
+                }
+              })
+
+              await page
+                .screenshot({ path: path.join(SHOTS, `${profile.id}.png`), fullPage: true })
+                .catch(() => {})
+
+              // Generic interaction probe: click the first visible control and see whether
+              // anything throws. Catches "renders fine, explodes on touch".
+              const errorsBefore = consoleErrors.length + pageErrors.length
+              try {
+                const control = page.locator('button:visible, [role="button"]:visible').first()
+                if (await control.count()) {
+                  await control.click({ timeout: 5000 })
+                  await page.waitForTimeout(1200)
+                  await page
+                    .screenshot({ path: path.join(SHOTS, `${profile.id}-after-click.png`), fullPage: true })
+                    .catch(() => {})
+                }
+              } catch (e) {
+                metrics.interactionError = String((e && e.message) || e).slice(0, 300)
+              }
+              metrics.errorsFromInteraction = consoleErrors.length + pageErrors.length - errorsBefore
+            }
+
+            await context.close()
+
+            const overflow = metrics.scrollWidth ? metrics.scrollWidth - metrics.innerWidth : 0
+
+            // blocking: objectively broken, and the merge honours it.
+            // advisory: a judgement call, so it is reported and does not block.
+            const checks = [
+              { name: 'navigation', blocking: true, ok: !navError, detail: navError || 'page loaded' },
+              { name: 'http status', blocking: true, ok: status === 200, detail: String(status) },
+              { name: 'no uncaught exceptions', blocking: true, ok: pageErrors.length === 0, detail: pageErrors.join(' | ') || 'none' },
+              { name: 'no console errors', blocking: true, ok: consoleErrors.length === 0, detail: consoleErrors.join(' | ') || 'none' },
+              { name: 'no failed requests', blocking: true, ok: requestFailures.length === 0, detail: requestFailures.join(' | ') || 'none' },
+              { name: 'no 4xx/5xx responses', blocking: true, ok: badResponses.length === 0, detail: badResponses.join(' | ') || 'none' },
+              { name: 'rendered content', blocking: true, ok: (metrics.rootChildren || 0) > 0 && (metrics.textLength || 0) > 0, detail: `${metrics.rootChildren || 0} nodes, ${metrics.textLength || 0} chars` },
+              { name: 'interactive controls present', blocking: false, ok: (metrics.interactive || 0) > 0, detail: `${metrics.interactive || 0}` },
+              { name: 'viewport meta', blocking: false, ok: !!metrics.viewportMeta, detail: metrics.viewportMeta ? 'present' : 'missing' },
+              { name: 'no images broken', blocking: false, ok: (metrics.brokenImages || []).length === 0, detail: (metrics.brokenImages || []).join(' | ') || 'none' },
+              { name: 'no horizontal overflow', blocking: false, ok: overflow <= 2, detail: `scrollWidth ${metrics.scrollWidth || 0} vs viewport ${metrics.innerWidth || 0}` },
+            ]
+
+            return { profile: profile.label, id: profile.id, status, metrics, checks }
+          }
+
+          ;(async () => {
+            const browser = await chromium.launch()
+            const results = []
+            for (const profile of PROFILES) {
+              results.push(await probe(browser, profile))
+            }
+            await browser.close()
+
+            const blocking = results.flatMap((r) =>
+              r.checks.filter((c) => c.blocking && !c.ok).map((c) => `${r.id}: ${c.name} — ${c.detail}`)
+            )
+            const advisories = results.flatMap((r) =>
+              r.checks.filter((c) => !c.blocking && !c.ok).map((c) => `${r.id}: ${c.name} — ${c.detail}`)
+            )
+
+            fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify({ url: URL_UNDER_TEST, results }, null, 2))
+
+            const lines = [`### Browser QA — ${URL_UNDER_TEST}`, '']
+            for (const r of results) {
+              lines.push(`**${r.profile}**`, '')
+              lines.push('| Check | Result | Detail |', '| :--- | :--- | :--- |')
+              for (const c of r.checks) {
+                const mark = c.ok ? 'pass' : c.blocking ? '**FAIL**' : 'warn'
+                lines.push(`| ${c.name} | ${mark} | ${String(c.detail).replace(/\|/g, '\\|').slice(0, 200)} |`)
+              }
+              lines.push('')
+            }
+            lines.push(`Blocking failures: ${blocking.length}`, `Advisories: ${advisories.length}`, '')
+            if (blocking.length) lines.push('Blocking:', ...blocking.map((f) => `- ${f}`), '')
+            if (advisories.length) lines.push('Advisory:', ...advisories.map((f) => `- ${f}`), '')
+
+            fs.appendFileSync(path.join(OUT, 'report.md'), lines.join('\n') + '\n')
+            fs.writeFileSync(path.join(OUT, 'verdict'), blocking.length ? 'fail' : 'pass')
+
+            console.log(lines.join('\n'))
+          })().catch((e) => {
+            // A crash in the harness is not evidence about the change — say so, do not
+            // silently report a pass.
+            fs.appendFileSync(path.join(OUT, 'report.md'), `\n### Browser QA\n\nHarness error: ${e && e.message}\n`)
+            fs.writeFileSync(path.join(OUT, 'verdict'), 'error')
+            console.error(e)
+            process.exit(0)
+          })
+          QA_SUITE
+
+      - name: Run browser QA
+        if: always()
+        run: |
+          set -uo pipefail
+
+          if ! "$RUNNER_TEMP/serve.sh" > "$QA_DIR/serve.log" 2>&1; then
+            echo "error" > "$QA_DIR/verdict"
+            {
+              echo "### Browser QA — did not run"
+              echo
+              echo "The app would not build or start:"
+              echo '```'
+              tail -40 "$QA_DIR/serve.log"
+              echo '```'
+            } >> "$QA_DIR/report.md"
+            exit 0
+          fi
+
+          QA_TARGET="$APP_URL" node "$PW_DIR/qa.js"
+          exit 0
+
+      # Nothing downstream may assume the agent opened one, or that it is the one it says.
+      - name: Resolve the pull request
+        id: pr
+        if: always()
+        run: |
+          set -euo pipefail
+
+          NUMBER=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number -q '.[0].number' || true)
+
+          if [ -z "$NUMBER" ]; then
+            echo "number=" >> "$GITHUB_OUTPUT"
+            echo "head=" >> "$GITHUB_OUTPUT"
+            echo "No open pull request from \`$BRANCH\`."
+            exit 0
+          fi
+
+          HEAD=$(gh pr view "$NUMBER" --repo "$REPO" --json headRefOid -q .headRefOid)
+
+          {
+            echo "number=$NUMBER"
+            echo "head=$HEAD"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "PR #$NUMBER at ${HEAD:0:7}"
+
+      # A blocking browser failure stops the loop here rather than at the merge, because
+      # CI does not run a browser and would go green over it.
+      - name: Hand back a change the browser rejected
+        if: always() && steps.pr.outputs.number != ''
+        run: |
+          set -euo pipefail
+
+          VERDICT=$(cat "$QA_DIR/verdict" 2>/dev/null || echo "error")
+          echo "Browser QA verdict: $VERDICT"
+
+          if [ "$VERDICT" = "pass" ]; then
+            cat "$QA_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" \
+            --remove-label "ai:review" --remove-label "ai:in-progress" || true
+
+          {
+            echo "## Browser QA rejected this change"
+            echo
+            echo "The pull request builds, but the app is broken in a browser. CI does not"
+            echo "run one, so this would otherwise have merged green."
+            echo
+            cat "$QA_DIR/report.md"
+            echo
+            echo "Screenshots are attached to the run as \`qa-${ISSUE}\`."
+            echo
+            echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$QA_DIR/handback.md"
+
+          gh pr comment "${{ steps.pr.outputs.number }}" --repo "$REPO" --body-file "$QA_DIR/handback.md" || true
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file "$QA_DIR/handback.md" || true
+          cat "$QA_DIR/handback.md" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Browser QA is blocking — refusing to hand this to the merge." >&2
+          exit 1
+
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: qa-${{ needs.plan.outputs.issue }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ env.QA_DIR }}
+
+      # An implement run that ends with the issue still ai:in-progress and no pull request
+      # has stranded it: the claim label blocks every future run, so nothing would ever
+      # pick it up again. Hand it back explicitly instead.
+      - name: Release the claim if nothing was produced
+        if: always() && needs.plan.outputs.mode == 'implement'
+        run: |
+          set -euo pipefail
+
+          LABELS=$(gh issue view "$ISSUE" --repo "$REPO" --json labels -q '[.labels[].name] | join(",")' || echo "")
+          OPEN_PR="${{ steps.pr.outputs.number }}"
+
+          case "$LABELS" in
+            *ai:in-progress*)
+              if [ -n "$OPEN_PR" ]; then
+                # The agent pushed and opened a pull request but never moved the label.
+                gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:review" --remove-label "ai:in-progress" || true
+                echo "PR #$OPEN_PR exists — issue moved to ai:review."
+              else
+                # The next run reads this comment as its history, so it has to say WHY,
+                # not just THAT. "Finished without opening a pull request" tells the
+                # following attempt nothing and it repeats the failure exactly.
+                gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" --remove-label "ai:in-progress" || true
+
+                STATUS=$(cat "$RUNNER_TEMP/agent.status" 2>/dev/null || echo "unknown")
+                COMMITS=$(git log --oneline "origin/$DEFAULT_BRANCH..HEAD" 2>/dev/null | head -20 || true)
+                DIRTY=$(git status --porcelain 2>/dev/null | head -40 || true)
+                PUSHED=$(git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1 && echo yes || echo no)
+
+                case "$STATUS" in
+                  0)       WHY="The agent ran to completion but never opened a pull request." ;;
+                  124|137) WHY="The agent was killed — the job hit its ${JOB_TIMEOUT}-minute timeout." ;;
+                  unknown) WHY="The agent step never ran, or was interrupted before it could record an exit status. This is usually a setup failure earlier in the job, not a decision the agent made." ;;
+                  *)       WHY="The agent exited non-zero (status \`$STATUS\`)." ;;
+                esac
+
+                {
+                  echo "## No pull request was produced"
+                  echo
+                  echo "$WHY Marked \`ai:blocked\` so the issue is not left claimed."
+                  echo
+
+                  echo "### What the agent said"
+                  echo
+                  if [ -s "$RUNNER_TEMP/summary.md" ]; then
+                    cat "$RUNNER_TEMP/summary.md"
+                  else
+                    echo "_It produced no closing summary, which usually means it was cut off rather than that it decided to stop._"
+                  fi
+                  echo
+
+                  echo "### State it left behind"
+                  echo
+                  echo "| | |"
+                  echo "| :--- | :--- |"
+                  echo "| Branch | \`$BRANCH\` |"
+                  echo "| Pushed to origin | $PUSHED |"
+                  echo "| Commits ahead of \`$DEFAULT_BRANCH\` | $( [ -n "$COMMITS" ] && printf '%s' "$(printf '%s\n' "$COMMITS" | wc -l | tr -d ' ')" || echo 0 ) |"
+                  echo "| Uncommitted changes | $( [ -n "$DIRTY" ] && echo "yes — lost with the runner" || echo none ) |"
+                  echo "| Agent exit status | \`$STATUS\` |"
+                  echo
+
+                  if [ -n "$COMMITS" ]; then
+                    echo "<details><summary>Commits</summary>"
+                    echo
+                    echo '```'
+                    printf '%s\n' "$COMMITS"
+                    echo '```'
+                    echo
+                    echo "</details>"
+                    echo
+                  fi
+
+                  if [ -n "$DIRTY" ]; then
+                    echo "<details><summary>Uncommitted working tree</summary>"
+                    echo
+                    echo '```'
+                    printf '%s\n' "$DIRTY"
+                    echo '```'
+                    echo
+                    echo "</details>"
+                    echo
+                  fi
+
+                  if [ -s "$RUNNER_TEMP/agent.log" ]; then
+                    echo "<details><summary>Last 60 lines of the agent's output</summary>"
+                    echo
+                    echo '```'
+                    tail -60 "$RUNNER_TEMP/agent.log"
+                    echo '```'
+                    echo
+                    echo "</details>"
+                    echo
+                  fi
+
+                  echo "### To retry"
+                  echo
+                  echo "Answer whatever is open in a comment here, then apply \`ai:ready\`. That is the"
+                  echo "whole restart — applying \`ai:ready\` clears \`ai:blocked\` by itself, you do not"
+                  echo "have to remove it first. The next run reads this entire thread before it starts,"
+                  echo "so your comment is what it acts on; it will not begin again from nothing."
+                  echo
+                  echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                } > "$RUNNER_TEMP/handback.md"
+
+                gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/handback.md" || true
+                cat "$RUNNER_TEMP/handback.md" >> "$GITHUB_STEP_SUMMARY"
+                echo "No PR produced — issue #$ISSUE marked ai:blocked."
+              fi
+              ;;
+            *)
+              echo "Issue #$ISSUE is no longer ai:in-progress — nothing to release."
+              ;;
+          esac
+
+      # A fix run that dies leaves the pull request red with nothing said, and the round is
+      # spent either way. Say what happened on the pull request, where the next round reads.
+      - name: Report a failed repair
+        if: failure() && needs.plan.outputs.mode == 'fix'
+        run: |
+          set -euo pipefail
+
+          STATUS=$(cat "$RUNNER_TEMP/agent.status" 2>/dev/null || echo "unknown")
+          PUSHED=$(git log --oneline "origin/$BRANCH..HEAD" 2>/dev/null | wc -l | tr -d ' ' || echo "?")
+
+          case "$STATUS" in
+            0)       WHY="The agent finished but the step failed afterwards." ;;
+            124|137) WHY="The agent was killed — the job hit its ${JOB_TIMEOUT}-minute timeout." ;;
+            unknown) WHY="The agent step never ran, or was interrupted before it could record an exit status — usually a setup failure earlier in the job." ;;
+            *)       WHY="The agent exited non-zero (status \`$STATUS\`)." ;;
+          esac
+
+          {
+            echo "## Fix round $ROUND of $MAX_ROUNDS did not complete"
+            echo
+            echo "$WHY The check run on this pull request has **not** been repaired."
+            echo
+            echo "| | |"
+            echo "| :--- | :--- |"
+            echo "| Unpushed local commits | $PUSHED |"
+            echo "| Agent exit status | \`$STATUS\` |"
+            echo
+
+            echo "### What the agent said"
+            echo
+            if [ -s "$RUNNER_TEMP/summary.md" ]; then
+              cat "$RUNNER_TEMP/summary.md"
+            else
+              echo "_No closing summary — it was cut off rather than stopping deliberately._"
+            fi
+            echo
+
+            if [ -s "$RUNNER_TEMP/agent.log" ]; then
+              echo "<details><summary>Last 60 lines of the agent's output</summary>"
+              echo
+              echo '```'
+              tail -60 "$RUNNER_TEMP/agent.log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            fi
+
+            echo "This round is spent. Re-run with **Actions → AI Issue Resolver Agent → Run workflow**"
+            echo "and pr \`$PR\` to try it again."
+            echo
+            echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$RUNNER_TEMP/failure.md"
+
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## AI Issue Resolver — $MODE — issue #$ISSUE"
+            echo
+            if [ -f "$RUNNER_TEMP/summary.md" ]; then
+              cat "$RUNNER_TEMP/summary.md"
+            else
+              echo "The agent produced no summary."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------
+  # Land — wait for the check run, then merge or send it back for one more repair.
+  # No model runs here. This job is the merge decision, and it is bash.
+  # ---------------------------------------------------------------------------------
+  land:
+    name: Merge when it is green
+    needs: [plan, work]
+    if: needs.work.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      # The merge is a push to main, and a push made with GITHUB_TOKEN starts no workflow
+      # run — the merge would land and never publish or deploy. Everything else here
+      # reads, so the PAT is what this job uses throughout.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+      ISSUE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      REPO: ${{ github.repository }}
+      ISSUE: ${{ needs.plan.outputs.issue }}
+      BRANCH: ${{ needs.plan.outputs.branch }}
+      ROUND: ${{ needs.plan.outputs.round }}
+      MAX_ROUNDS: ${{ needs.plan.outputs.max_rounds }}
+      PR: ${{ needs.work.outputs.pr }}
+      HEAD: ${{ needs.work.outputs.head }}
+      PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+
+    steps:
+      # A pull request opened moments ago often has no check runs registered yet, and a
+      # branch pushed before publish.yml existed never gets them retroactively.
+      - name: Make sure a check run exists
+        run: |
+          set -euo pipefail
+
+          for _ in $(seq 1 12); do
+            COUNT=$(gh pr view "$PR" --repo "$REPO" --json statusCheckRollup \
+                      --jq '.statusCheckRollup | length' 2>/dev/null || echo 0)
+            [ "$COUNT" -gt 0 ] && { echo "$COUNT check(s) registered."; exit 0; }
+            sleep 10
+          done
+
+          if [ -z "${PR_CHECK_WORKFLOW:-}" ]; then
+            echo "No checks and PR_CHECK_WORKFLOW is empty — nothing can gate this merge." >&2
+            exit 1
+          fi
+
+          echo "No checks after two minutes — dispatching ${PR_CHECK_WORKFLOW} on ${BRANCH}."
+          gh workflow run "$PR_CHECK_WORKFLOW" --repo "$REPO" --ref "$BRANCH"
+          sleep 30
+
+      # `gh pr checks --watch` blocks until every check concludes and exits non-zero when
+      # any of them failed, which is exactly the gate — no polling loop of our own, and no
+      # chance of reading a rollup that is still in progress as a pass.
+      - name: Wait for the checks to conclude
+        # Non-zero here means a check failed, which the gate below reports properly —
+        # failing the step would skip it and lose the reason.
+        continue-on-error: true
+        run: gh pr checks "$PR" --repo "$REPO" --watch --interval 20 --fail-fast
+
+      # Every condition is measured here, and the merge below runs only if all of them
+      # hold. A model never reaches this job, so there is nothing to talk it out of.
+      - name: Compute the merge gate
+        id: gate
+        run: |
+          set -euo pipefail
+
+          allow=true
+          reason=""
+          deny() { allow=false; reason="${reason}${reason:+; }$1"; }
+
+          gh pr view "$PR" --repo "$REPO" \
+            --json number,state,isDraft,mergeable,headRefName,headRefOid,body,statusCheckRollup > pr.json
+
+          [ "$(jq -r .state pr.json)" = "OPEN" ] || deny "the pull request is $(jq -r .state pr.json)"
+          [ "$(jq -r .isDraft pr.json)" = "false" ] || deny "it is a draft"
+
+          # Only ever a branch this agent created, and only the exact commit whose checks
+          # we just watched: a push landing mid-wait would otherwise merge on a green that
+          # belongs to an older commit.
+          case "$(jq -r .headRefName pr.json)" in
+            ai/issue-*) : ;;
+            *) deny "branch $(jq -r .headRefName pr.json) was not created by this agent" ;;
+          esac
+
+          NOW=$(jq -r .headRefOid pr.json)
+          [ "$NOW" = "$HEAD" ] || deny "the head moved from ${HEAD:0:7} to ${NOW:0:7} during the wait"
+
+          # Without this the merge does not close the issue, and the loop leaves it open
+          # for ever with the work already shipped.
+          jq -r .body pr.json | grep -qiE "(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#${ISSUE}\b" \
+            || deny "the body does not say \`Closes #${ISSUE}\`"
+
+          case "$(jq -r .mergeable pr.json)" in
+            MERGEABLE) : ;;
+            CONFLICTING) deny "it conflicts with main" ;;
+            *) deny "GitHub reports mergeable=$(jq -r .mergeable pr.json)" ;;
+          esac
+
+          FAILED=$(jq -r '[.statusCheckRollup[]? | select((.conclusion // "") | ascii_downcase | IN("failure","cancelled","timed_out","action_required","startup_failure"))] | length' pr.json)
+          PENDING=$(jq -r '[.statusCheckRollup[]? | select((.status // "") | ascii_downcase | IN("queued","in_progress","waiting","pending","requested"))] | length' pr.json)
+          TOTAL=$(jq -r '.statusCheckRollup | length' pr.json)
+
+          [ "$TOTAL" -gt 0 ] || deny "there are no checks on this commit"
+          [ "$FAILED" -eq 0 ] || deny "$FAILED check(s) did not succeed"
+          [ "$PENDING" -eq 0 ] || deny "$PENDING check(s) are still running"
+
+          {
+            echo "allow=$allow"
+            echo "reason=$reason"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Merge gate — $( [ "$allow" = true ] && echo "allowed" || echo "refused" )"
+            echo
+            echo "PR #$PR at \`${HEAD:0:7}\` · $TOTAL check(s), $FAILED failed, $PENDING pending"
+            [ -n "$reason" ] && { echo; echo "Refused because: $reason"; }
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Merge
+        if: steps.gate.outputs.allow == 'true'
+        run: |
+          set -euo pipefail
+
+          gh pr merge "$PR" --repo "$REPO" --squash --delete-branch
+
+          # Never assume the command meant it happened.
+          for _ in $(seq 1 12); do
+            [ "$(gh pr view "$PR" --repo "$REPO" --json state -q .state)" = "MERGED" ] && {
+              echo "PR #$PR merged. Issue #$ISSUE closes with it, and main publishes and deploys."
+              echo "Merged PR #$PR — issue #$ISSUE closed, publish and deploy running on main." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            }
+            sleep 5
+          done
+
+          echo "The merge command succeeded but GitHub still reports PR #$PR unmerged." >&2
+          exit 1
+
+      # One more repair round, or a hand-back. Dispatch rather than a loop in this job:
+      # the round count is derived from the failed runs on the branch, so the plan job
+      # re-reads it and enforces the cap on the way in — there is no counter here to trust.
+      - name: Send it back for another repair round
+        if: steps.gate.outputs.allow != 'true'
+        env:
+          # Through the environment, never interpolated into the script: the reason
+          # quotes a branch name and a check name, which are repository-controlled text.
+          REASON: ${{ steps.gate.outputs.reason }}
+        run: |
+          set -euo pipefail
+
+          if [ "$ROUND" -ge "$((MAX_ROUNDS - 1))" ]; then
+            GH_TOKEN="$ISSUE_TOKEN" gh issue edit "$ISSUE" --repo "$REPO" \
+              --add-label "ai:blocked" --remove-label "ai:review" || true
+
+            NOTE="## The check run will not go green
+
+          PR #$PR is at \`${HEAD:0:7}\` and the merge was refused: ${REASON}.
+
+          That is fix round $ROUND of \`$MAX_ROUNDS\`, so the loop stops here rather than spending another. Issue #$ISSUE is now \`ai:blocked\`.
+
+          **To continue:** say what to do in a comment, then run **Actions → AI Issue Resolver Agent → Run workflow** with \`pr=$PR\` and **force** ticked.
+
+          Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+            gh pr comment "$PR" --repo "$REPO" --body "$NOTE" || true
+            GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$ISSUE" --repo "$REPO" --body "$NOTE" || true
+            echo "$NOTE" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Merge refused (${REASON}) — dispatching a repair round for PR #$PR."
+          gh workflow run ai-issue-resolver-agent.yml --repo "$REPO" -f pr="$PR"
+          echo "Merge refused: ${REASON}. Dispatched a repair round." >> "$GITHUB_STEP_SUMMARY"

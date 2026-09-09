@@ -1,94 +1,193 @@
 # Managed by homelab-infra — terraform/github/proklinator-app/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github proklinator-app`.
 #
-# Builds and publishes both images this repository ships — the site and its API — and then
-# tells the cluster to roll them out. Named for what it does, rather than for the frontend
-# alone, which was all it built back when it was publish-frontend.yml.
+# verify -> image -> scan -> deploy. Both images this repository ships, the site and its
+# API, are built from one commit and carry the same tag. Only the GHCR push and the
+# rollout are conditional, so a dependency PR is fully validated, Dockerfiles included,
+# without publishing.
 #
-# Renaming this file means renaming it in homelab-infra too, in three places: the `apps`
-# list in gitops/Justfile, which finds the last successful run here to read a tag from, the
-# PR_CHECK_WORKFLOW variable in terraform/github/proklinator-app/main.tf, which the agents
-# dispatch when a pull request has no checks, and the `publish_workflow` local in that same
-# file, which is what pushes this copy.
+# ai-pr-agent.yml and ai-issue-resolver-agent.yml both gate on this file
+# (PR_CHECK_WORKFLOW) and dispatch it for a pull request with no checks, so
+# `workflow_dispatch` is load-bearing.
 #
-# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
-# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
-# `terraform/`. A bump merged into the target repo is reverted by the next apply.
-name: Build, Publish, Deploy
+# Renaming this file breaks the deployment that looks it up by name. Action versions are
+# bumped by hand, because Dependabot does not scan a generated file.
+name: Verify, Publish, Deploy
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-  pull_request:
+  push:
     branches:
       - main
   workflow_dispatch:
 
-# Least privilege by default; the one job that needs to write a package widens it itself.
 permissions:
   contents: read
 
-# Superseding a pull request's run is free. Superseding a push to main is not: that run
-# ends in a cluster deployment, and cancelling it halfway leaves one or both images
-# published but the manifests still pointing at the previous tag.
+# Cancelling a push to main would leave one or both images published and the manifests
+# on the old tag. An agent's closing dispatch queues behind the merge instead of racing it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  REGISTRY: ghcr.io
+  # Pinned so the report cannot change without a commit to attribute it to.
+  SYFT_VERSION: v1.51.1
+  GRYPE_VERSION: v0.118.0
+
 jobs:
-  verify-site:
-    name: Verify site
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    env:
+      # Job-level so the `if:` below can test them; a fork PR gets no secrets and skips.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY_SITE: ${{ vars.SONAR_PROJECT_KEY_SITE }}
+      SONAR_PROJECT_KEY_API: ${{ vars.SONAR_PROJECT_KEY_API }}
+      # The ref test is not redundant: the agents dispatch this on PR head branches, and
+      # without it such a run would publish and roll out an unmerged branch.
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    # Resolved once and read downstream, so the four jobs cannot disagree.
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+      tag: ${{ steps.gate.outputs.tag }}
+
     steps:
+      # Exactly seven characters, no prefix: the deploy rewrites the manifests to
+      # "${sha:0:7}" and any other shape lands the Deployment in ImagePullBackOff.
+      #
+      # A slice of GITHUB_SHA, never `git rev-parse --short=7`: `--short=N` is a minimum
+      # and git widens the abbreviation once seven characters stop being unique, so the
+      # tag would silently become eight while the manifest still gets seven.
+      - name: Resolve the publish gate and the image tag
+        id: gate
+        run: |
+          set -euo pipefail
+
+          echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
+        # Full history: Sonar needs it for blame and new-code detection.
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+          # Pinned here and in both Dockerfiles. Move them together, or the runtime that
+          # ships is not the one tested.
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install the site from its lockfile
         run: npm ci
 
-      # Advisory only: a style nit must not block a release. The build below is
-      # what actually gates the publish.
+      # The API is a separate package with its own lockfile, and nothing else in this
+      # workflow installs it: without this a dependency PR against backend/ would go
+      # green with its lockfile never resolved and its tests never run.
+      - name: Install the API from its lockfile
+        run: npm ci --prefix backend --no-audit --no-fund
+
+      # Blocking, all of them. The agents merge with no human review, so nothing else
+      # catches drift. They clear the first two with `npm run format` and `npm run
+      # lint:fix`.
       - name: Check formatting
-        continue-on-error: true
         run: npm run format:check
 
       - name: Run linter
-        continue-on-error: true
         run: npm run lint
+
+      # Coverage thresholds live in vitest.site.config.js and vitest.api.config.js, so no
+      # step here can drop them. Each writes its own lcov, which its Sonar project reads.
+      - name: Test the site
+        run: npm run test:site
+
+      - name: Test the API
+        run: npm run test:api
 
       - name: Build the site
         run: npm run build
 
-  publish-images:
-    name: Publish images
-    needs: verify-site
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # Two projects, because the site and the API are two images with separate
+      # lockfiles and a failure has to be attributable to one of them. Separate working
+      # directories as well: both scanners run in this workspace and would otherwise
+      # share .scannerwork.
+      #
+      # qualitygate.wait is what makes these block a merge. A missing project key skips
+      # rather than fails, so check the step ran. SONAR_TOKEN must be in the Dependabot
+      # store too, or it skips on exactly the PRs the gate exists for.
+      - name: SonarCloud analysis — site
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY_SITE != '' }}
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY_SITE }}
+            -Dsonar.sources=src
+            -Dsonar.tests=test/site
+            -Dsonar.javascript.lcov.reportPaths=coverage/site/lcov.info
+            -Dsonar.working.directory=.scannerwork-site
+            -Dsonar.qualitygate.wait=true
+
+      - name: SonarCloud analysis — API
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY_API != '' }}
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY_API }}
+            -Dsonar.sources=backend/src
+            -Dsonar.tests=test/api
+            -Dsonar.javascript.lcov.reportPaths=coverage/api/lcov.info
+            -Dsonar.working.directory=.scannerwork-api
+            -Dsonar.qualitygate.wait=true
+
+  image:
+    name: Build ${{ matrix.image }}
+    # Builds on every trigger, pushes only on main. Never gate the build behind the push:
+    # a pull request must still exercise both Dockerfiles.
+    needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
-    # Both images are built from the same commit and carry the same short-SHA tag,
-    # so the cluster can move the site and its API in one step. Adding an image here
-    # means adding it to homelab-infra's `apps` list too, or its Deployment will sit
-    # on an older tag.
+
+    env:
+      # From verifying, not recomputed: one publish condition, not four.
+      PUBLISH: ${{ needs.verify.outputs.publish }}
+      TAG: ${{ needs.verify.outputs.tag }}
+
+    # Both images come from the same commit and carry the same tag, so the cluster can
+    # move the site and its API in one step. Adding a third means adding it to the
+    # deploy's image list too, or its Deployment sits on an older tag.
     strategy:
+      fail-fast: false
       matrix:
         include:
           - image: proklinator-app
             dockerfile: docker/Dockerfile
-            build_args: ''
+            build_args: ""
           - image: proklinator-api
             dockerfile: docker/Dockerfile.api
             build_args: GIT_SHA
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -97,34 +196,22 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
+        # A Dependabot run gets a read-only GITHUB_TOKEN and would fail here.
+        if: ${{ env.PUBLISH == 'true' }}
         uses: docker/login-action@v4
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Exactly seven characters, no prefix: homelab-infra's `just bump-images` rewrites
-      # the manifest to "${sha:0:7}", so any other shape points the cluster at a tag that
-      # does not exist and the Deployment lands in ImagePullBackOff.
-      #
-      # `${GITHUB_SHA:0:7}` and not `git rev-parse --short=7 HEAD`, which was here before:
-      # `--short=N` is a MINIMUM, not a width. Git expands the abbreviation until it is
-      # unique in the repository, so it returns eight characters once the object count
-      # makes seven ambiguous — measured in this repo on 2026-09-08, `--short=1` returned
-      # four. The tag would then be eight characters while the manifest still gets seven.
-      # A slice of GITHUB_SHA cannot drift, because it never consults the object store.
-      - name: Derive the image tag
-        id: vars
-        run: echo "sha_short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
-
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ steps.vars.outputs.sha_short }}
+            type=raw,value=${{ env.TAG }}
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push the image
         id: push
@@ -132,44 +219,247 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: true
+          push: ${{ env.PUBLISH == 'true' }}
+          # amd64 alone: the cluster is x86 and there is no ARM consumer, so a second
+          # platform is a QEMU pass nothing pulls.
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Only the image that declares the ARG gets it — passing it to the other
-          # would make buildx warn about an unconsumed build-arg on every run.
-          build-args: ${{ matrix.build_args != '' && format('{0}={1}', matrix.build_args, steps.vars.outputs.sha_short) || '' }}
+          # Only the image that declares the ARG gets it — passing it to the other would
+          # make buildx warn about an unconsumed build-arg on every run.
+          build-args: ${{ matrix.build_args != '' && format('{0}={1}', matrix.build_args, env.TAG) || '' }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      # A matrix leg cannot set a job output the other legs will not overwrite, so the
+      # digest travels to the scan as a one-line artifact. By digest and never by tag:
+      # a tag can be rewritten between the push and the scan, and the report would then
+      # describe an image that is not the one deploying.
+      - name: Write the digest down
+        if: ${{ env.PUBLISH == 'true' }}
+        run: echo "${{ steps.push.outputs.digest }}" > digest.txt
+
+      - name: Hand the digest to the scan
+        if: ${{ env.PUBLISH == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.image }}
+          retention-days: 1
+          path: digest.txt
 
       - name: Generate build report
         run: |
-          echo "### Docker Image Build Report — \`${{ matrix.image }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Platforms:** \`linux/amd64\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Digest:** \`${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Tag |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| :--- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
-            [ -n "$tag" ] && echo "| \`${tag}\` |" >> "$GITHUB_STEP_SUMMARY"
-          done
+          set -euo pipefail
+
+          if [ "${PUBLISH}" = "true" ]; then
+            echo "### \`${{ matrix.image }}\` published 🚀" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### \`${{ matrix.image }}\` verified, not published ✅" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo
+            echo "Platform: \`linux/amd64\` · digest \`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "| Tag |"
+            echo "| :--- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && echo "| \`$tag\` |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+  scan:
+    name: Scan ${{ matrix.image }}
+    # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
+    # blocking gate. A threshold here would deadlock on base-image CVEs nobody upstream
+    # has packaged a fix for.
+    needs: [verify, image]
+    # Only a published image can be pulled, so a pull request has nothing to scan.
+    if: needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [proklinator-app, proklinator-api]
+
+    env:
+      # Spelled out rather than built from REGISTRY: a job-level env entry cannot read
+      # the workflow-level one.
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+      TAG: ${{ needs.verify.outputs.tag }}
+
+    steps:
+      - name: Read the digest the build pushed
+        uses: actions/download-artifact@v7
+        with:
+          name: digest-${{ matrix.image }}
+
+      # The package is private; syft and grype read the config this writes.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install syft and grype
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
+          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
+
+          syft version
+          grype version
+
+      # grype scans the SBOM, not the image again, so the report and the SBOM cannot
+      # disagree about which packages were matched against advisories.
+      - name: Generate the SBOM and scan it
+        id: scan
+        run: |
+          set -euo pipefail
+
+          digest=$(cat digest.txt)
+          ref="${IMAGE}@${digest}"
+          echo "Scanning ${ref} (linux/amd64)"
+
+          syft --platform linux/amd64 "registry:${ref}" -o json > sbom.json
+          syft --platform linux/amd64 "registry:${ref}" -o spdx-json > sbom.spdx.json
+
+          grype "sbom:sbom.json" -o json > grype.json
+          grype "sbom:sbom.json" -o table > grype.txt
+
+          echo "packages=$(jq '.artifacts | length' sbom.json)" >> "$GITHUB_OUTPUT"
+
+      # All counts come from one pass over grype.json, so the totals cannot disagree.
+      - name: Report to the run summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ ! -f grype.json ]; then
+            {
+              echo "### \`${{ matrix.image }}\` scan — did not run"
+              echo "syft or grype failed before producing a report; see the step log."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          jq '[.matches[]
+               | {id:       .vulnerability.id,
+                  severity: .vulnerability.severity,
+                  package:  .artifact.name,
+                  version:  .artifact.version,
+                  state:    (.vulnerability.fix.state // "unknown"),
+                  fixed_in: (.vulnerability.fix.versions // [])}]
+              | unique_by([.id, .package, .version])' grype.json > findings.json
+
+          count() { jq --arg s "$1" '[.[] | select(.severity == $s)] | length' findings.json; }
+          crit=$(count Critical); high=$(count High); med=$(count Medium)
+          low=$(count Low); neg=$(count Negligible); unk=$(count Unknown)
+          total=$(jq 'length' findings.json)
+          fixable=$(jq '[.[] | select(.state == "fixed" and (.fixed_in | length) > 0)] | length' findings.json)
+
+          {
+            echo "### \`${{ matrix.image }}\` scan — report only 🔍"
+            echo
+            echo "\`${TAG}\` · \`linux/amd64\` · ${{ steps.scan.outputs.packages }} packages ·"
+            echo "syft \`${SYFT_VERSION}\` · grype \`${GRYPE_VERSION}\`"
+            echo
+            echo "| Critical | High | Medium | Low | Negligible | Unknown | Total |"
+            echo "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+            echo "| ${crit} | ${high} | ${med} | ${low} | ${neg} | ${unk} | ${total} |"
+            echo
+            echo "${fixable} of ${total} have a fixed version published upstream. This job never"
+            echo "blocks the rollout — it is a report."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Critical and High only: a table of hundreds of Low findings goes unread.
+          if [ "$((crit + high))" -gt 0 ]; then
+            {
+              echo "#### Critical and High"
+              echo
+              echo "| Severity | Package | Version | Vulnerability | Fix |"
+              echo "| :--- | :--- | :--- | :--- | :--- |"
+              jq -r '[.[] | select(.severity == "Critical" or .severity == "High")]
+                     | sort_by(.severity, .package, .id)[]
+                     | "| \(.severity) | \(.package) | \(.version) | \(.id) | "
+                       + (if .state == "fixed" and (.fixed_in | length) > 0
+                          then (.fixed_in | join(", "))
+                          else "_none upstream_" end)
+                       + " |"' findings.json
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "No Critical or High findings."
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The summary is capped at 1 MB and unparseable; triage needs the files.
+      - name: Upload the SBOM and scan
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.image }}-${{ needs.verify.outputs.tag }}
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            sbom.json
+            sbom.spdx.json
+            grype.json
+            grype.txt
 
   deploy:
     name: Deploy to cluster
-    # Waits for every matrix leg, so the cluster is only bumped once both images
-    # exist at this commit's tag. publish-images is itself restricted to pushes on main,
-    # so this inherits that restriction through `needs` — a skipped dependency skips it.
-    needs: publish-images
+    # `needs` the scan for ordering only. `always()` plus the explicit image check means a
+    # scanner outage cannot strand two published images, while a failed build still blocks.
+    # Both legs must have succeeded: the site and its API move together or not at all.
+    needs: [verify, image, scan]
+    if: always() && needs.image.result == 'success' && needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # A PAT: this job's token cannot dispatch a workflow in another repository.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
     steps:
-      # The images are in GHCR — point the cluster at them. Both inputs are required:
-      # this workflow's own run is still in_progress here, so homelab-infra's
-      # "last successful publish" query would resolve to the previous commit and
-      # deploy a stale image.
-      - name: Trigger cluster deploy
-        env:
-          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+      # A bot-PR merge publishes its images but holds the rollout; ai-pr-agent.yml
+      # dispatches one rollout when its sweep ends, so ten merges roll out once.
+      # Never hold the publish as well: the scheduled deploy reads the tag from the last
+      # successful push run, so every commit on main needs images behind it.
+      - name: Hold the rollout while the agent is mid-batch
+        id: hold
+        if: github.event_name == 'push'
         run: |
+          set -euo pipefail
+
+          # The commit's PRs, not its author: an agent's own fix commits make the merger
+          # the author of the squash, which would read as human.
+          author_type=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq 'map(select(.merged_at != null)) | .[0].user.type // ""')
+
+          if [ "$author_type" = "Bot" ]; then
+            echo "held=true" >> "$GITHUB_OUTPUT"
+            echo "Rollout held — bot PR merge, the AI PR agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Both inputs are required: this run is still in_progress, so a lookup would
+      # resolve to the previous commit. `app` must match the name the deploy tracks.
+      - name: Trigger cluster deploy
+        if: steps.hold.outputs.held != 'true'
+        run: |
+          set -euo pipefail
+
           gh workflow run gitops-bump-images.yml \
             --repo kalpak44/homelab-infra \
             -f app=proklinator \
