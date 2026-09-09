@@ -4,7 +4,7 @@
 # The feature loop. An issue you label `ai:ready` becomes a merged pull request without
 # anyone in between:
 #
-#   issue labelled ai:ready
+#   issue labeled ai:ready
 #        │
 #        ▼
 #   plan ── claim it ──> work ── implement, run the gate, drive it in a browser ──> PR
@@ -16,8 +16,8 @@
 #                                                          squash merge              dispatch a fix
 #                                                          issue closes              round, or block
 #
-# STATE LIVES ON THE ISSUE. The `ai:*` labels are the loop's state machine and they are
-# what a human reads to know where something is. The pull request is scratch space. The
+# STATE LIVES ON THE ISSUE. The `ai:*` labels are the loop's state machine, and they are
+# what a human reads to know where something is. The pull request is a scratch space. The
 # fix-round number is not stored anywhere: it is counted from the failed check runs on
 # the branch, so there is no marker that can drift out of sync with reality.
 #
@@ -1514,7 +1514,7 @@ jobs:
 
   # ---------------------------------------------------------------------------------
   # Land — wait for the check run, then merge or send it back for one more repair.
-  # No model runs here. This job is the merge decision, and it is bash.
+  # No model runs here. This job is the merge decision, and it is bashed.
   # ---------------------------------------------------------------------------------
   land:
     name: Merge when it is green
