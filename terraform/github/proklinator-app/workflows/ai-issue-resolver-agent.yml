@@ -1514,7 +1514,7 @@ jobs:
 
   # ---------------------------------------------------------------------------------
   # Land — wait for the check run, then merge or send it back for one more repair.
-  # No model runs here. This job is the merge decision, and it is bashed.
+  # No model runs here. This job is the merge decision, and it is bash.
   # ---------------------------------------------------------------------------------
   land:
     name: Merge when it is green
