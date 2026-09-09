@@ -101,11 +101,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          # Node 20 is pinned in three places at once: this line, the Dockerfile's
-          # `node:20-bookworm-slim`, and package.json's `engines`, with dependabot.yml
-          # holding the `node` bump. Moving one alone means the runtime that ships is
-          # never the one tested.
-          node-version: "20"
+          # The Node major is pinned in three places at once: this line, the Dockerfile's
+          # `node:24-alpine`, and package.json's `engines`, with dependabot.yml holding the
+          # `node` bump. Moving one alone means the runtime that ships is never the one
+          # tested — which is exactly what Node 20 going EOL under a passing pipeline
+          # looked like.
+          node-version: "24"
           cache: npm
 
       # Fails on a broken or inconsistent lockfile, which is the signal that matters most
@@ -186,12 +187,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # Only the multi-arch build needs emulation, and an unpublished ref builds one
-      # platform.
-      - name: Set up QEMU
-        if: ${{ env.PUBLISH == 'true' }}
-        uses: docker/setup-qemu-action@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -223,7 +218,12 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ env.PUBLISH == 'true' }}
-          platforms: ${{ env.PUBLISH == 'true' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
+          # amd64 alone. It used to build arm64 and arm/v7 as well, which cost a QEMU
+          # emulation pass per platform and ruled out every Node base past 22 — Node 24 and
+          # 26 publish no linux/arm/v7 at all. The cluster is x86 and there is no ARM
+          # consumer, so the platforms bought nothing and blocked the base image upgrade
+          # that took the image from 10 Critical / 95 High to zero.
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -235,10 +235,10 @@ jobs:
 
           if [ "${PUBLISH}" = "true" ]; then
             echo "### Image published 🚀" >> "$GITHUB_STEP_SUMMARY"
-            echo "Platforms: \`linux/amd64\`, \`linux/arm64\`, \`linux/arm/v7\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Platform: \`linux/amd64\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### Verified, not published ✅" >> "$GITHUB_STEP_SUMMARY"
-            echo "Built \`linux/amd64\` only; nothing was pushed to GHCR." >> "$GITHUB_STEP_SUMMARY"
+            echo "Built \`linux/amd64\`; nothing was pushed to GHCR." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           echo "" >> "$GITHUB_STEP_SUMMARY"

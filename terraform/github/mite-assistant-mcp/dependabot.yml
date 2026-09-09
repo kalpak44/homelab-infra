@@ -63,12 +63,16 @@ updates:
       timezone: Europe/Sofia
     open-pull-requests-limit: 10
     ignore:
-      # Node 20 is pinned in three places at once: the Dockerfile's `node:20-bookworm-slim`,
-      # publish.yml's `node-version: "20"`, and package.json's `engines: ">=20.0.0"`.
+      # The Node major is pinned in three places at once: the Dockerfile's `node:24-alpine`,
+      # publish.yml's `node-version: "24"`, and package.json's `engines: ">=24.0.0"`.
       # Dependabot treats the whole tag as the version and proposed a jump to 26 within
       # minutes of this file landing (PR #14 on 2026-09-08). Merging that ships an image
-      # built on Node 26 while the check still validates on 20, so the runtime that
+      # built on one major while the check still validates on another, so the runtime that
       # actually runs is never exercised — the same thing that happened on kalpak44, where
-      # the agent merged it. `engines` would not catch it either: `>=20.0.0` admits 26.
-      # Held here; the pin moves by hand, in all three places together.
+      # the agent merged it. `engines` would not catch it either: `>=24.0.0` admits 26.
+      #
+      # The hold is not "never upgrade". Node 20 was EOL for four months behind a green
+      # pipeline before a syft/grype scan surfaced it on 2026-09-09, so review this pin
+      # whenever the scan reports fixable findings against `node`. Moving it means
+      # editing all three places in one commit, and Node 26 also drops linux/arm/v7.
       - dependency-name: node
