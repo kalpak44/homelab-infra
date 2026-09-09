@@ -652,7 +652,14 @@ jobs:
           test in the same pull request.
 
           The SonarCloud gates judge NEW code, which means your code. If one fails, read
-          the issues it raised and fix them.
+          the issues it raised and fix them. They are the one part of the gate you cannot
+          run locally, so every Sonar regression costs a full round.
+
+          A validation guard's shape is load-bearing. Sonar's taint analysis reads the
+          literal check, so an allowlist tested with `Array.includes` clears a tainted
+          value where the same allowlist tested with `Set.has` does not, and rewriting one
+          reopens a BLOCKER on code that behaves identically. Never refactor a check that
+          validates untrusted input unless the task asked you to change it.
 
           The limit is absolute. Make the gate pass by fixing the code, NEVER by widening
           .prettierignore, adding an eslint-disable, relaxing a rule in eslint.config.js,
