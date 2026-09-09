@@ -9,12 +9,12 @@
   `git-kalpak44` shell function: it does the same thing but exists only in one shell's
   profile, so it is not a check that can be relied on.
 
-- **Never `git config --global`.** This machine's global identity is the work one,
-  `pau@foryouandyourcustomers.com`, and it is correct for other repositories on this machine —
-  a global override would silently retag those. A fresh clone inherits it, which is how
-  `3a02211` in `mite-assistant-mcp` was pushed on 2026-09-09 under the work address and
-  unlinked from the `kalpak44` account. Correcting an author already pushed means amending and
-  force-pushing, which orphans the CI run that commit produced.
+- **Never `git config --global`.** The machine's global identity belongs to unrelated work and
+  is correct there, so a global override would silently retag those repositories too. A fresh
+  clone inherits it, which is how `3a02211` in `mite-assistant-mcp` was pushed on 2026-09-09
+  under the wrong address, unlinked from the `kalpak44` account. Correcting an author already
+  pushed means amending and force-pushing: that orphans the CI run the old commit produced and
+  leaves every open PR branch diverged from the base, which then has to be rebased.
 
 - **`homelab-infra <homelab-infra@users.noreply.github.com>` is a bot identity, not ours.** It
   belongs to automation: the `commit_author` / `commit_email` on every `github_repository_file`
