@@ -414,10 +414,19 @@ jobs:
             npm ci
             npm run format:check
             npm run lint
+            npm test
             SonarCloud analysis, with the quality gate waited on
             a docker build of ./Dockerfile
 
-          Every one of those blocks the merge. Run the first three locally.
+          Every one of those blocks the merge. Run the first four locally.
+
+          `npm test` is `jest --coverage` and jest.config.js holds an 80% threshold on
+          statements, branches, functions and lines. Jest exits non-zero below it, so
+          coverage is a merge gate exactly like the others.
+
+          If a compatibility fix of yours adds or changes lines, add tests for those
+          lines in the matching test/ file. Coverage falling below 80% because of your
+          own repair is your repair failing, not the gate misbehaving.
 
           `npm run format` and `npm run lint:fix` are the sanctioned repairs for the
           first two, and you MAY run them on the PR head branch — including over code
@@ -436,6 +445,54 @@ jobs:
 
           Do not build the image locally. It is a three-platform build under emulation
           and takes longer than the whole review; the CI gate below is what confirms it.
+
+          ----------------------------------------------------------------------
+          7B. A GATE FAILURE IS YOURS TO FIX EVEN IN CODE THE BUMP DID NOT TOUCH
+          ----------------------------------------------------------------------
+
+          This overrides the instinct, stated elsewhere in this prompt, to leave an
+          "unrelated pre-existing failure" alone.
+
+          If format:check, lint, npm test or the SonarCloud gate fails on code the
+          dependency change never touched, that is still IN SCOPE and you must repair it
+          on the SAME PR HEAD BRANCH so the gate goes green.
+
+          This is a normal and expected consequence of a dependency upgrade:
+
+            - a prettier major changes a default and reformats files nobody edited
+            - an eslint major adds a rule to its recommended set and old code violates it
+            - an eslint or SDK upgrade deprecates an API used in code unrelated to the bump
+            - a jest major changes behaviour that an existing test depended on
+            - a Sonar rule update raises issues on code that was already there
+
+          In every one of those the code is not "ours" and the failure is not the bump's
+          fault, and it still has to be fixed before anything can merge. Refusing to touch
+          it does not keep the branch clean — it blocks this PR and every later one behind
+          the same failure, for ever.
+
+          Repair it properly and minimally:
+
+            - run `npm run format` and `npm run lint:fix` first; most of this class is
+              mechanical and they resolve it outright
+            - for what they cannot fix, change the code so the rule is satisfied, keeping
+              behaviour identical
+            - for a Sonar issue on old code, fix the issue the rule describes
+            - for coverage below the threshold, add the missing tests
+
+          Stay inside what the gate demands. Fixing a lint error on an untouched file is
+          required; refactoring that file while you are in it is not. A reformat-only
+          change belongs in its own commit, separate from the dependency bump, so the
+          diff a human reads later is still legible.
+
+          The limit is unchanged and absolute: make the gate pass by fixing the code,
+          NEVER by widening .prettierignore, adding an eslint-disable, relaxing a rule in
+          eslint.config.js, lowering the coverage threshold in jest.config.js, deleting or
+          skipping a test, marking a Sonar issue won't-fix, or excluding a path from
+          analysis. Those turn a green check into a lie.
+
+          What remains genuinely out of scope is INFRASTRUCTURE, not code: a runner
+          outage, a registry timeout, an expired credential, a network failure, a flaky
+          test that passes on re-run. Those you re-run or report; you do not "fix" them.
 
           ----------------------------------------------------------------------
           8. VALIDATE THE ORIGINAL UPGRADE
@@ -473,7 +530,8 @@ jobs:
             - the dependency upgrade
             - a required compatibility migration
             - your environment
-            - an unrelated pre-existing issue
+            - a quality gate now failing on pre-existing code, which section 7B puts in
+              scope and which you must fix rather than classify as unrelated
 
           Specifically investigate:
             - removed APIs
@@ -516,15 +574,17 @@ jobs:
             - package-manager configuration
 
           Every additional change MUST be:
-            - directly caused by the dependency upgrade
-            - necessary for compatibility or correctness
+            - either directly caused by the dependency upgrade, or required by section 7B
+              to make a quality gate pass
+            - necessary for compatibility, correctness, or a green gate
             - as small as practical
             - understandable
             - consistent with existing repository conventions
-            - free from unrelated refactoring
+            - free from refactoring no gate asked for
             - behavior-preserving where practical
 
-          Do not turn a dependency PR into a cleanup, refactoring, or feature PR.
+          Do not turn a dependency PR into a cleanup, refactoring, or feature PR. A gate
+          repair under 7B is not an exception to that: fix what the gate names, and stop.
 
           ----------------------------------------------------------------------
           11. NEVER HIDE A REAL FAILURE
@@ -563,9 +623,10 @@ jobs:
           Also inspect the effective full PR diff against its base branch.
 
           Confirm:
-            - every additional edit is necessary
+            - every additional edit is necessary, either for compatibility or for a gate
             - no unrelated refactoring slipped in
-            - no unrelated formatting churn exists
+            - any formatting churn is what `npm run format` produced, not hand-editing,
+              and it sits in its own commit
             - no temporary or debug code remains
             - no generated junk was accidentally added
             - no credentials or secrets were added
@@ -724,10 +785,11 @@ jobs:
           Determine whether the failure is:
             - caused by the dependency upgrade
             - caused by your compatibility repair
+            - a quality gate failing on pre-existing code, which section 7B requires you
+              to fix on this branch, whoever wrote the code
             - an unrelated infrastructure problem
             - a flaky test
             - an environment or credential problem
-            - an unrelated pre-existing repository failure
 
           If the failure is caused by the dependency upgrade or your migration AND there
           is a clear, safe, repository-consistent fix:
@@ -757,7 +819,8 @@ jobs:
             - the PR is still bot-authored
             - the PR is still fundamentally dependency maintenance
             - you inspected the final combined diff
-            - every compatibility fix is directly related to the dependency upgrade
+            - every fix is either related to the dependency upgrade or required by a
+              quality gate under section 7B
             - every compatibility fix is committed to the SAME PR branch
             - relevant local validation succeeded where practical
             - GitHub checks correspond to the FINAL head SHA
@@ -836,7 +899,11 @@ jobs:
           - NEVER use CI results from an older head commit after a new commit was pushed.
           - NEVER disable CI merely to make an upgrade pass.
           - NEVER weaken security checks merely to make an upgrade pass.
-          - NEVER weaken the format, lint, or SonarCloud gate to make an upgrade pass.
+          - NEVER weaken the format, lint, coverage, or SonarCloud gate to make an upgrade
+            pass — not by an ignore file, a disable comment, a relaxed rule, a lowered
+            coverage threshold, a deleted or skipped test, or an analysis exclusion.
+          - ALWAYS fix a gate failure in pre-existing code on the PR branch. "Not written
+            by this bump" is not a reason to leave the gate red; see section 7B.
           - NEVER deploy, and never dispatch a deployment. The workflow rolls the whole
             batch out once, after you finish. Rolling out per merge is what this
             replaces.

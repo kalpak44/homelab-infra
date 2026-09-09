@@ -103,6 +103,16 @@ jobs:
       - name: Run linter
         run: npm run lint
 
+      # `npm test` is `jest --coverage`, and jest.config.js sets an 80% threshold on
+      # statements, branches, functions and lines, so the coverage gate is enforced by the
+      # test run itself rather than by a separate step here that could be dropped without
+      # anything noticing. Verified to fail by raising the threshold on 2026-09-09.
+      #
+      # It writes coverage/lcov.info, which the analysis below uploads — so this step has
+      # to come before Sonar, not after.
+      - name: Run tests with coverage
+        run: npm test
+
       # qualitygate.wait makes the gate an actual gate: a failing gate fails this check,
       # so the agent cannot merge past it. Guarded on the coordinates rather than on the
       # event, so the repo still verifies before its SonarCloud project exists.
@@ -120,6 +130,8 @@ jobs:
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.sources=src
+            -Dsonar.tests=test
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
 
       # Only the multi-arch build needs emulation, and an unpublished ref builds one

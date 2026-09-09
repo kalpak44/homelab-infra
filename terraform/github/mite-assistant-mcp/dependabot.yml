@@ -41,10 +41,12 @@ updates:
     # a break attributable to a single package. They are still proposed — do not add
     # `major` here to "enable majors"; that only batches them.
     #
-    # eslint and prettier are in scope here as devDependencies, and they are the repo's
-    # quality gate: an eslint major that adds a rule, or a prettier major that changes a
-    # default, breaks publish.yml's `lint` or `format:check` on its own PR rather than on
-    # someone else's. That is the point of keeping them out of the grouped PR.
+    # eslint, prettier and jest are in scope here as devDependencies, and they are the
+    # repo's quality gate: an eslint major that adds a rule, a prettier major that changes
+    # a default, or a jest major that changes coverage accounting breaks publish.yml's
+    # `lint`, `format:check` or `test` on its own PR rather than on someone else's. That
+    # is the point of keeping them out of the grouped PR — and ai-pr-agent.yml's section
+    # 7B is what makes the agent repair the fallout instead of parking the PR.
     groups:
       npm-minor-and-patch:
         patterns:
