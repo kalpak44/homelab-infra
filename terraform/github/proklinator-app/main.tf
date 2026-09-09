@@ -123,9 +123,9 @@ resource "github_actions_secret" "sonar" {
 resource "github_dependabot_secret" "sonar" {
   count = var.sonar_token != "" ? 1 : 0
 
-  repository      = github_repository.this.name
-  secret_name     = "SONAR_TOKEN"
-  plaintext_value = var.sonar_token
+  repository  = github_repository.this.name
+  secret_name = "SONAR_TOKEN"
+  value       = var.sonar_token
 }
 
 resource "github_actions_variable" "sonar_organization" {
