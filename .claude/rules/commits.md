@@ -5,9 +5,9 @@
 - **Every commit we make is authored `Pavel Usanli <pavel.usanli@gmail.com>`, configured per
   repo.** Before the first commit in any working tree — this repo included, and every
   `terraform/github/<repo>` target we clone — read `git config --local user.name` and
-  `user.email` and set them if they differ. Check and fix rather than invoking the
-  `git-kalpak44` shell function: it does the same thing but exists only in one shell's
-  profile, so it is not a check that can be relied on.
+  `user.email`, then set them with `git config user.name` / `user.email` if they differ. It is a
+  check made every time, not a one-off: a clone carries no local identity of its own, so there
+  is nothing to inherit but the wrong one.
 
 - **Never `git config --global`.** The machine's global identity belongs to unrelated work and
   is correct there, so a global override would silently retag those repositories too. A fresh
