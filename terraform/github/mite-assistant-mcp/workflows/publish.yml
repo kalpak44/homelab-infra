@@ -1,9 +1,17 @@
 # Managed by homelab-infra — terraform/github/mite-assistant-mcp/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github mite-assistant-mcp`.
 #
-# One pipeline for every trigger: format, lint, SonarCloud, image build. The GHCR push and
-# the cluster rollout are the only conditional parts, so a dependency bump is fully
-# validated without publishing anything.
+# Four jobs, in order: verify the code, build the image, report on the image, roll it out.
+#
+#   verify format, lint, tests at 80% coverage, SonarCloud with the gate waited on
+#   image build, and push to GHCR only when the ref is main
+#   scan syft + grype into the run summary, report-only
+#   deploy dispatch homelab-infra's gitops-bump-images
+#
+# The split exists so the code gate fails in about a minute instead of behind a
+# three-platform build under emulation, and so the graph says which half failed. Only the
+# GHCR push and the rollout are conditional, so a dependency bump is fully validated —
+# Dockerfile included — without publishing anything.
 #
 # This is also the check ai-pr-agent.yml gates on (PR_CHECK_WORKFLOW=publish.yml). It
 # refuses to merge without a green run, and it dispatches this workflow for a PR whose
@@ -46,13 +54,10 @@ env:
   GRYPE_VERSION: v0.118.0
 
 jobs:
-  build:
-    name: Verify and publish image
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
+    timeout-minutes: 15
 
     env:
       # Job-level so the `if:` conditions below can test them. A fork's pull request gets
@@ -66,23 +71,20 @@ jobs:
       # for an unmerged branch, and dispatch a rollout of it.
       PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
-    # Re-emitted through a step rather than read straight off `env`: the `env` context is
-    # not reliably resolvable in a job's `outputs` block, and repeating the event/ref test
-    # on the deployment job would let the publication and rollout conditions drift apart.
+    # Resolved once, here, and read by every job downstream. Repeating the event/ref test
+    # per job would let the publish, scan and rollout conditions drift apart.
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
-      # The scan job addresses the image by digest, not by tag: a tag can be overwritten
-      # between the push and the scan, and then the report would describe an image that is
-      # not the one being deployed.
-      digest: ${{ steps.push.outputs.digest }}
-      # Derived here, not read from metadata-action's `version`: on main that output
-      # resolves to `latest`, so the scan report named a mutable tag and every run
-      # collided on the artifact name `image-scan-latest`. Measured on run 34326858891.
-      # Seven characters, matching the tag the image actually carries.
       tag: ${{ steps.gate.outputs.tag }}
 
     steps:
-      - name: Resolve the publish gate
+      # Seven characters, no prefix: homelab-infra's `just bump-images` rewrites the
+      # manifest to "${sha:0:7}", so any other shape points the cluster at a tag that does
+      # not exist and the Deployment lands in ImagePullBackOff. Derived here rather than
+      # read from metadata-action's `version` output, which resolves to `latest` on main —
+      # the scan report named a mutable tag and every run collided on the artifact name
+      # `image-scan-latest`. Measured on run 34326858891.
+      - name: Resolve the publish gate and the image tag
         id: gate
         run: |
           set -euo pipefail
@@ -99,16 +101,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          # Node 20 is pinned in four places: this line, the Dockerfile's
-          # `node:20-bookworm-slim`, package.json's `engines`, and dependabot.yml's `node`
-          # hold. Bumping one alone means the runtime that ships is never the one tested.
+          # Node 20 is pinned in three places at once: this line, the Dockerfile's
+          # `node:20-bookworm-slim`, and package.json's `engines`, with dependabot.yml
+          # holding the `node` bump. Moving one alone means the runtime that ships is
+          # never the one tested.
           node-version: "20"
           cache: npm
 
       # Fails on a broken or inconsistent lockfile, which is the signal that matters most
-      # for a dependency bump. Not covered by the image build below: the Dockerfile runs
+      # for a dependency bump. Not covered by the image build: the Dockerfile runs
       # `npm ci --omit=dev`, so a devDependency that cannot install would go unnoticed —
-      # and eslint and prettier are devDependencies, so the two gates below depend on it.
+      # and eslint, prettier and jest are devDependencies, so the gates below need it.
       - name: Install from lockfile
         run: npm ci
 
@@ -152,6 +155,37 @@ jobs:
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
 
+  image:
+    name: Build and publish image
+    # Named for both halves because it does both: it builds on every trigger, and pushes
+    # only when the ref is main. A pull request still exercises the Dockerfile — a
+    # dependency the image can no longer install fails here — which is why the build is
+    # not gated behind the push.
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      # Taken from verify rather than recomputed, so there is one publish condition in
+      # this workflow and not four.
+      PUBLISH: ${{ needs.verify.outputs.publish }}
+
+    # Passed through so scan and deploy need only `needs: image` and still see the gate.
+    outputs:
+      publish: ${{ needs.verify.outputs.publish }}
+      tag: ${{ needs.verify.outputs.tag }}
+      # The scan job addresses the image by digest, not by tag: a tag can be overwritten
+      # between the push and the scan, and then the report would describe an image that is
+      # not the one being deployed.
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       # Only the multi-arch build needs emulation, and an unpublished ref builds one
       # platform.
       - name: Set up QEMU
@@ -171,9 +205,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Exactly seven characters, no prefix: homelab-infra's `just bump-images` rewrites
-      # the manifest to "${sha:0:7}", so any other shape points the cluster at a tag that
-      # does not exist and the Deployment lands in ImagePullBackOff.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -191,9 +222,6 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          # An unpublished ref still builds the image — a dependency the image can no
-          # longer install fails here — but nothing reaches the registry, and one platform
-          # keeps the check fast.
           push: ${{ env.PUBLISH == 'true' }}
           platforms: ${{ env.PUBLISH == 'true' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -232,11 +260,11 @@ jobs:
     # for this repo is Sonar in the job above; this is here to be read, not to stop a
     # release, and turning it into a gate would deadlock on findings Debian has not
     # packaged a fix for.
-    needs: build
+    needs: image
     # Only a published image can be pulled by digest. A pull request builds without
     # pushing, so there is nothing in the registry to scan — the tradeoff is that the
     # report arrives at deploy time rather than at review time.
-    if: needs.build.outputs.publish == 'true'
+    if: needs.image.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -275,7 +303,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          ref="${IMAGE_NAME}@${{ needs.build.outputs.digest }}"
+          ref="${IMAGE_NAME}@${{ needs.image.outputs.digest }}"
           echo "Scanning ${ref} (linux/amd64)"
 
           syft --platform linux/amd64 "registry:${ref}" -o json > sbom.json
@@ -318,7 +346,7 @@ jobs:
           {
             echo "### Image scan — report only 🔍"
             echo
-            echo "\`${IMAGE_NAME}:${{ needs.build.outputs.tag }}\` · \`linux/amd64\` ·"
+            echo "\`${IMAGE_NAME}:${{ needs.image.outputs.tag }}\` · \`linux/amd64\` ·"
             echo "${{ steps.scan.outputs.packages }} packages · syft \`${SYFT_VERSION}\` · grype \`${GRYPE_VERSION}\`"
             echo
             echo "| Critical | High | Medium | Low | Negligible | Unknown | Total |"
@@ -359,7 +387,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: image-scan-${{ needs.build.outputs.tag }}
+          name: image-scan-${{ needs.image.outputs.tag }}
           if-no-files-found: ignore
           retention-days: 30
           path: |
@@ -370,16 +398,16 @@ jobs:
 
   deploy:
     name: Deploy to cluster
-    # Gated on the image existing. `build` publishes on a push to main and on a dispatch
+    # Gated on the image existing. `image` publishes on a push to main and on a dispatch
     # of main. Both produce a real image at GITHUB_SHA, so both are worth deploying —
     # the sha is passed explicitly rather than looked up, which is what makes the dispatch
     # case work.
     # `needs` the scan only for ordering, so the report is in the summary before the
-    # rollout starts. `always()` plus an explicit build check is what keeps it ordering
+    # rollout starts. `always()` plus an explicit image check is what keeps it ordering
     # and nothing more: a scanner outage, a registry timeout or a findings table nobody
     # likes must not strand a published image, while a failed build still blocks.
-    needs: [build, scan]
-    if: always() && needs.build.result == 'success' && needs.build.outputs.publish == 'true'
+    needs: [image, scan]
+    if: always() && needs.image.result == 'success' && needs.image.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
