@@ -139,6 +139,28 @@ review ping-pong between them. Five constraints hold the design together and mus
 - **`AI_MAX_FIX_ROUNDS` is enforced in both jobs.** `plan` refuses on the way in and `land` refuses to dispatch past it,
   so neither half can run away alone. Each round is a model run plus a browser QA pass.
 
+**Feedback re-enters through the same label, and a revision never opens a second pull request.** `ai:ready` on an issue
+that already has an open pull request means *revise*: `plan` switches mode instead of skipping, `work` keeps the branch,
+and the agent is given only the comments left on either thread since the branch head — handed the original description
+it rebuilds what is already there. What the round pushed is reported on both threads in bash, never by the prompt, and a
+round that pushes nothing marks the issue `ai:blocked` and fails the job: the commits already on the branch are green, so
+`land` would otherwise merge exactly the work the comment asked to change. The fix-round count is still derived from the
+branch's failed check runs, which means a revision cannot reset it — `plan` says so in its summary when they are already
+spent.
+
+**The resolver reads the Sonar gate instead of guessing at it.** `sonar-scanner` exits 3 for any gate that is not OK, so
+the CI log names no rule at all. `work` fetches the gate status, every failing condition with its threshold and every
+unresolved issue — with the source-to-sink flow for a taint finding — from SonarCloud's API into the prompt, using the
+`SONAR_TOKEN` and project-key variables the repo already carries, so this costs no new credential. It reads
+`pullRequest=<n>` when there is one and `branch=main` otherwise, and it runs in every mode: a BLOCKER left on main is
+inherited by every branch cut from it and fails their gates too, which is what makes one unfixed finding look like an
+intermittent CI failure.
+
+**An accidental close is recovered; a merge is not.** `ai:ready` on an issue whose pull request was closed unmerged opens
+a new one from the branch, which is still there, and on a closed issue it reopens the issue first. A merged pull request
+from that branch is the one closure that was not an accident, so the run stops and asks for a new issue rather than
+rebuilding shipped work.
+
 **Exception — the container-image repos.** `kubectl-awscli` and `postgres-awscli` get `workflows/release.yml` instead
 of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow, and now one **job**, because every step needs
 the working tree the step before it produced and because nothing may reach the registry until the whole chain has

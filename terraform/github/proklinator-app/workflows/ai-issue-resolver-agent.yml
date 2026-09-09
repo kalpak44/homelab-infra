@@ -16,6 +16,14 @@
 #                                                          squash merge              dispatch a fix
 #                                                          issue closes              round, or block
 #
+# `ai:ready` on an issue that already has an open pull request means REVISE, not start
+# again: the same branch, the same pull request, and the comments left since the last
+# commit as the instruction. What the round pushed is reported back on both threads.
+#
+# `ai:ready` after an accident recovers rather than stalls. A pull request closed unmerged
+# gets a new one opened from the branch that is still there; a closed issue is reopened.
+# The one closure that was not an accident is a merged pull request, and that one stops.
+#
 # STATE LIVES ON THE ISSUE. The `ai:*` labels are the loop's state machine, and they are
 # what a human reads to know where something is. The pull request is a scratch space. The
 # fix-round number is not stored anywhere: it is counted from the failed check runs on
@@ -121,6 +129,16 @@ jobs:
           [ -n "$LIST" ] || skip "\`PR_REVIEW_ALLOWLIST\` is empty — the agent loop is disabled. Fail-closed by design."
           in_list() { printf '%s\n' "$LIST" | grep -Fxq "$(printf '%s' "$1" | tr 'A-Z' 'a-z')"; }
 
+          # The round number IS the count of check runs this branch has already failed.
+          # Nothing to store, nothing to drift, and it only ever goes up. Without the cap
+          # a pull request that cannot go green burns a model run per attempt for ever.
+          failed_rounds() {
+            gh run list --repo "$REPO" --branch "$1" \
+              --workflow "${PR_CHECK_WORKFLOW:-publish.yml}" --status completed \
+              --json conclusion --limit 50 \
+              --jq '[.[] | select(.conclusion != "success")] | length' 2>/dev/null || echo 0
+          }
+
           MODE=""
           ISSUE=""
           PR=""
@@ -176,13 +194,7 @@ jobs:
             ISSUE=$(jq -r '.body' pr.json | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' | head -n1 | grep -oE '[0-9]+' || true)
             [ -n "$ISSUE" ] || skip "PR #$PR does not reference an issue — refusing to guess which one it implements."
 
-            # The round number IS the count of check runs this branch has already failed.
-            # Nothing to store, nothing to drift, and it only ever goes up. Without the cap
-            # a pull request that cannot be made green burns a model run per attempt for ever.
-            ROUND=$(gh run list --repo "$REPO" --branch "$BRANCH" \
-                      --workflow "${PR_CHECK_WORKFLOW:-publish.yml}" --status completed \
-                      --json conclusion --limit 50 \
-                      --jq '[.[] | select(.conclusion != "success")] | length' 2>/dev/null || echo 0)
+            ROUND=$(failed_rounds "$BRANCH")
 
             # `force` is the human override, and it is why the automatic path stays capped.
             # `land` dispatches this workflow too, but it never passes force. A person
@@ -216,8 +228,16 @@ jobs:
 
             gh issue view "$ISSUE" --repo "$REPO" --json number,state,labels,title > issue.json
 
-            STATE=$(jq -r '.state' issue.json)
-            [ "$STATE" = "OPEN" ] || skip "Issue #$ISSUE is \`$STATE\`."
+            # A closed issue that is labelled `ai:ready` again was closed by accident: an
+            # allowlisted person has just asked for work on it, so reopen it rather than
+            # stalling. A merged pull request from its branch is the one closure that was
+            # not an accident, and reopening there would rebuild what already shipped.
+            if [ "$(jq -r '.state' issue.json)" != "OPEN" ]; then
+              MERGED=$(gh pr list --repo "$REPO" --state merged --head "ai/issue-$ISSUE" --json number -q '.[0].number' || true)
+              [ -z "$MERGED" ] || skip "Issue #$ISSUE is closed and PR #$MERGED merged its work — open a new issue for anything further."
+              echo "Issue #$ISSUE was closed with nothing merged — reopening it."
+              gh issue reopen "$ISSUE" --repo "$REPO"
+            fi
 
             HAS() { jq -e --arg l "$1" '.labels[] | select(.name == $l)' issue.json > /dev/null; }
 
@@ -238,17 +258,24 @@ jobs:
               skip "Issue #$ISSUE is already \`ai:in-progress\` — another run owns it."
             fi
 
-            # An open pull request for this issue means it belongs in fix mode, not here.
-            EXISTING=$(gh pr list --repo "$REPO" --state open --head "ai/issue-$ISSUE" --json number -q '.[0].number' || true)
-            [ -z "$EXISTING" ] || skip "PR #$EXISTING already implements issue #$ISSUE — dispatch with \`pr=$EXISTING\` to repair it."
-
             BRANCH="ai/issue-$ISSUE"
             ROUND=0
 
+            # An open pull request means this is feedback on work that already exists, so
+            # revise it: same branch, same pull request, the new comments as the brief. A
+            # closed one is left closed — the implement path below opens a fresh pull
+            # request from the branch, which is still there.
+            EXISTING=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number -q '.[0].number' || true)
+            if [ -n "$EXISTING" ]; then
+              MODE=revise
+              PR="$EXISTING"
+              ROUND=$(failed_rounds "$BRANCH")
+            fi
+
             # Claim it. Do this before any work so a concurrent run bounces off the check
             # above rather than racing us.
-            gh issue edit "$ISSUE" --repo "$REPO" \
-              --add-label "ai:in-progress" --remove-label "ai:ready" || true
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:in-progress" \
+              --remove-label "ai:ready" --remove-label "ai:review" || true
           fi
 
           {
@@ -270,6 +297,12 @@ jobs:
             [ -n "$PR" ] && echo "| Pull request | #$PR |"
             echo "| Branch | \`$BRANCH\` |"
             echo "| Fix round | $ROUND of $MAX_ROUNDS |"
+            # The count is derived from the branch's failed check runs, so a revision
+            # cannot reset it: say now that a red check will hand back instead of
+            # repairing itself, rather than letting that look like a new failure.
+            if [ "$MODE" = "revise" ] && [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+              echo "| Automatic repair | exhausted — a failing check hands back |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------------
@@ -344,13 +377,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$MODE" = "fix" ]; then
+          if [ "$MODE" = "fix" ] || [ "$MODE" = "revise" ]; then
             git fetch origin "$BRANCH"
             git checkout "$BRANCH"
           elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
             # Implement mode, but the branch already exists: an earlier attempt got as far
             # as pushing and its pull request was then closed (an open one would have been
-            # routed to fix mode by the plan job). Continue from it rather than branching
+            # routed to revise by the plan job). Continue from it rather than branching
             # fresh off main — a new branch from main would push as a non-fast-forward and
             # strand the run, and it would throw away work whose history is on the issue.
             echo "Branch \`$BRANCH\` already exists — continuing from the previous attempt."
@@ -359,6 +392,10 @@ jobs:
           else
             git checkout -b "$BRANCH"
           fi
+
+          # What this run inherited. Everything after it is what this round pushed, which
+          # is what gets reported back to whoever asked for it.
+          echo "START_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
           echo "On $(git branch --show-current) at $(git rev-parse --short HEAD)"
 
@@ -545,6 +582,49 @@ jobs:
 
           echo "Prior-attempt context: $(wc -l < "$RUNNER_TEMP/history.md") lines"
 
+      # The comments left since the branch head are what a revision is being asked for.
+      # Isolated here rather than left for the agent to find in the thread: it otherwise
+      # re-reads the original description as the brief and rebuilds what is already there.
+      - name: Collect the new feedback
+        if: needs.plan.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+
+          # The commit date in GitHub's own format — `%cI` writes a numeric offset, and
+          # comparing that against an ISO timestamp ending in Z would be nonsense.
+          SINCE=$(TZ=UTC git log -1 --format=%cd --date=format-local:'%Y-%m-%dT%H:%M:%SZ')
+
+          # Piped into jq rather than `gh --jq`, which takes an expression and no --arg.
+          newer() {
+            gh "$1" view "$2" --repo "$REPO" --json comments 2>/dev/null \
+              | jq -r --arg since "$SINCE" \
+                  '.comments[] | select(.createdAt > $since)
+                   | "**\(.author.login)** (\(.createdAt))\n\n\(.body)\n"' \
+              || true
+          }
+
+          ISSUE_NEW=$(newer issue "$ISSUE")
+          PR_NEW=$(newer pr "$PR")
+
+          {
+            echo "# Feedback left since your last commit ($SINCE)"
+            echo
+            if [ -z "$ISSUE_NEW$PR_NEW" ]; then
+              echo "_Nothing was said after the branch head. Read the full threads in"
+              echo "history.md and work out what is being asked from those._"
+            else
+              echo "## On issue #$ISSUE"
+              echo
+              printf '%s\n' "${ISSUE_NEW:-_nothing new_}"
+              echo
+              echo "## On pull request #$PR"
+              echo
+              printf '%s\n' "${PR_NEW:-_nothing new_}"
+            fi
+          } > "$RUNNER_TEMP/feedback.md"
+
+          echo "New feedback: $(wc -l < "$RUNNER_TEMP/feedback.md") lines"
+
       # In fix mode the whole point is the failure, so it is fetched rather than described.
       # `--log-failed` prints only the steps that failed, which is what fits in a prompt.
       - name: Collect the failing check run
@@ -587,6 +667,103 @@ jobs:
 
           echo "Failure context: $(wc -l < "$RUNNER_TEMP/ci-failure.md") lines"
 
+      # Sonar is the one gate with no local equivalent, so its findings are read from the
+      # analysis itself. Without them a failure is `exit code 3` in a log and the agent
+      # guesses which rule it broke. Taint findings carry their source-to-sink flow, which
+      # is the part that makes them fixable rather than suppressible.
+      - name: Collect the SonarCloud findings
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY_SITE: ${{ vars.SONAR_PROJECT_KEY_SITE }}
+          SONAR_PROJECT_KEY_API: ${{ vars.SONAR_PROJECT_KEY_API }}
+        run: |
+          # Never fatal: a missing analysis is no reason to abandon the round.
+          set -uo pipefail
+
+          OUT="$RUNNER_TEMP/sonar.md"
+          echo "# SonarCloud — what the quality gate says" > "$OUT"
+          echo >> "$OUT"
+
+          if [ -z "${SONAR_TOKEN:-}" ]; then
+            echo "_SONAR_TOKEN is unset, so the analysis cannot be read._" >> "$OUT"
+            exit 0
+          fi
+
+          api() {
+            curl -sS --max-time 30 -H "Authorization: Bearer $SONAR_TOKEN" \
+              "https://sonarcloud.io/api/$1" 2>/dev/null || echo '{}'
+          }
+
+          # A pull request is analysed under its own number. Before its first analysis, and
+          # in implement mode, main is what the branch inherits — a BLOCKER left there
+          # fails the gate on every branch cut from it until someone fixes it.
+          SCOPES="branch=main"
+          [ -n "${PR:-}" ] && SCOPES="pullRequest=$PR branch=main"
+
+          MAX_ISSUES=40
+
+          project() {
+            KEY="$2"
+
+            echo "## $1 — \`$KEY\`" >> "$OUT"
+            echo >> "$OUT"
+
+            if [ -z "$KEY" ]; then
+              { echo "_no project key configured_"; echo; } >> "$OUT"
+              return
+            fi
+
+            STATUS=""
+            for SCOPE in $SCOPES; do
+              GATE=$(api "qualitygates/project_status?projectKey=$KEY&$SCOPE")
+              STATUS=$(printf '%s' "$GATE" | jq -r '.projectStatus.status // empty')
+              [ -n "$STATUS" ] && break
+            done
+
+            if [ -z "$STATUS" ]; then
+              { echo "_no analysis exists yet for this code._"; echo; } >> "$OUT"
+              return
+            fi
+
+            {
+              echo "Gate **$STATUS**, read from \`$SCOPE\`."
+              echo
+              printf '%s' "$GATE" | jq -r '
+                [.projectStatus.conditions[]? | select(.status != "OK")] as $bad
+                | if ($bad | length) == 0 then "No failing condition."
+                  else "Failing conditions:", ($bad[] | "- `\(.metricKey)` is \(.actualValue), must be \(.errorThreshold)")
+                  end'
+              echo
+            } >> "$OUT"
+
+            ISSUES=$(api "issues/search?componentKeys=$KEY&$SCOPE&resolved=false&ps=$MAX_ISSUES&s=SEVERITY&asc=false")
+            TOTAL=$(printf '%s' "$ISSUES" | jq -r '.total // 0')
+
+            {
+              echo "$TOTAL unresolved issue(s)."
+              # A silent cap reads as "that was all of them", which is how a fix ships
+              # half-done. Say what was left out.
+              [ "$TOTAL" -gt "$MAX_ISSUES" ] && echo "Only the $MAX_ISSUES most severe are listed."
+              echo
+              printf '%s' "$ISSUES" | jq -r --arg k "$KEY:" '
+                .issues[]? |
+                "### \(.severity) \(.type) — `\(.rule)`",
+                "",
+                "\(.component | sub("^" + $k; "")):\(.line // 0) — \(.message)",
+                "",
+                (if (.flows | length) > 0 then
+                   "Flow:", ([.flows[0].locations[]? |
+                     "- \(.component | sub("^" + $k; "")):\(.textRange.startLine // 0) — \(.msg // "")"] | reverse | .[]), ""
+                 else empty end)'
+            } >> "$OUT"
+          }
+
+          project "Site" "${SONAR_PROJECT_KEY_SITE:-}"
+          project "API" "${SONAR_PROJECT_KEY_API:-}"
+
+          echo "SonarCloud context: $(wc -l < "$OUT") lines"
+          exit 0
+
       - name: Write the shared context
         run: |
           set -euo pipefail
@@ -613,6 +790,12 @@ jobs:
                          what earlier runs on this issue already tried, and how each
                          one ended — the issue thread plus every pull request ever
                          opened from $BRANCH, including closed ones
+            RUNNER_TEMP/feedback.md
+                         the comments left on either thread since your last commit
+                         (revise mode only)
+            RUNNER_TEMP/sonar.md
+                         what both SonarCloud gates say right now, with every
+                         unresolved issue and its taint flow
 
             STRIPE_SECRET_KEY       Stripe TEST secret key
             STRIPE_PUBLISHABLE_KEY  Stripe TEST publishable key
@@ -651,9 +834,21 @@ jobs:
           backend/src/app.js is held at 100%: a new route or a new branch in it needs a
           test in the same pull request.
 
-          The SonarCloud gates judge NEW code, which means your code. If one fails, read
-          the issues it raised and fix them. They are the one part of the gate you cannot
-          run locally, so every Sonar regression costs a full round.
+          The SonarCloud gates judge NEW code, which means your code. They are the one
+          part of the gate with no local equivalent, so every Sonar regression costs a
+          full round. What they currently say is already fetched for you:
+
+            cat "$RUNNER_TEMP/sonar.md"
+
+          That is the gate status, every failing condition with its threshold, and every
+          unresolved issue with its rule key, file, line and — for a taint finding — the
+          source-to-sink flow. Read it BEFORE you write code, not only when something
+          fails: a finding listed against `branch=main` is inherited by your branch and
+          will fail your gate too, even though you did not write it. Fix it.
+
+          One rule about them, absolutely: fix what the finding describes. Never mark an
+          issue won't-fix, never exclude the file from analysis, and never delete the
+          check that raised it.
 
           A validation guard's shape is load-bearing. Sonar's taint analysis reads the
           literal check, so an allowlist tested with `Array.includes` clears a tainted
@@ -924,6 +1119,11 @@ jobs:
           closes the issue on merge, and it is the only record linking the two, so a later
           fix round reads it back to find its way home.
 
+          A previous pull request from this branch may have been closed without merging.
+          Open a new one rather than reopening it, and say what is different this time. If
+          the branch already carries the whole change and the issue still asks for it,
+          verify it and open the pull request; do not rewrite work already done.
+
             gh pr create --repo "$REPO" --base main --head "$BRANCH" \
               --title "<concise title>" \
               --body "$(cat <<EOF
@@ -966,6 +1166,116 @@ jobs:
 
           exit "$(cat "$RUNNER_TEMP/agent.status")"
 
+      - name: Revise the pull request
+        if: needs.plan.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+
+          {
+            cat <<'AGENT_PROMPT'
+          You are the implementation agent. Your pull request is open and someone has
+          left feedback on it, or on the issue behind it. Your job is to act on that
+          feedback on the same branch, so the same pull request updates.
+
+          Nobody reviews your work by hand. What decides it is the quality gate described
+          below and a browser QA pass this job runs after you push. Write for those.
+
+          ----------------------------------------------------------------------
+          1. READ THE FEEDBACK — IT IS THE BRIEF, NOT THE DESCRIPTION
+          ----------------------------------------------------------------------
+
+            cat "$RUNNER_TEMP/feedback.md"
+
+          Those are the comments left since your last commit, and they are what you were
+          started for. Where one contradicts the issue description or an earlier comment,
+          the newest wins — it was written by someone looking at what you already built.
+
+          Then the rest of the picture:
+
+            cat "$RUNNER_TEMP/history.md"
+            cat "$RUNNER_TEMP/sonar.md"
+            gh pr view "$PR" --repo "$REPO" --comments
+            gh pr diff "$PR" --repo "$REPO"
+            git log --oneline main..HEAD
+
+          Two cases are not code changes, and guessing at either wastes the round:
+
+            - The feedback is a QUESTION. Answer it in a comment on PR #$PR, then hand the
+              issue back naming what you still need. Do not invent a change to make.
+            - The feedback is AMBIGUOUS, or asks for a product decision. Hand it back with
+              the options and their consequences. Do not quietly pick one.
+
+          ----------------------------------------------------------------------
+          2. CHANGE ONLY WHAT WAS ASKED FOR
+          ----------------------------------------------------------------------
+
+          The commits on this branch are the agreed part of the work. Build on them. Do
+          not revert them wholesale, do not reimplement them a different way because you
+          would have done it differently, and never force-push.
+
+          If the feedback contradicts something already on the branch, change that one
+          thing and say so. Everything else stays.
+
+          ----------------------------------------------------------------------
+          3. VERIFY THE WHOLE GATE, NOT JUST WHAT YOU TOUCHED
+          ----------------------------------------------------------------------
+
+            npm run format:check
+            npm run lint
+            npm run test:site
+            npm run test:api
+            "$RUNNER_TEMP/serve.sh"
+
+          Then look at the app on desktop and on mobile. Confirm with your own eyes that
+          what the feedback asked for now happens, and that what worked before still does.
+
+          New or changed code needs its tests in the same push: coverage is a merge gate.
+
+          ----------------------------------------------------------------------
+          4. COMMIT AND PUSH
+          ----------------------------------------------------------------------
+
+          Confirm `git branch --show-current` prints $BRANCH, stage only what you meant
+          to, then commit and push. A normal commit — never amend, never force-push.
+
+            git add <files>
+            git commit -m "<what you changed>"
+            git push
+
+          ----------------------------------------------------------------------
+          5. DO NOT OPEN A PULL REQUEST
+          ----------------------------------------------------------------------
+
+          PR #$PR is open and your push updates it. A second one from this branch would
+          split the review in two. Update its body if what it describes has changed, and
+          keep the `Closes #$ISSUE` line — the merge does not close the issue without it.
+
+          This job comments on the pull request and the issue with what you pushed, so do
+          not write that report yourself. Do not merge: the merge is decided after CI, in
+          bash.
+
+          ----------------------------------------------------------------------
+          FINAL OUTPUT
+          ----------------------------------------------------------------------
+
+          One line:
+
+            #$PR — revised — <what you changed, in response to which feedback>
+          AGENT_PROMPT
+            cat "$RUNNER_TEMP/context.md"
+          } > "$RUNNER_TEMP/prompt.md"
+
+          set +e
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$RUNNER_TEMP/summary.md" \
+            "$(cat "$RUNNER_TEMP/prompt.md")" 2>&1 | tee "$RUNNER_TEMP/agent.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/agent.status"
+          set -e
+
+          exit "$(cat "$RUNNER_TEMP/agent.status")"
+
       - name: Repair the failing check run
         if: needs.plan.outputs.mode == 'fix'
         run: |
@@ -985,10 +1295,15 @@ jobs:
           ----------------------------------------------------------------------
 
             cat "$RUNNER_TEMP/ci-failure.md"
+            cat "$RUNNER_TEMP/sonar.md"
 
-          That is the failing run and the log of the steps that failed. Read the actual
-          error, not the job name. Then read what the loop has already said about this
-          work, so you can tell a new failure from one you have already tried to fix:
+          The first is the failing run and the log of the steps that failed; the second is
+          what both quality gates say. Read the actual error, not the job name — the
+          scanner exits 3 for any gate that is not OK, so `exit code 3` in the log names
+          no rule at all and sonar.md is where the rule is.
+
+          Then read what the loop has already said about this work, so you can tell a new
+          failure from one you have already tried to fix:
 
             cat "$RUNNER_TEMP/history.md"
 
@@ -1013,8 +1328,9 @@ jobs:
           the same way:
 
             - your code, which is yours to fix
-            - a SonarCloud finding, which is not reproducible locally: read the issues it
-              raised on the pull request and fix what they describe
+            - a SonarCloud finding, which is not reproducible locally: sonar.md lists the
+              failing condition, the rule and the flow, and fixing what it describes is
+              the only sanctioned repair
             - infrastructure — a runner outage, a registry timeout, a network failure.
               That is not code and you cannot fix it on a branch. Say so and stop; do not
               start changing code to appease it.
@@ -1326,6 +1642,101 @@ jobs:
           echo "Browser QA is blocking — refusing to hand this to the merge." >&2
           exit 1
 
+      # Whoever left the feedback is not watching the run, so what came of it is said
+      # where they left it. Bash rather than the prompt: a report the model can forget to
+      # write is a loop that looks like it ignored the comment.
+      - name: Report what this round changed
+        if: always() && needs.plan.outputs.mode == 'revise'
+        run: |
+          set -euo pipefail
+
+          # A blocking browser verdict was reported on both threads by the step above, and
+          # it left the issue `ai:blocked`. A second report of the same round is noise.
+          VERDICT=$(cat "$QA_DIR/verdict" 2>/dev/null || echo "error")
+          if [ "$VERDICT" != "pass" ]; then
+            echo "Browser QA verdict \`$VERDICT\` — already reported."
+            exit 0
+          fi
+
+          STATUS=$(cat "$RUNNER_TEMP/agent.status" 2>/dev/null || echo "unknown")
+          COMMITS=$(git log --oneline "${START_SHA:-HEAD}..HEAD" 2>/dev/null || true)
+          STAT=$(git diff --stat "${START_SHA:-HEAD}..HEAD" 2>/dev/null || true)
+
+          # Feedback that produced no commit needs a person, not another round — and the
+          # merge must not proceed, because the commits already on the branch are green
+          # and `land` would ship exactly the work the comment asked to change.
+          BLOCKED=no
+
+          if [ "$STATUS" != "0" ] || [ -z "$COMMITS" ]; then
+            BLOCKED=yes
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:blocked" \
+              --remove-label "ai:in-progress" --remove-label "ai:review" || true
+
+            {
+              echo "## The feedback was not acted on"
+              echo
+              if [ "$STATUS" = "0" ]; then
+                echo "The agent finished without pushing a commit, so PR #$PR is unchanged."
+              else
+                echo "The agent did not complete (exit status \`$STATUS\`), so PR #$PR is unchanged."
+              fi
+              echo
+              echo "### What the agent said"
+              echo
+              if [ -s "$RUNNER_TEMP/summary.md" ]; then
+                cat "$RUNNER_TEMP/summary.md"
+              else
+                echo "_No closing summary — it was cut off rather than stopping deliberately._"
+              fi
+            } > "$RUNNER_TEMP/revised.md"
+          else
+            {
+              echo "## Revised"
+              echo
+              if [ -s "$RUNNER_TEMP/summary.md" ]; then
+                cat "$RUNNER_TEMP/summary.md"
+              else
+                echo "_The agent produced no closing summary; the commits below are what it pushed._"
+              fi
+              echo
+              echo "### Pushed this round"
+              echo
+              echo '```'
+              printf '%s\n' "$COMMITS"
+              echo
+              printf '%s\n' "$STAT"
+              echo '```'
+              echo
+              echo "Browser QA passed on desktop, tablet and mobile. The check run on PR #$PR"
+              echo "decides the merge from here."
+            } > "$RUNNER_TEMP/revised.md"
+          fi
+
+          {
+            echo
+            if [ "$BLOCKED" = "yes" ]; then
+              echo "**To continue:** answer whatever is open in a comment here, then apply \`ai:ready\`"
+              echo "to the issue — that clears \`ai:blocked\` by itself."
+            else
+              echo "Anything else to change? Say it in a comment here or on PR #$PR, then apply"
+              echo "\`ai:ready\` to the issue."
+            fi
+            echo "The next run reads the comments left since the branch head and updates the"
+            echo "same pull request."
+            echo
+            echo "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } >> "$RUNNER_TEMP/revised.md"
+
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/revised.md" || true
+          # Also on the issue: that is where the state machine lives and where you look.
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file "$RUNNER_TEMP/revised.md" || true
+          cat "$RUNNER_TEMP/revised.md" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$BLOCKED" = "yes" ]; then
+            echo "Nothing was pushed for this feedback — refusing to hand PR #$PR to the merge." >&2
+            exit 1
+          fi
+
       - name: Upload QA evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -1335,11 +1746,11 @@ jobs:
           retention-days: 14
           path: ${{ env.QA_DIR }}
 
-      # An implement run that ends with the issue still ai:in-progress and no pull request
-      # has stranded it: the claim label blocks every future run, so nothing would ever
-      # pick it up again. Hand it back explicitly instead.
+      # A run that ends with the issue still ai:in-progress and no pull request has
+      # stranded it: the claim label blocks every future run, so nothing would ever pick
+      # it up again. Hand it back explicitly instead.
       - name: Release the claim if nothing was produced
-        if: always() && needs.plan.outputs.mode == 'implement'
+        if: always() && (needs.plan.outputs.mode == 'implement' || needs.plan.outputs.mode == 'revise')
         run: |
           set -euo pipefail
 
@@ -1349,7 +1760,7 @@ jobs:
           case "$LABELS" in
             *ai:in-progress*)
               if [ -n "$OPEN_PR" ]; then
-                # The agent pushed and opened a pull request but never moved the label.
+                # There is a pull request to look at, so the issue belongs in review.
                 gh issue edit "$ISSUE" --repo "$REPO" --add-label "ai:review" --remove-label "ai:in-progress" || true
                 echo "PR #$OPEN_PR exists — issue moved to ai:review."
               else
