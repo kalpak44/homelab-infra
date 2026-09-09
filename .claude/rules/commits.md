@@ -2,11 +2,22 @@
 
 - Commit messages must be a single short imperative line - no body, no trailers, no `Co-Authored-By`.
 
-- **"use `git-kalpak44`" means run that function in the repo being committed to, before the
-  first commit.** It is a zsh function in `~/.zshrc` — reachable from the tool shell, not a
-  binary on `PATH` — and it sets `user.name` / `user.email` **locally** in the current repo to
-  `Pavel Usanli <pavel.usanli@gmail.com>`, refusing to run outside a work tree. It is the
-  identity for the `kalpak44` repos; this machine's global identity is the work one
-  (`pau@foryouandyourcustomers.com`), so a clone of a `terraform/github/<repo>` target picks up
-  the wrong author unless the function is run first. Correcting it after a push means rewriting
-  the author and force-pushing a branch that CI has already built.
+- **Every commit we make is authored `Pavel Usanli <pavel.usanli@gmail.com>`, configured per
+  repo.** Before the first commit in any working tree — this repo included, and every
+  `terraform/github/<repo>` target we clone — read `git config --local user.name` and
+  `user.email` and set them if they differ. Check and fix rather than invoking the
+  `git-kalpak44` shell function: it does the same thing but exists only in one shell's
+  profile, so it is not a check that can be relied on.
+
+- **Never `git config --global`.** This machine's global identity is the work one,
+  `pau@foryouandyourcustomers.com`, and it is correct for other repositories on this machine —
+  a global override would silently retag those. A fresh clone inherits it, which is how
+  `3a02211` in `mite-assistant-mcp` was pushed on 2026-09-09 under the work address and
+  unlinked from the `kalpak44` account. Correcting an author already pushed means amending and
+  force-pushing, which orphans the CI run that commit produced.
+
+- **`homelab-infra <homelab-infra@users.noreply.github.com>` is a bot identity, not ours.** It
+  belongs to automation: the `commit_author` / `commit_email` on every `github_repository_file`
+  in `terraform/github/`, and this repo's history up to `598f944`. Leave those alone — nothing
+  was rewritten, so the log carries both identities by design. Do not use it for a commit we
+  make, and do not change automation to use ours.
