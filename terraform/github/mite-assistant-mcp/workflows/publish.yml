@@ -63,7 +63,7 @@ jobs:
 
     # Re-emitted through a step rather than read straight off `env`: the `env` context is
     # not reliably resolvable in a job's `outputs` block, and repeating the event/ref test
-    # on the deploy job would let the publish and rollout conditions drift apart.
+    # on the deployment job would let the publication and rollout conditions drift apart.
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
 
