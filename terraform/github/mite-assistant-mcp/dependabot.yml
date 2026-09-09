@@ -1,10 +1,11 @@
 # Managed by homelab-infra — terraform/github/mite-assistant-mcp/dependabot.yml
 # Edits made here in the target repo are overwritten by `just deploy github mite-assistant-mcp`.
 #
-# Opens the dependency PRs that ai-pr-agent.yml then reviews, repairs and merges. Daily
-# at 05:00 UTC, an hour before that agent's daily sweep, so a proposal never waits more
-# than an hour to be picked up. Until this file existed the repo had no dependency updater
-# at all, so the sweep ran every morning over an empty queue.
+# Opens the dependency PRs that ai-pr-agent.yml then reviews, repairs and merges. Daily at
+# 05:00 Europe/Sofia, the working day the maintainer keeps. The zone is named rather than
+# offset so the hour does not slide by one over EET/EEST — Dependabot handles the
+# transition, GitHub's `schedule:` cron cannot, which is why the agent that picks these up
+# runs at a fixed 04:00 UTC and is late rather than early in both halves of the year.
 #
 # One entry per manifest actually in the tree — a `directory` that holds no manifest is
 # not an error Dependabot reports anywhere; it just silently never opens a PR:
@@ -26,7 +27,7 @@ updates:
     schedule:
       interval: daily
       time: "05:00"
-      timezone: Etc/UTC
+      timezone: Europe/Sofia
     # The agent has no per-run limit of its own, so this is sized to not withhold
     # proposals. It throttles how many sit open at once, not how many exist.
     open-pull-requests-limit: 10
@@ -39,6 +40,11 @@ updates:
     # are deliberately NOT in this group: they arrive as one PR each, which is what makes
     # a break attributable to a single package. They are still proposed — do not add
     # `major` here to "enable majors"; that only batches them.
+    #
+    # eslint and prettier are in scope here as devDependencies, and they are the repo's
+    # quality gate: an eslint major that adds a rule, or a prettier major that changes a
+    # default, breaks publish.yml's `lint` or `format:check` on its own PR rather than on
+    # someone else's. That is the point of keeping them out of the grouped PR.
     groups:
       npm-minor-and-patch:
         patterns:
@@ -52,14 +58,14 @@ updates:
     schedule:
       interval: daily
       time: "05:00"
-      timezone: Etc/UTC
+      timezone: Europe/Sofia
     open-pull-requests-limit: 10
     ignore:
       # Node 20 is pinned in three places at once: the Dockerfile's `node:20-bookworm-slim`,
-      # pr-check.yml's `node-version: "20"`, and package.json's `engines: ">=20.0.0"`.
+      # publish.yml's `node-version: "20"`, and package.json's `engines: ">=20.0.0"`.
       # Dependabot treats the whole tag as the version and proposed a jump to 26 within
       # minutes of this file landing (PR #14 on 2026-09-08). Merging that ships an image
-      # built on Node 26 while the PR check still validates on 20, so the runtime that
+      # built on Node 26 while the check still validates on 20, so the runtime that
       # actually runs is never exercised — the same thing that happened on kalpak44, where
       # the agent merged it. `engines` would not catch it either: `>=20.0.0` admits 26.
       # Held here; the pin moves by hand, in all three places together.

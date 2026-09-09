@@ -21,3 +21,22 @@ variable "deepseek_model" {
   type        = string
   default     = "deepseek-v4-flash"
 }
+
+variable "sonar_project_key" {
+  description = "SonarCloud project key publish.yml analyses against"
+  type        = string
+  default     = "mite-assistant-mcp"
+}
+
+variable "sonar_organization" {
+  description = "SonarCloud organization owning the project"
+  type        = string
+  default     = "kalpak44"
+}
+
+variable "sonar_token" {
+  description = "SonarCloud token, published to both secret stores so the quality gate also runs on Dependabot PRs"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

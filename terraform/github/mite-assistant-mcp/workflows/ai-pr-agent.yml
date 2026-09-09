@@ -14,9 +14,15 @@
 
 name: AI PR Agent
 
+# Dependabot opens the morning's PRs at 05:00 Europe/Sofia. GitHub's `schedule:` has no
+# timezone, so this cannot simply be "06:00 Sofia": Sofia 05:00 is 02:00 UTC on EEST and
+# 03:00 UTC on EET, and a fixed 03:00 UTC would fire *before* Dependabot for half the
+# year. 04:00 UTC is one hour behind the proposals in winter and two in summer — late in
+# both halves, which is the direction that cannot fail. The proposals wait; the agent
+# never sweeps an empty queue and leaves them for a day.
 on:
   schedule:
-    - cron: "0 6 * * *" # 06:00 UTC daily
+    - cron: "0 4 * * *" # 04:00 UTC — 06:00 Sofia on EET, 07:00 on EEST
   workflow_dispatch:
 
 permissions:
@@ -43,6 +49,10 @@ jobs:
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
       REPO: ${{ github.repository }}
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+      # Read from the payload, not from `github.ref_name`: a scheduled run is always on
+      # the default branch, but a `workflow_dispatch` can be started from any ref, and the
+      # closing rollout below must never dispatch a publish of one of those.
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
     steps:
       - name: Checkout repository
@@ -105,6 +115,19 @@ jobs:
             echo
             exit 1
           fi
+
+      # The closing rollout compares this against the head of the default branch after
+      # the run. A count of merged PRs from the model's own summary would do the same job
+      # only when the model reports honestly and does not crash halfway; the SHA is
+      # measured, so it holds in both cases.
+      - name: Record the pre-run head of the default branch
+        id: before
+        run: |
+          set -euo pipefail
+
+          sha=$(gh api "repos/${REPO}/commits/${DEFAULT_BRANCH}" --jq .sha)
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Default branch at ${sha:0:7} before this run."
 
       - name: Run the agent
         run: |
@@ -380,6 +403,39 @@ jobs:
           Prefer commands already used by CI or existing repository tooling.
 
           Do not invent unnecessary validation tooling.
+
+          ----------------------------------------------------------------------
+          7A. THIS REPOSITORY'S QUALITY GATE
+          ----------------------------------------------------------------------
+
+          This repository is a Node ESM MCP server with no test suite. Its gate is
+          exactly what .github/workflows/publish.yml runs, in this order:
+
+            npm ci
+            npm run format:check
+            npm run lint
+            SonarCloud analysis, with the quality gate waited on
+            a docker build of ./Dockerfile
+
+          Every one of those blocks the merge. Run the first three locally.
+
+          `npm run format` and `npm run lint:fix` are the sanctioned repairs for the
+          first two, and you MAY run them on the PR head branch — including over code
+          the dependency bump did not touch, when it is a prettier or eslint upgrade
+          that moved the goalposts. Commit that reformatting on its own where you can,
+          so the dependency change stays readable next to it.
+
+          Do NOT satisfy either gate by widening .prettierignore, adding an
+          eslint-disable, relaxing a rule in eslint.config.js, or deleting a file from
+          the lint scope. Fix the code.
+
+          The SonarCloud gate reports on NEW code, so your own compatibility fixes are
+          what it will judge. If it fails, read the issues it raised and repair them.
+          Never lower the quality gate, mark an issue won't-fix, or exclude a path from
+          analysis in order to pass.
+
+          Do not build the image locally. It is a three-platform build under emulation
+          and takes longer than the whole review; the CI gate below is what confirms it.
 
           ----------------------------------------------------------------------
           8. VALIDATE THE ORIGINAL UPGRADE
@@ -780,6 +836,10 @@ jobs:
           - NEVER use CI results from an older head commit after a new commit was pushed.
           - NEVER disable CI merely to make an upgrade pass.
           - NEVER weaken security checks merely to make an upgrade pass.
+          - NEVER weaken the format, lint, or SonarCloud gate to make an upgrade pass.
+          - NEVER deploy, and never dispatch a deployment. The workflow rolls the whole
+            batch out once, after you finish. Rolling out per merge is what this
+            replaces.
           - NEVER delete or weaken tests merely to make an upgrade pass.
           - NEVER make unrelated refactors.
           - NEVER add unrelated features.
@@ -815,6 +875,52 @@ jobs:
             --sandbox danger-full-access \
             --output-last-message summary.md \
             "$(cat prompt.md)"
+
+      # One rollout per sweep, not one per merge. Each merge above published its own
+      # image — publish.yml still does that for every commit on the default branch,
+      # because homelab-infra's nightly `just bump-images` reads the tag from the last
+      # successful push run and a commit with no image behind it would leave the
+      # Deployment in ImagePullBackOff — but publish.yml holds the *rollout* on a
+      # bot-PR merge and leaves it to this step. Ten merges therefore produce ten images
+      # and one cluster rollout, of the combined result.
+      #
+      # `if: always()` on purpose. The merges already landed; a model crash halfway
+      # through must not leave the cluster behind until the nightly sweep.
+      #
+      # It dispatches PR_CHECK_WORKFLOW rather than a name of its own, because in this
+      # repo the merge gate and the publisher are deliberately the same file — two names
+      # for it would be two things that can drift.
+      - name: Roll the batch out
+        if: always()
+        run: |
+          set -euo pipefail
+
+          after=$(gh api "repos/${REPO}/commits/${DEFAULT_BRANCH}" --jq .sha)
+          before='${{ steps.before.outputs.sha }}'
+
+          # `always()` runs this even when an earlier step failed, and a failed setup
+          # leaves `before` empty — which would compare unequal and roll out a commit
+          # this run never touched.
+          if [ -z "$before" ]; then
+            echo "No pre-run SHA was recorded, so nothing can be attributed to this run." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$after" = "$before" ]; then
+            echo "Nothing merged — ${DEFAULT_BRANCH} is still at ${after:0:7}, no rollout." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ -z "${PR_CHECK_WORKFLOW:-}" ]; then
+            echo "PR_CHECK_WORKFLOW is empty, so there is no publish workflow to dispatch." >&2
+            exit 1
+          fi
+
+          gh workflow run "$PR_CHECK_WORKFLOW" --repo "$REPO" --ref "$DEFAULT_BRANCH"
+          echo "Merged up to \`${after:0:7}\` — dispatched \`${PR_CHECK_WORKFLOW}\` on \`${DEFAULT_BRANCH}\` to publish and roll out the batch." \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summary
         if: always()

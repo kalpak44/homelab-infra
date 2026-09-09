@@ -1,28 +1,23 @@
 # Managed by homelab-infra — terraform/github/mite-assistant-mcp/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github mite-assistant-mcp`.
 #
-# Builds and publishes this repo's image, then tells the cluster to roll it out.
+# One pipeline for every trigger: format, lint, SonarCloud, image build. The GHCR push and
+# the cluster rollout are the only conditional parts, so a dependency bump is fully
+# validated without publishing anything.
 #
-# Renaming this file means renaming it in homelab-infra too, in two places: the `apps`
-# list in gitops/Justfile, which finds the last successful run here to read a tag from,
-# and the `publish_workflow` local in terraform/github/mite-assistant-mcp/main.tf. It was
-# `docker-publish.yml` until 2026-09-08; every image here is a container image, so the
-# qualifier named nothing, and the other publishing repos already call this `publish.yml`.
-#
-# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
-# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
-# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
-name: Build, Publish, Deploy
-
 # This is also the check ai-pr-agent.yml gates on (PR_CHECK_WORKFLOW=publish.yml). It
 # refuses to merge without a green run, and it dispatches this workflow for a PR whose
 # head commit has no checks — so `workflow_dispatch` is load-bearing.
 #
-# A separate pr-check.yml used to hold that role, which made this the only managed repo
-# with two workflows where the other four have one. It was folded in here on 2026-09-08:
-# its two checks, `npm ci` and a no-push image build, are the steps below. A comment in it
-# claimed a branch ruleset required its `build` check; the repo has no ruleset and no
-# branch protection, so nothing but PR_CHECK_WORKFLOW ever depended on the file.
+# Renaming this file means renaming it in homelab-infra too, in two places: the `apps`
+# list in gitops/Justfile, which finds the last successful run here to read a tag from,
+# and the `publish_workflow` local in terraform/github/mite-assistant-mcp/main.tf.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+name: Verify, Publish, Deploy
+
 on:
   pull_request:
     branches:
@@ -32,54 +27,123 @@ on:
       - main
   workflow_dispatch:
 
+# Superseding a pull request's run is free. Superseding a push to main is not: that run
+# ends in a cluster rollout, and cancelling it halfway leaves the image published but the
+# manifests still pointing at the previous tag. The agent's closing dispatch shares this
+# group with the merge that preceded it and therefore queues behind it rather than racing
+# it — which is what lets the dispatch assume the image is already in GHCR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
-  docker:
-    name: Publish image
+  build:
+    name: Verify and publish image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
 
+    env:
+      # Job-level so the `if:` conditions below can test them. A fork's pull request gets
+      # no secrets, so the analysis step skips itself there instead of failing the check.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      # The ref test is not redundant with the event test. The agent starts this workflow
+      # by `workflow_dispatch` on a PR head branch when that branch's head commit carries
+      # no checks; without the ref test such a run would log in to GHCR, push a sha tag
+      # for an unmerged branch, and dispatch a rollout of it.
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    # Re-emitted through a step rather than read straight off `env`: the `env` context is
+    # not reliably resolvable in a job's `outputs` block, and repeating the event/ref test
+    # on the deploy job would let the publish and rollout conditions drift apart.
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+
     steps:
+      - name: Resolve the publish gate
+        id: gate
+        run: echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
+        # Full history: Sonar needs it for blame and new-code detection.
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
+          # Node 20 is pinned in four places: this line, the Dockerfile's
+          # `node:20-bookworm-slim`, package.json's `engines`, and dependabot.yml's `node`
+          # hold. Bumping one alone means the runtime that ships is never the one tested.
           node-version: "20"
           cache: npm
 
       # Fails on a broken or inconsistent lockfile, which is the signal that matters most
       # for a dependency bump. Not covered by the image build below: the Dockerfile runs
-      # `npm ci --omit=dev`, so a devDependency that cannot install would go unnoticed.
+      # `npm ci --omit=dev`, so a devDependency that cannot install would go unnoticed —
+      # and eslint and prettier are devDependencies, so the two gates below depend on it.
       - name: Install from lockfile
         run: npm ci
 
-      # Only the multi-arch build needs emulation, and a pull request builds one platform.
+      # Blocking, not advisory. The agent merges dependency PRs with no human review, so
+      # style drift committed by its own compatibility fixes has nothing else to catch it.
+      # It can clear both of these itself with `npm run format` and `npm run lint:fix`.
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run linter
+        run: npm run lint
+
+      # qualitygate.wait makes the gate an actual gate: a failing gate fails this check,
+      # so the agent cannot merge past it. Guarded on the coordinates rather than on the
+      # event, so the repo still verifies before its SonarCloud project exists.
+      #
+      # SONAR_TOKEN has to live in the Dependabot secret store as well as the Actions one.
+      # GitHub withholds Actions secrets from Dependabot-triggered runs, so without the
+      # mirror this step skips itself on exactly the pull requests the gate exists for.
+      - name: SonarCloud analysis
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != '' }}
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=src
+            -Dsonar.qualitygate.wait=true
+
+      # Only the multi-arch build needs emulation, and an unpublished ref builds one
+      # platform.
       - name: Set up QEMU
-        if: github.event_name != 'pull_request'
+        if: ${{ env.PUBLISH == 'true' }}
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        # Skipped on a pull request. Dependabot-triggered runs get a read-only
-        # GITHUB_TOKEN, so this would fail on exactly the PRs the check exists for — and
-        # nothing is pushed from a pull request anyway.
-        if: github.event_name != 'pull_request'
+        # A Dependabot-triggered run gets a read-only GITHUB_TOKEN and would fail here on
+        # exactly the PRs the check exists for. Nothing is pushed from such a run anyway.
+        if: ${{ env.PUBLISH == 'true' }}
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Exactly seven characters, no prefix: homelab-infra's `just bump-images` rewrites
+      # the manifest to "${sha:0:7}", so any other shape points the cluster at a tag that
+      # does not exist and the Deployment lands in ImagePullBackOff.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -97,11 +161,11 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          # A pull request still builds the image — a dependency the image can no longer
-          # install fails here — but nothing reaches the registry from an unmerged branch,
-          # and one platform keeps the check fast.
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64,linux/arm/v7' }}
+          # An unpublished ref still builds the image — a dependency the image can no
+          # longer install fails here — but nothing reaches the registry, and one platform
+          # keeps the check fast.
+          push: ${{ env.PUBLISH == 'true' }}
+          platforms: ${{ env.PUBLISH == 'true' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -109,10 +173,16 @@ jobs:
 
       - name: Generate build report
         run: |
-          echo "### Docker Image Build Report 🚀" >> "$GITHUB_STEP_SUMMARY"
-          echo "Successfully built and pushed a multi-platform image to GHCR." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Platforms:** \`linux/amd64\`, \`linux/arm64\`, \`linux/arm/v7\`" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+
+          if [ "${PUBLISH}" = "true" ]; then
+            echo "### Image published 🚀" >> "$GITHUB_STEP_SUMMARY"
+            echo "Platforms: \`linux/amd64\`, \`linux/arm64\`, \`linux/arm/v7\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Verified, not published ✅" >> "$GITHUB_STEP_SUMMARY"
+            echo "Built \`linux/amd64\` only; nothing was pushed to GHCR." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Tag |" >> "$GITHUB_STEP_SUMMARY"
           echo "| :--- |" >> "$GITHUB_STEP_SUMMARY"
@@ -126,26 +196,61 @@ jobs:
 
   deploy:
     name: Deploy to cluster
-    # Gated on the image existing. `docker` runs on a push to main and on dispatch, and
-    # both produce a real image at GITHUB_SHA, so both are worth deploying — the sha is
-    # passed explicitly rather than looked up, which is what makes the dispatch case work.
-    needs: docker
-    if: github.event_name != 'pull_request'
+    # Gated on the image existing. `build` publishes on a push to main and on a dispatch
+    # of main. Both produce a real image at GITHUB_SHA, so both are worth deploying —
+    # the sha is passed explicitly rather than looked up, which is what makes the dispatch
+    # case work.
+    needs: build
+    if: needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # A PAT, not GITHUB_TOKEN: this job's own token is scoped to this repo and cannot
+      # dispatch a workflow in homelab-infra, nor read another repo's pull requests.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
     steps:
-      # Until this job existed, publishing here reached the cluster only through
-      # homelab-infra's nightly sweep, so an image could sit unrolled for up to a day.
+      # A morning sweep merges up to ten dependency PRs one after another. Rolling the
+      # cluster once per merge means ten rollouts of intermediate commits that nobody
+      # asked to run, so a merge of a bot-authored PR publishes its image and stops here;
+      # ai-pr-agent.yml dispatches this workflow once when its batch is finished, and that
+      # dispatch run is what rolls out the combined result.
+      #
+      # Every main commit still gets its own image, which the hold does not change and
+      # must not: homelab-infra's nightly `just bump-images` reads the tag from the last
+      # successful *push* run of this workflow, so a main commit with no image behind it
+      # would leave the Deployment in ImagePullBackOff.
+      #
+      # A bot PR merged by hand instead of by the agent is therefore held with no dispatch
+      # to follow. That case degrades to the nightly sweep rather than to a stuck rollout,
+      # which is what the sweep is for.
+      - name: Hold the rollout while the agent is mid-batch
+        id: hold
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+
+          # The commit's associated pull requests, not its author. A squash merge lists
+          # the bot as author only while the bot is the sole author, and the agent commits
+          # its compatibility fixes to the same branch — which silently makes the merger
+          # the author and would read as a human commit.
+          author_type=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq 'map(select(.merged_at != null)) | .[0].user.type // ""')
+
+          if [ "$author_type" = "Bot" ]; then
+            echo "held=true" >> "$GITHUB_OUTPUT"
+            echo "Rollout held — bot PR merge, the AI PR agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Both inputs are required: this workflow's own run is still in_progress here, so
       # the sweep's "last successful publish" query would resolve to the previous commit.
       #
       # `app` must match the `apps` list in homelab-infra's gitops/Justfile, or the
-      # dispatch fails with "no app named ... is tracked". A PAT, not GITHUB_TOKEN: the
-      # job's own token is scoped to this repo and cannot dispatch a workflow in another.
+      # dispatch fails with "no app named ... is tracked".
       - name: Trigger cluster deploy
-        env:
-          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+        if: steps.hold.outputs.held != 'true'
         run: |
+          set -euo pipefail
+
           gh workflow run gitops-bump-images.yml \
             --repo kalpak44/homelab-infra \
             -f app=mite-assistant-mcp \
