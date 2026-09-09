@@ -1,25 +1,15 @@
 # Managed by homelab-infra — terraform/github/<repo>/workflows/ai-pr-agent.yml
 # Edits made here in the target repo are overwritten by `just deploy github <repo>`.
 #
-# One job, once a day (or on demand): Codex CLI driving DeepSeek, with the gh CLI,
-# walks open bot-authored dependency PRs oldest first, reviews them carefully,
-# fixes upgrade-related breakages on the same PR branch when safe to do so,
-# validates the final result, and merges only when the final state is safe.
-#
-# The policy lives in the prompt below, not in bash. There is no matrix or auto-merge.
-# The agent itself performs the review, repair, validation, CI gate, and merge.
-#
-# DeepSeek serves the OpenAI Responses API directly, so Codex talks to it
-# without a proxy in between.
+# Codex CLI driving DeepSeek walks the open bot dependency PRs oldest first, repairs
+# breakages on the same branch, and merges only what is safe. The policy is the prompt
+# below, not bash. DeepSeek serves the Responses API directly — no proxy.
 
 name: AI PR Agent
 
-# Dependabot opens the morning's PRs at 05:00 Europe/Sofia. GitHub's `schedule:` has no
-# timezone, so this cannot simply be "06:00 Sofia": Sofia 05:00 is 02:00 UTC on EEST and
-# 03:00 UTC on EET, and a fixed 03:00 UTC would fire *before* Dependabot for half the
-# year. 04:00 UTC is one hour behind the proposals in winter and two in summer — late in
-# both halves, which is the direction that cannot fail. The proposals wait; the agent
-# never sweeps an empty queue and leaves them for a day.
+# Dependabot proposes at 05:00 Europe/Sofia. `schedule:` has no timezone, and Sofia 05:00
+# is 02:00 UTC in summer, so 04:00 UTC is late in both halves of the year. Late is the
+# only direction that cannot sweep an empty queue.
 on:
   schedule:
     - cron: "0 4 * * *" # 04:00 UTC — 06:00 Sofia on EET, 07:00 on EEST
@@ -40,18 +30,15 @@ jobs:
     timeout-minutes: 45
 
     env:
-      # A PAT, not GITHUB_TOKEN: GitHub starts no push-triggered run for a push made with
-      # GITHUB_TOKEN, so a merge here would land on main and never build the image that
-      # homelab-infra's nightly sweep looks for. Measured on 2026-09-08 — five merged
-      # dependency PRs, no publish run for any of their merge commits.
+      # A PAT: a push made with GITHUB_TOKEN starts no workflow run, so merges would land
+      # on main and never build. Measured 2026-09-08 across five merged PRs.
       GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
       REPO: ${{ github.repository }}
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
-      # Read from the payload, not from `github.ref_name`: a scheduled run is always on
-      # the default branch, but a `workflow_dispatch` can be started from any ref, and the
-      # closing rollout below must never dispatch a publish of one of those.
+      # From the payload, not `github.ref_name`: a dispatch can run from any ref and the
+      # closing rollout must not publish one.
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
     steps:
@@ -116,10 +103,8 @@ jobs:
             exit 1
           fi
 
-      # The closing rollout compares this against the head of the default branch after
-      # the run. A count of merged PRs from the model's own summary would do the same job
-      # only when the model reports honestly and does not crash halfway; the SHA is
-      # measured, so it holds in both cases.
+      # The rollout compares this against the head afterwards. A SHA is measured; the
+      # model's own count of merged PRs would not survive a crash halfway.
       - name: Record the pre-run head of the default branch
         id: before
         run: |
@@ -943,20 +928,12 @@ jobs:
             --output-last-message summary.md \
             "$(cat prompt.md)"
 
-      # One rollout per sweep, not one per merge. Each merge above published its own
-      # image — publish.yml still does that for every commit on the default branch,
-      # because homelab-infra's nightly `just bump-images` reads the tag from the last
-      # successful push run and a commit with no image behind it would leave the
-      # Deployment in ImagePullBackOff — but publish.yml holds the *rollout* on a
-      # bot-PR merge and leaves it to this step. Ten merges therefore produce ten images
-      # and one cluster rollout, of the combined result.
+      # One rollout per sweep. Each merge published its own image but held its rollout;
+      # this dispatches the single rollout of the combined result.
       #
-      # `if: always()` on purpose. The merges already landed; a model crash halfway
-      # through must not leave the cluster behind until the nightly sweep.
-      #
-      # It dispatches PR_CHECK_WORKFLOW rather than a name of its own, because in this
-      # repo the merge gate and the publisher are deliberately the same file — two names
-      # for it would be two things that can drift.
+      # `always()` on purpose: the merges already landed, so a crash must not leave the
+      # cluster behind. Dispatches PR_CHECK_WORKFLOW because the gate and the publisher
+      # are the same file here.
       - name: Roll the batch out
         if: always()
         run: |
@@ -965,9 +942,8 @@ jobs:
           after=$(gh api "repos/${REPO}/commits/${DEFAULT_BRANCH}" --jq .sha)
           before='${{ steps.before.outputs.sha }}'
 
-          # `always()` runs this even when an earlier step failed, and a failed setup
-          # leaves `before` empty — which would compare unequal and roll out a commit
-          # this run never touched.
+          # A failed setup leaves `before` empty, which would compare unequal and roll
+          # out a commit this run never touched.
           if [ -z "$before" ]; then
             echo "No pre-run SHA was recorded, so nothing can be attributed to this run." \
               >> "$GITHUB_STEP_SUMMARY"

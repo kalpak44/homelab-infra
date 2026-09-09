@@ -3,16 +3,38 @@
 How comments are written in this repo, in Terraform, YAML workflows, Justfiles and Dockerfiles alike. Derived from
 the review of `terraform/github/kalpak44/workflows/publish.yml`.
 
+## Length comes first
+
+- **One to three lines. Four or more needs a reason.** A comment is read every time the code is; a long one gets
+  skipped, which makes it worth less than no comment. Say the one thing that matters and stop.
+- **One fact per comment.** If there are two reasons, either pick the load-bearing one or write two comments above
+  two different lines.
+- **Say what this is and why it is needed. Nothing else.** Not what it scored, not when it was measured, not what
+  was tried first. A reader at this line needs the constraint, not the investigation.
+- **Never mention another project.** A comment in one repo that explains itself by contrast with `kubectl-awscli`
+  or `kalpak44` is unreadable to anyone working only here, and it rots the moment that other repo changes.
+- **A generated file names nothing about the repo that generates it, beyond its own banner.** The copies under
+  `terraform/github/<repo>/` are read in the target repo, where `gitops/Justfile`, `main.tf` and `.claude/rules/`
+  do not exist. State the constraint in terms the target repo can see: "the deploy that looks this up by name",
+  not "gitops/Justfile's `apps` list".
+- **No inventories of findings, CVE ids, counts, run numbers or PR numbers.** They are true on one day and stale on
+  the next, and the code does not behave differently for knowing them. The scan output, the run log and the git
+  history already hold them.
+- **No narrative, no history lesson.** Git log holds what changed and when. A comment saying what a file used to do,
+  over several sentences, is scrollback pretending to be documentation.
+- **When the explanation genuinely needs a paragraph, it goes in `.claude/rules/` and the comment points at it.**
+  Inline is for the constraint; the rules file is for the argument.
+
 ## Substance
 
 - **Say why, never what.** The code states what it does. A comment earns its line by recording the reason, the
   constraint, or the failure it prevents — something a reader cannot recover from the code.
 - **Name the failure mode.** Prefer "a zero-byte PDF would be served as a broken download" over "validate the PDF".
   The concrete failure is what stops a later edit from undoing the guard.
-- **Record the measurement, not the impression.** If a decision came from an observation, state it: dates, counts,
-  versions ("measured on both images on 2026-08-24: identical Critical/High counts").
-- **Name coupled files by path.** When editing one file requires editing another, say which, and how many places.
-  A rename that must happen in four places should say "four places" and list them.
+- **State the constraint, not the evidence for it.** "an `=` pin breaks when Alpine drops the package" earns its
+  line; the scan that proved it does not. Put the evidence in `.claude/rules/` if it is worth keeping.
+- **Name coupled files by path.** When editing one file requires editing another, say which, and how many places —
+  as a list of paths, not a paragraph explaining each.
 - **Explain rejected alternatives where they'll be retried.** "Do not reintroduce X — it was tried and removed
   because Y" prevents the next person repeating the work.
 - **No comment that restates the identifier.** `# Set up Java` above `- name: Set up Java` is noise.

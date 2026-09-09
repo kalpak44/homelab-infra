@@ -1,29 +1,14 @@
 # Managed by homelab-infra — terraform/github/mite-assistant-mcp/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github mite-assistant-mcp`.
 #
-# Four jobs, in order: verify the code, build the image, report on the image, roll it out.
+# verify -> image -> scan -> deploy. Only the GHCR push and the rollout are conditional,
+# so a dependency PR is fully validated, Dockerfile included, without publishing.
 #
-#   verify format, lint, tests at 80% coverage, SonarCloud with the gate waited on
-#   image build, and push to GHCR only when the ref is main
-#   scan syft + grype into the run summary, report-only
-#   deploy dispatch homelab-infra's gitops-bump-images
+# ai-pr-agent.yml gates on this file (PR_CHECK_WORKFLOW) and dispatches it for a PR with
+# no checks, so `workflow_dispatch` is load-bearing.
 #
-# The split exists so the code gate fails in about a minute instead of behind a
-# three-platform build under emulation, and so the graph says which half failed. Only the
-# GHCR push and the rollout are conditional, so a dependency bump is fully validated —
-# Dockerfile included — without publishing anything.
-#
-# This is also the check ai-pr-agent.yml gates on (PR_CHECK_WORKFLOW=publish.yml). It
-# refuses to merge without a green run, and it dispatches this workflow for a PR whose
-# head commit has no checks — so `workflow_dispatch` is load-bearing.
-#
-# Renaming this file means renaming it in homelab-infra too, in two places: the `apps`
-# list in gitops/Justfile, which finds the last successful run here to read a tag from,
-# and the `publish_workflow` local in terraform/github/mite-assistant-mcp/main.tf.
-#
-# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
-# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
-# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+# Renaming this file breaks the deploy that looks it up by name. Action versions are
+# bumped by hand, because Dependabot does not scan a generated file.
 name: Verify, Publish, Deploy
 
 on:
@@ -35,11 +20,8 @@ on:
       - main
   workflow_dispatch:
 
-# Superseding a pull request's run is free. Superseding a push to main is not: that run
-# ends in a cluster rollout, and cancelling it halfway leaves the image published but the
-# manifests still pointing at the previous tag. The agent's closing dispatch shares this
-# group with the merge that preceded it and therefore queues behind it rather than racing
-# it — which is what lets the dispatch assume the image is already in GHCR.
+# Cancelling a push to main would leave the image published and the manifests on the old
+# tag. The agent's closing dispatch queues behind the merge instead of racing it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -47,9 +29,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository }}
-  # Pinned rather than floating: an unpinned installer would change what the report says
-  # from one run to the next with no commit to attribute it to. Bumped by hand here, like
-  # the actions — Dependabot cannot see this file.
+  # Pinned so the report cannot change without a commit to attribute it to.
   SYFT_VERSION: v1.51.1
   GRYPE_VERSION: v0.118.0
 
@@ -60,30 +40,23 @@ jobs:
     timeout-minutes: 15
 
     env:
-      # Job-level so the `if:` conditions below can test them. A fork's pull request gets
-      # no secrets, so the analysis step skips itself there instead of failing the check.
+      # Job-level so the `if:` below can test them; a fork PR gets no secrets and skips.
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
       SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-      # The ref test is not redundant with the event test. The agent starts this workflow
-      # by `workflow_dispatch` on a PR head branch when that branch's head commit carries
-      # no checks; without the ref test such a run would log in to GHCR, push a sha tag
-      # for an unmerged branch, and dispatch a rollout of it.
+      # The ref test is not redundant: the agent dispatches this on PR head branches, and
+      # without it such a run would publish and roll out an unmerged branch.
       PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
-    # Resolved once, here, and read by every job downstream. Repeating the event/ref test
-    # per job would let the publish, scan and rollout conditions drift apart.
+    # Resolved once and read downstream, so the four jobs cannot disagree.
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
       tag: ${{ steps.gate.outputs.tag }}
 
     steps:
-      # Seven characters, no prefix: homelab-infra's `just bump-images` rewrites the
-      # manifest to "${sha:0:7}", so any other shape points the cluster at a tag that does
-      # not exist and the Deployment lands in ImagePullBackOff. Derived here rather than
-      # read from metadata-action's `version` output, which resolves to `latest` on main —
-      # the scan report named a mutable tag and every run collided on the artifact name
-      # `image-scan-latest`. Measured on run 34326858891.
+      # Seven characters, no prefix: `just bump-images` writes "${sha:0:7}" and any other
+      # shape lands the Deployment in ImagePullBackOff. Not metadata-action's `version`,
+      # which resolves to `latest` on main.
       - name: Resolve the publish gate and the image tag
         id: gate
         run: |
@@ -101,47 +74,32 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          # The Node major is pinned in three places at once: this line, the Dockerfile's
-          # `node:24-alpine`, and package.json's `engines`, with dependabot.yml holding the
-          # `node` bump. Moving one alone means the runtime that ships is never the one
-          # tested — which is exactly what Node 20 going EOL under a passing pipeline
-          # looked like.
+          # Pinned here, in the Dockerfile, and in package.json engines. Move all three
+          # together, or the runtime that ships is not the one tested.
           node-version: "24"
           cache: npm
 
-      # Fails on a broken or inconsistent lockfile, which is the signal that matters most
-      # for a dependency bump. Not covered by the image build: the Dockerfile runs
-      # `npm ci --omit=dev`, so a devDependency that cannot install would go unnoticed —
-      # and eslint, prettier and jest are devDependencies, so the gates below need it.
+      # Catches a broken lockfile, and installs the devDependencies the gates below need.
+      # The image build cannot: it runs `npm ci --omit=dev`.
       - name: Install from lockfile
         run: npm ci
 
-      # Blocking, not advisory. The agent merges dependency PRs with no human review, so
-      # style drift committed by its own compatibility fixes has nothing else to catch it.
-      # It can clear both of these itself with `npm run format` and `npm run lint:fix`.
+      # Blocking: the agent merges with no human review, so nothing else catches drift.
+      # It clears these itself with `npm run format` and `npm run lint:fix`.
       - name: Check formatting
         run: npm run format:check
 
       - name: Run linter
         run: npm run lint
 
-      # `npm test` is `jest --coverage`, and jest.config.js sets an 80% threshold on
-      # statements, branches, functions and lines, so the coverage gate is enforced by the
-      # test run itself rather than by a separate step here that could be dropped without
-      # anything noticing. Verified to fail by raising the threshold on 2026-09-09.
-      #
-      # It writes coverage/lcov.info, which the analysis below uploads — so this step has
-      # to come before Sonar, not after.
+      # The 80% coverage gate lives in jest.config.js, so no step here can drop it.
+      # Writes coverage/lcov.info, which Sonar uploads — must run before Sonar.
       - name: Run tests with coverage
         run: npm test
 
-      # qualitygate.wait makes the gate an actual gate: a failing gate fails this check,
-      # so the agent cannot merge past it. Guarded on the coordinates rather than on the
-      # event, so the repo still verifies before its SonarCloud project exists.
-      #
-      # SONAR_TOKEN has to live in the Dependabot secret store as well as the Actions one.
-      # GitHub withholds Actions secrets from Dependabot-triggered runs, so without the
-      # mirror this step skips itself on exactly the pull requests the gate exists for.
+      # qualitygate.wait is what makes this block a merge. A missing project key skips
+      # rather than fails, so check the step ran. SONAR_TOKEN must be in the Dependabot
+      # store too, or it skips on exactly the PRs the gate exists for.
       - name: SonarCloud analysis
         if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != '' }}
         uses: SonarSource/sonarqube-scan-action@v8
@@ -158,10 +116,8 @@ jobs:
 
   image:
     name: Build and publish image
-    # Named for both halves because it does both: it builds on every trigger, and pushes
-    # only when the ref is main. A pull request still exercises the Dockerfile — a
-    # dependency the image can no longer install fails here — which is why the build is
-    # not gated behind the push.
+    # Builds on every trigger, pushes only on main. Never gate the build behind the push:
+    # a PR must still exercise the Dockerfile.
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -170,17 +126,14 @@ jobs:
       packages: write
 
     env:
-      # Taken from verify rather than recomputed, so there is one publish condition in
-      # this workflow and not four.
+      # From verify, not recomputed: one publish condition, not four.
       PUBLISH: ${{ needs.verify.outputs.publish }}
 
-    # Passed through so scan and deploy need only `needs: image` and still see the gate.
+    # Passed through so scan and deploy need only `needs: image`.
     outputs:
       publish: ${{ needs.verify.outputs.publish }}
       tag: ${{ needs.verify.outputs.tag }}
-      # The scan job addresses the image by digest, not by tag: a tag can be overwritten
-      # between the push and the scan, and then the report would describe an image that is
-      # not the one being deployed.
+      # By digest, not tag: a tag can be overwritten between the push and the scan.
       digest: ${{ steps.push.outputs.digest }}
 
     steps:
@@ -191,8 +144,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        # A Dependabot-triggered run gets a read-only GITHUB_TOKEN and would fail here on
-        # exactly the PRs the check exists for. Nothing is pushed from such a run anyway.
+        # A Dependabot run gets a read-only GITHUB_TOKEN and would fail here.
         if: ${{ env.PUBLISH == 'true' }}
         uses: docker/login-action@v4
         with:
@@ -218,11 +170,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ env.PUBLISH == 'true' }}
-          # amd64 alone. It used to build arm64 and arm/v7 as well, which cost a QEMU
-          # emulation pass per platform and ruled out every Node base past 22 — Node 24 and
-          # 26 publish no linux/arm/v7 at all. The cluster is x86 and there is no ARM
-          # consumer, so the platforms bought nothing and blocked the base image upgrade
-          # that took the image from 10 Critical / 95 High to zero.
+          # amd64 alone: the cluster is x86, and arm/v7 does not exist past Node 22.
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -254,16 +202,10 @@ jobs:
 
   scan:
     name: Scan image
-    # Between publish and deploy so the report describes the exact image about to roll
-    # out. It is REPORT-ONLY and must stay that way: no --fail-on, no threshold, and the
-    # deploy job below is wired to ignore this job's result. The blocking security gate
-    # for this repo is Sonar in the job above; this is here to be read, not to stop a
-    # release, and turning it into a gate would deadlock on findings Debian has not
-    # packaged a fix for.
+    # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
+    # blocking gate. A threshold here would deadlock on unfixable base-image CVEs.
     needs: image
-    # Only a published image can be pulled by digest. A pull request builds without
-    # pushing, so there is nothing in the registry to scan — the tradeoff is that the
-    # report arrives at deploy time rather than at review time.
+    # Only a published image can be pulled, so a PR has nothing to scan.
     if: needs.image.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -271,8 +213,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      # The package is private, so an anonymous pull fails. syft and grype both read
-      # ~/.docker/config.json, which this writes.
+      # The package is private; syft and grype read the config this writes.
       - name: Log in to GHCR
         uses: docker/login-action@v4
         with:
@@ -292,12 +233,8 @@ jobs:
           syft version
           grype version
 
-      # grype scans the SBOM rather than the image a second time, so the packages it
-      # matches against advisories are exactly the ones syft reported — two independent
-      # catalogings would let the report and the SBOM disagree.
-      #
-      # --platform is explicit because the digest is a manifest list of three platforms
-      # and the default would be whatever the runner happens to be. The report says which.
+      # grype scans the SBOM, not the image again, so the report and the SBOM cannot
+      # disagree. --platform is explicit so the result does not depend on the runner.
       - name: Generate the SBOM and scan it
         id: scan
         run: |
@@ -314,8 +251,7 @@ jobs:
 
           echo "packages=$(jq '.artifacts | length' sbom.json)" >> "$GITHUB_OUTPUT"
 
-      # Every count comes out of grype.json here rather than being parsed twice in the
-      # step below, so the totals in the summary and the table can never disagree.
+      # All counts come from one pass over grype.json, so the totals cannot disagree.
       - name: Report to the run summary
         if: always()
         run: |
@@ -358,9 +294,7 @@ jobs:
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Only Critical and High are tabulated. A Debian base image routinely carries
-          # hundreds of Low/Negligible findings and a summary listing them all is one
-          # nobody reads, which is the same as no report at all.
+          # Critical and High only: a table of hundreds of Low findings goes unread.
           if [ "$((crit + high))" -gt 0 ]; then
             {
               echo "#### Critical and High"
@@ -381,8 +315,7 @@ jobs:
             echo >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # The summary is truncated at 1 MB and is not machine-readable. The artifact is what
-      # a later triage actually needs, and the SPDX copy is the interchange format.
+      # The summary is capped at 1 MB and unparseable; triage needs the files.
       - name: Upload the SBOM and scan
         if: always()
         uses: actions/upload-artifact@v7
@@ -398,47 +331,28 @@ jobs:
 
   deploy:
     name: Deploy to cluster
-    # Gated on the image existing. `image` publishes on a push to main and on a dispatch
-    # of main. Both produce a real image at GITHUB_SHA, so both are worth deploying —
-    # the sha is passed explicitly rather than looked up, which is what makes the dispatch
-    # case work.
-    # `needs` the scan only for ordering, so the report is in the summary before the
-    # rollout starts. `always()` plus an explicit image check is what keeps it ordering
-    # and nothing more: a scanner outage, a registry timeout or a findings table nobody
-    # likes must not strand a published image, while a failed build still blocks.
+    # `needs` the scan for ordering only. `always()` plus the explicit image check means a
+    # scanner outage cannot strand a published image, while a failed build still blocks.
     needs: [image, scan]
     if: always() && needs.image.result == 'success' && needs.image.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # A PAT, not GITHUB_TOKEN: this job's own token is scoped to this repo and cannot
-      # dispatch a workflow in homelab-infra, nor read another repo's pull requests.
+      # A PAT: this job's token cannot dispatch a workflow in another repo.
       GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
     steps:
-      # A morning sweep merges up to ten dependency PRs one after another. Rolling the
-      # cluster once per merge means ten rollouts of intermediate commits that nobody
-      # asked to run, so a merge of a bot-authored PR publishes its image and stops here;
-      # ai-pr-agent.yml dispatches this workflow once when its batch is finished, and that
-      # dispatch run is what rolls out the combined result.
-      #
-      # Every main commit still gets its own image, which the hold does not change and
-      # must not: homelab-infra's nightly `just bump-images` reads the tag from the last
-      # successful *push* run of this workflow, so a main commit with no image behind it
-      # would leave the Deployment in ImagePullBackOff.
-      #
-      # A bot PR merged by hand instead of by the agent is therefore held with no dispatch
-      # to follow. That case degrades to the nightly sweep rather than to a stuck rollout,
-      # which is what the sweep is for.
+      # A bot-PR merge publishes its image but holds the rollout; ai-pr-agent.yml
+      # dispatches one rollout when its sweep ends, so ten merges roll out once.
+      # Never hold the publish as well: the scheduled deploy reads the tag from the last
+      # successful push run, so every commit on main needs an image behind it.
       - name: Hold the rollout while the agent is mid-batch
         id: hold
         if: github.event_name == 'push'
         run: |
           set -euo pipefail
 
-          # The commit's associated pull requests, not its author. A squash merge lists
-          # the bot as author only while the bot is the sole author, and the agent commits
-          # its compatibility fixes to the same branch — which silently makes the merger
-          # the author and would read as a human commit.
+          # The commit's PRs, not its author: the agent's own fix commits make the merger
+          # the author of the squash, which would read as human.
           author_type=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
             --jq 'map(select(.merged_at != null)) | .[0].user.type // ""')
 
@@ -447,11 +361,8 @@ jobs:
             echo "Rollout held — bot PR merge, the AI PR agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Both inputs are required: this workflow's own run is still in_progress here, so
-      # the sweep's "last successful publish" query would resolve to the previous commit.
-      #
-      # `app` must match the `apps` list in homelab-infra's gitops/Justfile, or the
-      # dispatch fails with "no app named ... is tracked".
+      # Both inputs are required: this run is still in_progress, so a lookup would
+      # resolve to the previous commit. `app` must match the name the deploy tracks.
       - name: Trigger cluster deploy
         if: steps.hold.outputs.held != 'true'
         run: |
