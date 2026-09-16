@@ -786,25 +786,33 @@ jobs:
           Never make a finding disappear by suppressing it: no grype ignore file, no
           `--fail-on` change, no dropped scan step. Fix the input or leave it reported.
 
-          If you are already handling a dependency PR, fold the fix into that branch.
+          If you are already handling a dependency PR, fold the fix into that branch and
+          let that PR's checks gate it. That is always the preferred route.
 
           If you are NOT — no eligible PR exists this run — a fixable finding is still
-          yours to fix. Open a remediation pull request rather than reporting and stopping:
-          a report nobody acts on leaves a known, fixable vulnerability shipping every day.
+          yours to fix, and you may commit it straight to the default branch rather than
+          reporting and stopping. A report nobody acts on leaves a known, fixable
+          vulnerability shipping every day.
 
-            1. Branch from the default branch: `chore/scan-remediation-<short-sha>`.
+          Nothing checks that branch before your change lands on it, and this repository
+          deploys from it. Local validation is therefore not a formality — it is the only
+          gate. Run it, and if it fails or you cannot run it, DO NOT PUSH.
+
+            1. Start from a clean tree on the up-to-date default branch.
             2. Make ONLY the remediation: the dependency or base-image version the fix
-               needs, and nothing else. No refactors, no unrelated bumps, no version bump.
-            3. Run the repository's own validation locally, exactly as for any other change.
-            4. Push the branch and open a PR that names each finding it addresses, with the
-               id, the package, the version it moves from and to.
-            5. Take it through sections 16 to 21 unchanged: checks must run on the final
-               head commit, every check must conclude successfully, and you must review the
-               final diff before it can merge.
+               needs. No refactors, no unrelated bumps, no version bump, no tag.
+            3. Run the repository's full validation locally — the same build, lint, format
+               and test commands its pipeline runs. Every one must pass.
+            4. Commit with a message naming each finding: the id, the package, and the
+               versions it moves between.
+            5. Push to the default branch and report exactly what you pushed.
 
-          One remediation PR per run at most. If the fix does not validate, or you cannot
-          establish it is safe, leave the PR open and say why — exactly as you would for a
-          dependency PR you could not finish.
+          If validation fails, if you cannot determine how to validate, or if the fix is
+          anything larger than a version move, do not push. Say what you found, what you
+          would change, and why you stopped — a speculative push to a branch that deploys
+          is worse than an unfixed finding you have named.
+
+          At most one remediation commit per run.
 
           ----------------------------------------------------------------------
           21. FINAL SAFETY GATE
@@ -878,18 +886,17 @@ jobs:
 
           These rules override everything else.
 
-          - NEVER merge a human-authored PR, with ONE exception: a scan-remediation PR
-            that YOU opened in THIS run, which has passed every check on its final head
-            commit and whose final diff you have reviewed. It is authored by the account
-            whose token you push with, so nothing else can ever merge it — and a fix that
-            cannot land is not a fix. Everything else a human opened stays untouched.
-          - NEVER modify a human-authored PR you did not open.
-          - NEVER commit directly to the default/base branch.
+          - NEVER merge a human-authored PR.
+          - NEVER modify a human-authored PR.
+          - NEVER commit directly to the default/base branch, with ONE exception: a
+            remediation for a scan or quality-gate finding, when no eligible PR exists to
+            carry it, and only after the repository's own validation has passed locally.
+            Nothing else may reach that branch directly.
           - NEVER bump a version, create a tag, or cut a release. This repository ships
             by publishing an image from main; there is no release for you to make.
-          - NEVER push directly to the default/base branch.
-          - All compatibility fixes must go to the existing bot PR head branch, or to the
-            remediation branch you opened — never to the default branch.
+          - NEVER push directly to the default/base branch, except that one remediation.
+          - All compatibility fixes for a PR must go to that PR's head branch. Only a
+            standalone remediation, with no PR to carry it, may go to the default branch.
           - NEVER force-push.
           - NEVER bypass branch protection.
           - NEVER use admin merge privileges to bypass protections.
