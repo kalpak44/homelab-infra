@@ -154,6 +154,7 @@ jobs:
       packages: write
     outputs:
       tag: ${{ steps.vars.outputs.sha_short }}
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -214,11 +215,166 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
+  scan:
+    name: Scan image
+    # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
+    # blocking gate. A threshold here would deadlock on unfixable base-image CVEs.
+    needs: publish-image
+    # Only a published image can be pulled, so a PR has nothing to scan.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      # Pinned: an unpinned scanner changes the report without the image changing.
+      SYFT_VERSION: v1.51.1
+      GRYPE_VERSION: v0.118.0
+    steps:
+      # The package is private; syft and grype read the config this writes.
+      - name: Log in to GHCR
+        # Pinned to a commit SHA, not a tag: a tag can be moved onto different code.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Installers are fetched from the release tag, not `main`, and their checksums are
+      # verified before anything executes. Piping a moving script straight into a shell
+      # gives an upstream compromise a direct path onto the runner. Bump the two SHA256
+      # values whenever SYFT_VERSION or GRYPE_VERSION moves.
+      - name: Install syft and grype
+        env:
+          SYFT_INSTALLER_SHA256: ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
+          GRYPE_INSTALLER_SHA256: 8646f06a90b10ca64992c1809b4aa00c44e30b4f551f63c309b0b0ab66873556
+        run: |
+          set -euo pipefail
+
+          fetch_verified() {
+            url="$1"; want="$2"; out="$3"
+            curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$out"
+            echo "${want}  ${out}" | sha256sum -c -
+          }
+
+          fetch_verified \
+            "https://raw.githubusercontent.com/anchore/syft/${SYFT_VERSION}/install.sh" \
+            "$SYFT_INSTALLER_SHA256" syft-install.sh
+          fetch_verified \
+            "https://raw.githubusercontent.com/anchore/grype/${GRYPE_VERSION}/install.sh" \
+            "$GRYPE_INSTALLER_SHA256" grype-install.sh
+
+          sh syft-install.sh -b /usr/local/bin "${SYFT_VERSION}"
+          sh grype-install.sh -b /usr/local/bin "${GRYPE_VERSION}"
+
+          syft version
+          grype version
+
+      # grype scans the SBOM, not the image again, so the report and the SBOM cannot
+      # disagree. --platform is explicit so the result does not depend on the runner.
+      - name: Generate the SBOM and scan it
+        id: scan
+        run: |
+          set -euo pipefail
+
+          ref="${IMAGE}@${{ needs.publish-image.outputs.digest }}"
+          echo "Scanning ${ref} (linux/amd64)"
+
+          syft --platform linux/amd64 "registry:${ref}" -o json > sbom.json
+          syft --platform linux/amd64 "registry:${ref}" -o spdx-json > sbom.spdx.json
+
+          grype "sbom:sbom.json" -o json > grype.json
+          grype "sbom:sbom.json" -o table > grype.txt
+
+          echo "packages=$(jq '.artifacts | length' sbom.json)" >> "$GITHUB_OUTPUT"
+
+      # All counts come from one pass over grype.json, so the totals cannot disagree.
+      - name: Report to the run summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ ! -f grype.json ]; then
+            echo "### Image scan — did not run" >> "$GITHUB_STEP_SUMMARY"
+            echo "syft or grype failed before producing a report; see the step log." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          jq '[.matches[]
+               | {id:       .vulnerability.id,
+                  severity: .vulnerability.severity,
+                  package:  .artifact.name,
+                  version:  .artifact.version,
+                  type:     .artifact.type,
+                  state:    (.vulnerability.fix.state // "unknown"),
+                  fixed_in: (.vulnerability.fix.versions // [])}]
+              | unique_by([.id, .package, .version])' grype.json > findings.json
+
+          count() { jq --arg s "$1" '[.[] | select(.severity == $s)] | length' findings.json; }
+          crit=$(count Critical); high=$(count High); med=$(count Medium)
+          low=$(count Low); neg=$(count Negligible); unk=$(count Unknown)
+          total=$(jq 'length' findings.json)
+          fixable=$(jq '[.[] | select(.state == "fixed" and (.fixed_in | length) > 0)] | length' findings.json)
+
+          {
+            echo "### Image scan — report only 🔍"
+            echo
+            echo "\`${IMAGE}:${{ needs.publish-image.outputs.tag }}\` · \`linux/amd64\` ·"
+            echo "${{ steps.scan.outputs.packages }} packages · syft \`${SYFT_VERSION}\` · grype \`${GRYPE_VERSION}\`"
+            echo
+            echo "| Critical | High | Medium | Low | Negligible | Unknown | Total |"
+            echo "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+            echo "| ${crit} | ${high} | ${med} | ${low} | ${neg} | ${unk} | ${total} |"
+            echo
+            echo "${fixable} of ${total} have a fixed version published upstream. This job never"
+            echo "blocks the rollout — it is a report."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Critical and High only: a table of hundreds of Low findings goes unread.
+          if [ "$((crit + high))" -gt 0 ]; then
+            {
+              echo "#### Critical and High"
+              echo
+              echo "| Severity | Package | Version | Vulnerability | Fix |"
+              echo "| :--- | :--- | :--- | :--- | :--- |"
+              jq -r '[.[] | select(.severity == "Critical" or .severity == "High")]
+                     | sort_by(.severity, .package, .id)[]
+                     | "| \(.severity) | \(.package) | \(.version) | \(.id) | "
+                       + (if .state == "fixed" and (.fixed_in | length) > 0
+                          then (.fixed_in | join(", "))
+                          else "_none upstream_" end)
+                       + " |"' findings.json
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No Critical or High findings." >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The summary is capped at 1 MB and unparseable; triage needs the files.
+      - name: Upload the SBOM and scan
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: image-scan-${{ needs.publish-image.outputs.tag }}
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            sbom.json
+            sbom.spdx.json
+            grype.json
+            grype.txt
+
   deploy:
     name: Deploy to cluster
     # Gated on the image existing. publish-image is itself restricted to pushes on main,
-    # so this inherits that restriction through `needs`.
-    needs: publish-image
+    # so this inherits that restriction through `needs`. `scan` is listed for ordering
+    # only — a scanner outage must not strand an image that published cleanly.
+    needs: [publish-image, scan]
+    if: always() && needs.publish-image.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

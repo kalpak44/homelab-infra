@@ -91,7 +91,10 @@ jobs:
           node-version: "22"
 
       - name: Install Codex CLI
-        run: npm install -g @openai/codex
+        # Pinned and --ignore-scripts: an unpinned global install takes whatever the
+        # registry serves that morning, and this package declares no scripts, so
+        # skipping them costs nothing. Bump the version deliberately.
+        run: npm install -g @openai/codex@0.154.0 --ignore-scripts
 
       - name: Point Codex at DeepSeek
         run: |
