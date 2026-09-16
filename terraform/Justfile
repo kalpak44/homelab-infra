@@ -125,7 +125,7 @@ list:
     @printf "  %-30s %s\n" "code-viewer-bot"                "kalpak44/code-viewer-bot · same (no PR CI yet → agent reviews only)"
     @printf "  %-30s %s\n" "kalpak44"                       "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI PR agent workflow"
     @printf "  %-30s %s\n" "kubectl-awscli"                 "kalpak44/kubectl-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
-    @printf "  %-30s %s\n" "mac-calendar-mcp"               "kalpak44/mac-calendar-mcp · same (no PR CI yet → agent reviews only)"
+    @printf "  %-30s %s\n" "mac-calendar-mcp"               "kalpak44/mac-calendar-mcp · same + jest gate + release.yml (PR check, semver bump, release) + dependabot"
     @printf "  %-30s %s\n" "mite-assistant-mcp"             "kalpak44/mite-assistant-mcp · same + lint/format/80%-coverage/Sonar gate + publish.yml (PR check, publish, syft/grype report, batched deploy) + dependabot"
     @printf "  %-30s %s\n" "noco-google-connector-web-page" "kalpak44/noco-google-connector-web-page · same + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-30s %s\n" "postgres-awscli"                "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
