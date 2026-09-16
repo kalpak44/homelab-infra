@@ -1,5 +1,5 @@
 locals {
-  repository       = "plugin-noco-tools"
+  repository       = "noco-google-connector-web-page"
   default_branch   = "main"
   agent_workflow   = ".github/workflows/ai-pr-agent.yml"
   publish_workflow = ".github/workflows/publish.yml"
@@ -18,7 +18,7 @@ resource "github_repository" "this" {
   visibility = "public"
 
   # Kept as-is on the live repo — listed explicitly so Terraform doesn't blank them.
-  description = "AI tools and integrations for NocoBase."
+  description = "Public web page for the NocoBase Google connector: the privacy policy and terms of service Google OAuth verification requires."
 
   has_issues   = true
   has_wiki     = true
@@ -31,7 +31,7 @@ resource "github_repository" "this" {
   allow_auto_merge       = true
   delete_branch_on_merge = true
 
-  # `just destroy github plugin-noco-tools` archives the repo — it never deletes it.
+  # `just destroy github noco-google-connector-web-page` archives the repo — it never deletes it.
   archive_on_destroy = true
 }
 
@@ -97,7 +97,7 @@ resource "github_repository_file" "publish_workflow" {
   branch              = local.default_branch
   file                = local.publish_workflow
   content             = file("${path.module}/workflows/publish.yml")
-  commit_message      = "chore: sync site workflow from homelab-infra"
+  commit_message      = "chore: sync publish workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true

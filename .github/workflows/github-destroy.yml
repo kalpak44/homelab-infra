@@ -16,7 +16,7 @@ on:
           - kubectl-awscli
           - mac-calendar-mcp
           - mite-assistant-mcp
-          - plugin-noco-tools
+          - noco-google-connector-web-page
           - postgres-awscli
           - proklinator-app
 

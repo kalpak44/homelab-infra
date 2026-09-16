@@ -27,7 +27,7 @@ apps := "personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
 bunker-game-app|kalpak44/bunker-party|publish.yml|ghcr.io/kalpak44/bunker-party
 proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api
-noco-google-connector-site|kalpak44/plugin-noco-tools|publish.yml|ghcr.io/kalpak44/noco-tools-site"
+noco-google-connector-web-page|kalpak44/noco-google-connector-web-page|publish.yml|ghcr.io/kalpak44/noco-google-connector-web-page"
 
 _help:
     @just --list
@@ -186,6 +186,6 @@ list:
             if [ -n "$file" ]; then
                 tag=$(sed -nE "s|^ *image: ${img}:(.*)$|\1|p" "$file" | head -1)
             fi
-            printf "  %-20s %-45s now=%s  (from %s)\n" "$app" "$img" "${tag:-?}" "$workflow"
+            printf "  %-30s %-46s now=%s  (from %s)\n" "$app" "$img" "${tag:-?}" "$workflow"
         done
     done <<< '{{ apps }}'

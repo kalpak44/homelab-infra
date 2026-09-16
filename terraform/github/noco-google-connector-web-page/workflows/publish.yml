@@ -1,15 +1,12 @@
-# Managed by homelab-infra — terraform/github/plugin-noco-tools/workflows/publish.yml
-# Edits made here in the target repo are overwritten by `just deploy github plugin-noco-tools`.
+# Managed by homelab-infra — terraform/github/noco-google-connector-web-page/workflows/publish.yml
+# Edits made here in the target repo are overwritten by `just deploy github noco-google-connector-web-page`.
 #
 # The action versions here are bumped by hand. Dependabot cannot watch this file: it only
 # scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
 # `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
 #
-# It was `site.yml` until 2026-09-08. That name distinguished the site from the plugin
-# this repo also held, but commit 45b4977 on 2026-09-06 reduced the repo to the website
-# alone, so the qualifier stopped distinguishing anything and the other publishing repos
-# already call this `publish.yml`. The `site/**` path filter stays — the website itself
-# still lives in that subdirectory.
+# The `site/**` path filter is not the repository name in another spelling: the website
+# lives in that subdirectory, and a push outside it builds nothing.
 #
 # The four actions below are pinned to commit SHAs, not tags, so a retagged release
 # cannot change this build under us (CWE-829). That pin used to be maintained by the
@@ -45,7 +42,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/noco-tools-site
+  IMAGE: ghcr.io/${{ github.repository_owner }}/noco-google-connector-web-page
 
 jobs:
   docker:
@@ -126,22 +123,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Until this job existed the site image was published and then never rolled: the app
-      # was not in homelab-infra's `apps` list at all, so neither the nightly sweep nor any
-      # dispatch touched it, and its Deployment tag moved only by hand.
-      #
-      # `app` is the gitops directory name, which is neither this repo's name nor the
-      # image's — it is noco-google-connector-site. It must match the `apps` list in
-      # homelab-infra's gitops/Justfile, or the dispatch fails with "no app named ... is
-      # tracked". A PAT, not GITHUB_TOKEN: the job's own token is scoped to this repo and
-      # cannot dispatch a workflow in another one.
+      # `app` names the deployment directory the cluster repo keys off. It matches this
+      # repo and the image by convention, not by derivation — the deploy looks the name
+      # up and fails with "no app named ... is tracked" if one of the three is renamed
+      # without the others.
       - name: Trigger cluster deploy
         env:
+          # A PAT, not GITHUB_TOKEN: the job's own token is scoped to this repo and
+          # cannot dispatch a workflow in another one.
           GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
           TAG: ${{ needs.docker.outputs.short-sha }}
         run: |
           gh workflow run gitops-bump-images.yml \
             --repo kalpak44/homelab-infra \
-            -f app=noco-google-connector-site \
+            -f app=noco-google-connector-web-page \
             -f sha="${GITHUB_SHA}"
-          echo "Dispatched \`gitops-bump-images\` for \`noco-google-connector-site\` @ \`${TAG}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dispatched \`gitops-bump-images\` for \`noco-google-connector-web-page\` @ \`${TAG}\`." >> "$GITHUB_STEP_SUMMARY"

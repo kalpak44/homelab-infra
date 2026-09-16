@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: noco-google-connector-site
+  name: noco-google-connector-web-page
   namespace: public
 spec:
   selector:
-    app: noco-google-connector-site
+    app: noco-google-connector-web-page
   ports:
     - port: 80
       targetPort: 80

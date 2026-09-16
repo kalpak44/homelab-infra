@@ -1,7 +1,7 @@
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: noco-google-connector-site
+  name: noco-google-connector-web-page
   namespace: public
 spec:
   entryPoints:
@@ -10,7 +10,7 @@ spec:
     - match: Host(`noco-google-connector.pavel-usanli.online`)
       kind: Rule
       services:
-        - name: noco-google-connector-site
+        - name: noco-google-connector-web-page
           port: 80
   tls:
     certResolver: cloudflare

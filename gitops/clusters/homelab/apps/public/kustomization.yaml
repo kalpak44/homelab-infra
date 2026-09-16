@@ -5,5 +5,5 @@ resources:
   - mite-assistant-mcp
   - capacity-planner
   - bunker-game-app
-  - noco-google-connector-site
+  - noco-google-connector-web-page
   - proklinator

@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: noco-google-connector-site
+  name: noco-google-connector-web-page
   namespace: public
 spec:
   replicas: 1
@@ -12,15 +12,15 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      app: noco-google-connector-site
+      app: noco-google-connector-web-page
   template:
     metadata:
       labels:
-        app: noco-google-connector-site
+        app: noco-google-connector-web-page
     spec:
       automountServiceAccountToken: false
       containers:
-        - name: noco-google-connector-site
+        - name: noco-google-connector-web-page
           # Unquoted on purpose. gitops/Justfile finds this line with
           # `grep -rlE "^ *image: <repo>:"` and rewrites it with sed, so a quoted
           # value is invisible to it — `just bump-images` prints "no image line,

@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    key    = "homelab/github/plugin-noco-tools.tfstate"
+    key    = "homelab/github/noco-google-connector-web-page.tfstate"
     region = "auto"
 
     skip_credentials_validation = true

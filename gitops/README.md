@@ -19,12 +19,12 @@ gitops/clusters/homelab/
 │   └── trivy-operator/   # Container CVE scanning - reports surfaced in Headlamp
 └── apps/
     ├── public/
-    │   ├── personal-web-page/     # Personal website
-    │   ├── mite-assistant-mcp/    # Mite time-tracking MCP server
-    │   ├── capacity-planner/      # Capacity planner tool (Sablier scale-on-demand)
-    │   ├── bunker-game-app/       # Bunker party game (Sablier scale-on-demand)
-    │   ├── noco-google-connector-site/ # Noco Google connector site (noco-google-connector.pavel-usanli.online)
-    │   └── proklinator/           # proklinator.online — nginx placeholder
+    │   ├── personal-web-page/              # Personal website
+    │   ├── mite-assistant-mcp/             # Mite time-tracking MCP server
+    │   ├── capacity-planner/               # Capacity planner tool (Sablier scale-on-demand)
+    │   ├── bunker-game-app/                # Bunker party game (Sablier scale-on-demand)
+    │   ├── noco-google-connector-web-page/ # Noco Google connector web page (noco-google-connector.pavel-usanli.online)
+    │   └── proklinator/                    # proklinator.online — nginx placeholder
     └── private/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
