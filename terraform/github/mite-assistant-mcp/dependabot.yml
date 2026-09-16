@@ -20,6 +20,11 @@ updates:
       timezone: Europe/Sofia
     # Throttles how many sit open at once, not how many exist.
     open-pull-requests-limit: 10
+    # The updater invokes npm with a 3-day minimum release age whether or not this is
+    # set. Without it the checker still picks a younger version, which npm then refuses
+    # to write, and the run fails with "No files were updated!".
+    cooldown:
+      default-days: 3
     # Without this, a transitive package moves only when an advisory forces it.
     allow:
       - dependency-type: all
@@ -33,6 +38,10 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # pretty-format declares these as npm aliases of react-is, so the names do not
+      # exist on the registry and resolving them 404s on every run.
+      - dependency-name: "@jest/react-is-*"
 
   - package-ecosystem: docker
     directory: /
