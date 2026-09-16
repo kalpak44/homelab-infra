@@ -204,6 +204,10 @@ jobs:
           1. DISCOVER OPEN PULL REQUESTS
           ----------------------------------------------------------------------
 
+          Sections 19 and 20 run on EVERY invocation, including one where you find no
+          eligible pull request at all. Finding none is not a reason to finish: an unread
+          quality gate and an unread image scan are the two things that rot quietly.
+
           List open PRs oldest first.
 
           Use GitHub CLI and request enough metadata to determine:
@@ -750,9 +754,11 @@ jobs:
           20. ACT ON THE IMAGE SCAN
           ----------------------------------------------------------------------
 
-          Only if this repository's pipeline scans its image. Check once:
+          Only if this repository's pipeline scans its image. Check once, against the
+          workflow file in your checkout — `gh workflow view` prints job names, not the
+          file body, so grepping its output finds nothing even when the scan is there:
 
-            gh workflow view "${IMAGE_SCAN_WORKFLOW}" --repo "$REPO" 2>/dev/null | grep -qi grype
+            grep -rqi grype .github/workflows/
 
           If it does not, skip this section entirely and say so in your summary.
 
@@ -780,8 +786,25 @@ jobs:
           Never make a finding disappear by suppressing it: no grype ignore file, no
           `--fail-on` change, no dropped scan step. Fix the input or leave it reported.
 
-          If you are handling no PR in this run, do not open one for a scan finding. Report
-          what is fixable and stop; the next dependency PR is where it gets fixed.
+          If you are already handling a dependency PR, fold the fix into that branch.
+
+          If you are NOT — no eligible PR exists this run — a fixable finding is still
+          yours to fix. Open a remediation pull request rather than reporting and stopping:
+          a report nobody acts on leaves a known, fixable vulnerability shipping every day.
+
+            1. Branch from the default branch: `chore/scan-remediation-<short-sha>`.
+            2. Make ONLY the remediation: the dependency or base-image version the fix
+               needs, and nothing else. No refactors, no unrelated bumps, no version bump.
+            3. Run the repository's own validation locally, exactly as for any other change.
+            4. Push the branch and open a PR that names each finding it addresses, with the
+               id, the package, the version it moves from and to.
+            5. Take it through sections 16 to 21 unchanged: checks must run on the final
+               head commit, every check must conclude successfully, and you must review the
+               final diff before it can merge.
+
+          One remediation PR per run at most. If the fix does not validate, or you cannot
+          establish it is safe, leave the PR open and say why — exactly as you would for a
+          dependency PR you could not finish.
 
           ----------------------------------------------------------------------
           21. FINAL SAFETY GATE
@@ -855,13 +878,18 @@ jobs:
 
           These rules override everything else.
 
-          - NEVER merge a human-authored PR.
-          - NEVER modify a human-authored PR.
+          - NEVER merge a human-authored PR, with ONE exception: a scan-remediation PR
+            that YOU opened in THIS run, which has passed every check on its final head
+            commit and whose final diff you have reviewed. It is authored by the account
+            whose token you push with, so nothing else can ever merge it — and a fix that
+            cannot land is not a fix. Everything else a human opened stays untouched.
+          - NEVER modify a human-authored PR you did not open.
           - NEVER commit directly to the default/base branch.
           - NEVER bump a version, create a tag, or cut a release. This repository ships
             by publishing an image from main; there is no release for you to make.
           - NEVER push directly to the default/base branch.
-          - All compatibility fixes must go to the existing bot PR head branch.
+          - All compatibility fixes must go to the existing bot PR head branch, or to the
+            remediation branch you opened — never to the default branch.
           - NEVER force-push.
           - NEVER bypass branch protection.
           - NEVER use admin merge privileges to bypass protections.
