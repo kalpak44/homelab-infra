@@ -773,15 +773,32 @@ jobs:
           The report is deliberately non-blocking, so nothing fails when it finds something.
           That is exactly why it needs you: an unread report is the same as no report.
 
-          A finding is yours to fix when grype names a fixed version for it and that version
-          is reachable from this repository — a dependency in the manifest, or the base image
-          tag in the Dockerfile. Make that fix on the PR branch you are already handling, in
-          its own commit, exactly as you would a pre-existing gate failure.
+          A finding is yours to fix when grype names a fixed version and that version is
+          reachable from this repository: a dependency the manifest pins, or the base image
+          the build declares — a Dockerfile `FROM`, a jib `<from><image>` in the pom, or
+          wherever else this build names it. Make that fix on the PR branch you are already
+          handling, in its own commit, exactly as a pre-existing gate failure.
 
-          A finding is NOT yours when there is no fixed version, when the fix lives in a
-          transitive package this repository does not pin, or when the base image's
-          distribution has not packaged it. Say so and move on. Do not pin a transitive
-          dependency to force it — that is a lockfile the maintainer cannot reproduce.
+          When the base image is the source, you are NOT limited to a newer tag of the same
+          image. If its publisher has not rebuilt since the distribution packaged the fix,
+          the tag you have is already the newest one, and waiting is not a plan — those
+          findings ship every day. Switching to an equivalent base image that already
+          carries the fix is in scope, subject to ALL of these:
+
+            - it provides the same runtime and the same major version
+            - it is an official image from a maintained publisher, never whatever happens
+              to scan clean
+            - you scanned the candidate yourself and it strictly reduces Critical and High,
+              and raises neither
+            - the build, the tests, and the application actually starting all pass on it
+
+          Scan and validate before keeping it, and revert if any of those fail. A base image
+          that scans clean and does not run is worse than the one you started with. Say in
+          your summary which image you moved from and to, and what the counts were on each.
+
+          A finding is NOT yours when there is no fixed version anywhere, or when the fix
+          lives in a transitive package this repository does not pin. Do not force a
+          transitive pin — that is a lockfile the maintainer cannot reproduce.
 
           Never make a finding disappear by suppressing it: no grype ignore file, no
           `--fail-on` change, no dropped scan step. Fix the input or leave it reported.
