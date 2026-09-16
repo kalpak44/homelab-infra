@@ -23,7 +23,7 @@ variable "deepseek_model" {
 }
 
 variable "sonar_project_key" {
-  description = "SonarCloud project key verify.yml analyses against"
+  description = "SonarCloud project key release.yml analyses against"
   type        = string
   default     = "code-viewer-bot"
 }

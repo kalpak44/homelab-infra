@@ -2,8 +2,7 @@ locals {
   repository       = "code-viewer-bot"
   default_branch   = "main"
   agent_workflow   = ".github/workflows/ai-pr-agent.yml"
-  publish_workflow = ".github/workflows/publish-marketplace.yml"
-  verify_workflow  = ".github/workflows/verify.yml"
+  release_workflow = ".github/workflows/release.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
 
@@ -59,28 +58,21 @@ resource "github_actions_variable" "deepseek_model" {
   value         = var.deepseek_model
 }
 
-# No PR_CHECK_WORKFLOW variable on purpose: this repo has no workflow that runs on
-# pull_request (release.yml fires on push only, publish-marketplace.yml on dispatch
-# only), so there is nothing for the
-# agent to dispatch or wait on. With the variable unset it reviews and comments but
-# never merges, which is the correct behaviour — it must not merge unchecked code.
-# Add a pull_request workflow to the repo (with a workflow_dispatch trigger too), then
-# add the variable here pointing at it.
-
-# verify.yml is the repo's PR check: format:check, lint, jest and a waited-on SonarCloud
-# gate. publish-marketplace.yml cannot serve as one — it is workflow_dispatch only and
-# takes a human-chosen version, so there is nothing for the agent to start on a PR.
+# release.yml is the repo's PR check and its publisher in one: it verifies on every pull
+# request and releases only for a `v*` tag, so the gate that guards a merge and the
+# pipeline that ships can never be two files that drift apart.
 resource "github_actions_variable" "pr_check_workflow" {
   repository    = github_repository.this.name
   variable_name = "PR_CHECK_WORKFLOW"
-  value         = "verify.yml"
+  value         = "release.yml"
 }
 
 # --- SonarCloud ---------------------------------------------------------------------
-# verify.yml's analysis step waits on the quality gate, so a failing gate fails the check
-# the agent refuses to merge without. The step is guarded on `SONAR_TOKEN != '' &&
-# SONAR_PROJECT_KEY != ''`, which means a missing project key silently downgrades the gate
-# to nothing. Check the step ran, not just that the check went green.
+# release.yml's analysis step waits on the quality gate, so a failing gate fails the check
+# the agent refuses to merge without. The agent also reads the gate from the API to learn
+# which rule failed, because sonar-scanner exits 3 without naming one. The step is guarded
+# on `SONAR_TOKEN != '' && SONAR_PROJECT_KEY != ''`, which means a missing project key
+# silently downgrades the gate to nothing. Check the step ran, not that the check passed.
 #
 # `count` guards the value rather than the resource: an apply with SONAR_TOKEN unset in the
 # environment would otherwise overwrite the stored secret with an empty string and disable
@@ -142,11 +134,11 @@ resource "github_repository_file" "agent_workflow" {
   depends_on = [github_actions_secret.homelab_dispatch]
 }
 
-resource "github_repository_file" "publish_workflow" {
+resource "github_repository_file" "release_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
-  file                = local.publish_workflow
-  content             = file("${path.module}/workflows/publish-marketplace.yml")
+  file                = local.release_workflow
+  content             = file("${path.module}/workflows/release.yml")
   commit_message      = "chore: sync marketplace publish workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
@@ -164,13 +156,3 @@ resource "github_repository_file" "dependabot" {
   overwrite_on_create = true
 }
 
-resource "github_repository_file" "verify_workflow" {
-  repository          = github_repository.this.name
-  branch              = local.default_branch
-  file                = local.verify_workflow
-  content             = file("${path.module}/workflows/verify.yml")
-  commit_message      = "chore: sync verify workflow from homelab-infra"
-  commit_author       = "homelab-infra"
-  commit_email        = "homelab-infra@users.noreply.github.com"
-  overwrite_on_create = true
-}

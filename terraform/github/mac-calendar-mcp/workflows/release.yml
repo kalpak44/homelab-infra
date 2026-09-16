@@ -5,10 +5,11 @@
 # scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
 # `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
 #
-# One workflow, three jobs. On a pull request it verifies and stops; on a push to main it
-# verifies, bumps the version and cuts the release. The PR agent gates on this same file
-# (PR_CHECK_WORKFLOW), so the check that guards a merge and the pipeline that ships are
-# never two things that can drift apart.
+# One of the repo's two workflows, and its PR check (PR_CHECK_WORKFLOW). It verifies on
+# every pull request and every push to main, and releases only for a `v*` tag. The agent
+# cuts that tag once per sweep, so a batch of ten merges produces one release rather than
+# ten. Keying the release on the tag is also what keeps the version commit from starting
+# another release: it lands on main, and main does not release.
 name: Release
 
 on:
@@ -16,13 +17,12 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ["v*"]
   # The agent starts this for a pull request whose head commit has no checks — a branch
   # opened before the check existed never gets one retroactively.
   workflow_dispatch: {}
 
 concurrency:
-  # A second push while a release is mid-flight would compute its version from a
-  # package.json the first run has not bumped yet, and both would claim one tag.
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
@@ -31,159 +31,106 @@ permissions:
 
 jobs:
   verify:
-    name: Test and build
+    name: Format, lint, test and scan
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      release: ${{ steps.gate.outputs.release }}
+    timeout-minutes: 15
+
+    env:
+      # Job-level so the `if:` below can test them; a fork PR gets no secrets and skips.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout repository
+        # Full history: Sonar needs it for blame and new-code detection.
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - uses: actions/setup-node@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
         with:
-          node-version: '24'
-          cache: 'npm'
+          # Pinned here and in package.json engines. Move both together, or the runtime
+          # that ships is not the one tested.
+          node-version: "24"
+          cache: npm
 
-      - run: npm ci
+      - name: Install from lockfile
+        run: npm ci
 
-      # The coverage threshold lives in jest.config.js, not here, so deleting this step
-      # cannot silently lower it.
-      - name: Test
+      # Blocking: the agent merges with no human review, so nothing else catches drift.
+      # It clears these itself with `npm run format` and `npm run lint:fix`.
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run linter
+        run: npm run lint
+
+      # The coverage threshold lives in jest.config.js, so no step here can drop it.
+      # Writes coverage/lcov.info, which Sonar uploads — must run before Sonar.
+      - name: Run tests with coverage
         run: npm test
 
       - name: Build
         run: npm run build
 
-      # Terraform re-syncs the files under .github/ on every apply, and that push runs
-      # this workflow. Without this gate each apply minted a version for a release whose
-      # contents nobody changed.
-      - name: Decide whether this commit ships
-        id: gate
-        run: |
-          if [ "${GITHUB_EVENT_NAME}" != "push" ]; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "Pull request — verified only." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # Second guard on the version commit. `[skip ci]` in its message already stops
-          # the run starting; this catches it if that is ever dropped, because the failure
-          # is a bump loop that never settles rather than a job that fails once.
-          if git log -1 --pretty=%s | grep -q '^chore: release v'; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "Version commit — nothing to release." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          changed=$(git diff --name-only HEAD~1 HEAD || true)
-          # README.md is not listed: build-release.mjs copies it into the zip, so a
-          # README fix that never cut a release would never reach a downloaded bundle.
-          if echo "$changed" | grep -qvE '^(\.github/|\.gitignore$)'; then
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "Nothing that ships changed — no release." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  version:
-    name: Compute and commit the version
-    needs: verify
-    if: needs.verify.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      version: ${{ steps.bump.outputs.version }}
-    steps:
-      # A PAT, not GITHUB_TOKEN: the version commit goes to main, and a GITHUB_TOKEN push
-      # raises no workflow run, so nothing downstream of main would ever fire again.
-      - uses: actions/checkout@v7
+      # qualitygate.wait is what makes this block a merge. A missing project key skips
+      # rather than fails, so check the step ran. SONAR_TOKEN must be in the Dependabot
+      # store too, or it skips on exactly the PRs the gate exists for.
+      - name: SonarCloud analysis
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != '' }}
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
         with:
-          fetch-depth: 2
-          token: ${{ secrets.GH_ADMIN_TOKEN }}
-
-      # SemVer §4: below 1.0.0 a breaking change bumps the minor, so a dependency major
-      # moving lands on the minor and everything else on the patch. The number is derived
-      # here rather than asked for, because it is the one value a prompt cannot verify.
-      - name: Bump the version
-        id: bump
-        run: |
-          set -euo pipefail
-          majors() {
-            git show "$1:package.json" 2>/dev/null \
-              | jq -r '(.dependencies // {}) * (.devDependencies // {})
-                       | to_entries[] | "\(.key) \(.value | ltrimstr("^") | ltrimstr("~")
-                       | split(".")[0])"' | sort || true
-          }
-          breaking=no
-          if ! diff -q <(majors HEAD~1) <(majors HEAD) >/dev/null 2>&1; then
-            breaking=yes
-          fi
-
-          current=$(jq -r .version package.json)
-          IFS='.' read -r major minor patch <<< "$current"
-          if [ "$breaking" = yes ]; then
-            if [ "$major" -eq 0 ]; then
-              next="0.$((minor + 1)).0"
-            else
-              next="$((major + 1)).0.0"
-            fi
-          else
-            next="$major.$minor.$((patch + 1))"
-          fi
-
-          jq --arg v "$next" '.version = $v' package.json > package.json.tmp
-          mv package.json.tmp package.json
-          npm install --package-lock-only --ignore-scripts >/dev/null 2>&1 || true
-
-          git config user.name "homelab-infra"
-          git config user.email "homelab-infra@users.noreply.github.com"
-          git add package.json package-lock.json
-          # [skip ci]: this commit is a push to main that changes package.json, so
-          # without it the gate below re-fires and bumps the version again, for ever.
-          git commit -m "chore: release v${next} [skip ci]"
-          # Annotated, because `git push --follow-tags` silently ignores a lightweight
-          # tag and the release job then cannot check the tag out.
-          git tag -a "v${next}" -m "v${next}"
-          git push origin HEAD:main --follow-tags
-
-          echo "version=${next}" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Release v${next}"
-            echo ""
-            echo "| | |"
-            echo "|---|---|"
-            echo "| **Previous** | \`${current}\` |"
-            echo "| **Next** | \`${next}\` |"
-            echo "| **Dependency major moved** | ${breaking} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          args: >
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=src
+            -Dsonar.tests=test
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
 
   release:
     name: Publish the release
-    needs: [verify, version]
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+
     steps:
+      # Checked out at the tag, which is the commit the version number describes.
       - uses: actions/checkout@v7
-        with:
-          ref: v${{ needs.version.outputs.version }}
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
-          cache: 'npm'
+          node-version: "24"
+          cache: npm
 
       - run: npm ci
 
       - name: Build
         run: npm run build
 
-      # Built from the tag, never from the branch head: a push landing during this run
-      # would otherwise ship bytes the version number does not describe.
+      # The tag is the source of the version, not package.json: they are written in the
+      # same commit, and reading the tag means a mismatch cannot ship silently.
+      - name: Check the tag matches package.json
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(jq -r .version package.json)"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v${tag} does not match package.json ${pkg}"
+            exit 1
+          fi
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.version.outputs.version }}
-          name: mac-calendar-mcp v${{ needs.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: mac-calendar-mcp ${{ github.ref_name }}
+          generate_release_notes: true
           files: release/mac-calendar-mcp.zip

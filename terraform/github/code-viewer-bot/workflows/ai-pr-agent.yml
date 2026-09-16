@@ -1,5 +1,5 @@
-# Managed by homelab-infra — terraform/github/<repo>/workflows/ai-pr-agent.yml
-# Edits made here in the target repo are overwritten by `just deploy github <repo>`.
+# Managed by homelab-infra — terraform/github/code-viewer-bot/workflows/ai-pr-agent.yml
+# Edits made here in the target repo are overwritten by `just deploy github code-viewer-bot`.
 #
 # One job, once a day (or on demand): Codex CLI driving DeepSeek, with the gh CLI,
 # walks the open bot PRs oldest first, carefully reviews them, fixes dependency-related
@@ -51,6 +51,17 @@ jobs:
       # Optional workflow that can be explicitly started if no checks exist
       # for a PR head commit.
       PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+      # The agent reads the quality gate from SonarCloud's API rather than guessing at it:
+      # sonar-scanner exits 3 for any gate that is not OK, so the CI log names no rule.
+      # Costs no new credential — these are the ones the release workflow already uses.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      # Where the agent records the release it wants cut. A file, not stdout: the step
+      # after this one is bash, and it must not have to parse prose. A literal path, not
+      # `runner.temp`: the runner context is not available in a job-level env block, and
+      # using it there makes the whole workflow unparseable.
+      BUMP_FILE: /tmp/bump.json
 
     steps:
       - name: Checkout repository
@@ -59,6 +70,10 @@ jobs:
           # The agent may check out PR branches and commit fixes.
           fetch-depth: 0
           persist-credentials: true
+          # The PAT, not the default GITHUB_TOKEN: this credential is what `git push`
+          # uses, and GitHub starts no workflow run for a GITHUB_TOKEN push — the release
+          # tag would land and nothing would build it.
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
 
       - name: Configure Git identity
         run: |
@@ -650,13 +665,29 @@ jobs:
           Determine whether the failure is:
             - caused by the dependency update
             - caused by your compatibility fix
+            - a pre-existing failure in code this PR never touched
             - unrelated infrastructure failure
             - flaky test
             - credential/environment problem
-            - unrelated pre-existing repository failure
 
-          If the failure is caused by the dependency update or your migration AND there is
-          a clear, safe, repository-consistent fix:
+          A pre-existing failure IS yours to fix, on this PR branch. A prettier release
+          that changes a default, an eslint release that adds a recommended rule, or a new
+          Sonar rule raises failures in code the bump never touched — and leaving them
+          blocks this PR and every later one behind the same red gate. You are responsible
+          for keeping this repository secure, clean and up to date, not only for the lines
+          the bump changed. Put such a repair in its own commit so the diff stays readable.
+
+          The limit is absolute: fix the code, never the gate. No eslint-disable, no
+          widened ignore file, no lowered coverage threshold, no skipped or deleted test,
+          no Sonar exclusion, no won't-fix. If the only way you can make it pass is by
+          weakening the check, leave the PR open and say so.
+
+          Infrastructure is not in scope: a runner outage, a registry timeout or a flake is
+          not code and cannot be fixed on a branch. Re-run it, and if it persists leave the
+          PR open and name it.
+
+          If the failure is caused by the dependency update, your migration, or pre-existing
+          code, AND there is a clear, safe, repository-consistent fix:
 
             1. make the fix on the SAME PR branch
             2. inspect your diff
@@ -676,7 +707,36 @@ jobs:
           blocker.
 
           ----------------------------------------------------------------------
-          19. FINAL SAFETY GATE
+          19. READ THE SONAR QUALITY GATE
+          ----------------------------------------------------------------------
+
+          sonar-scanner exits 3 for any gate that is not OK, so the CI log names no rule at
+          all. Do not guess at what failed — ask SonarCloud.
+
+          Only when SONAR_TOKEN and SONAR_PROJECT_KEY are both non-empty. Authenticate with
+          `curl -u "$SONAR_TOKEN:"`, against https://sonarcloud.io/api.
+
+          For the pull request you are handling, read:
+
+            qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY&pullRequest=<n>
+            issues/search?componentKeys=$SONAR_PROJECT_KEY&pullRequest=<n>&statuses=OPEN,CONFIRMED,REOPENED
+
+          Also read the same two with `branch=main` instead of `pullRequest=<n>`. A BLOCKER
+          left on main is inherited by every branch cut from it and fails their gates too,
+          which is what makes one unfixed finding look like an intermittent CI failure.
+
+          For a taint finding, fetch its flow so you fix the source, not the symptom.
+
+          Treat every finding as yours to fix on this PR branch, whether or not this PR
+          introduced it, subject to the same absolute limit as section 18: fix the code,
+          never the gate. Marking an issue won't-fix, or adding an analysis exclusion, is
+          not a fix.
+
+          If the gate is failing and you cannot fix it without weakening it, leave the PR
+          open and name the rule and the file.
+
+          ----------------------------------------------------------------------
+          20. FINAL SAFETY GATE
           ----------------------------------------------------------------------
 
           Merge ONLY when ALL of the following are true:
@@ -700,7 +760,7 @@ jobs:
           CI being green does NOT override any of the other requirements.
 
           ----------------------------------------------------------------------
-          20. MERGE
+          21. MERGE
           ----------------------------------------------------------------------
 
           When every final safety condition is satisfied, merge using squash:
@@ -712,7 +772,7 @@ jobs:
           Do not bypass repository protections.
 
           ----------------------------------------------------------------------
-          21. CONFIRM THE MERGE
+          22. CONFIRM THE MERGE
           ----------------------------------------------------------------------
 
           Re-query the PR after the merge.
@@ -724,7 +784,7 @@ jobs:
           Only after confirming the merge may you proceed to the next PR.
 
           ----------------------------------------------------------------------
-          22. COMMENT ON THE PR
+          23. COMMENT ON THE PR
           ----------------------------------------------------------------------
 
           Leave ONE concise final comment describing what happened.
@@ -742,6 +802,35 @@ jobs:
           Prefer one useful final comment.
 
           ----------------------------------------------------------------------
+          24. DECIDE THE RELEASE, ONCE, AT THE END
+          ----------------------------------------------------------------------
+
+          Do this once, after every PR in this run has been handled — never per PR. A
+          sweep that merges ten PRs cuts one release, not ten.
+
+          If you merged nothing, write to the file named by BUMP_FILE:
+
+            {"bump": "none", "reason": "nothing merged"}
+
+          Otherwise decide how far the version should move, considering everything you
+          merged together, and write:
+
+            {"bump": "patch|minor|major", "reason": "<one short line>"}
+
+          Choose by what the release does to someone consuming this project:
+
+            major  a consumer must change something to keep working
+            minor  new capability, or a dependency major that is visible to consumers
+            patch  everything else: patch and minor dependency bumps, internal fixes
+
+          You choose only this word. You do NOT choose, write or tag the version number:
+          the step after you computes it from the current version, and it applies SemVer
+          §4, so below 1.0.0 a `major` decision lands on the minor. That is deliberate —
+          the number is the one value you have no way to verify, so it is not yours.
+
+          Do not edit package.json. Do not create a tag. Do not push to the default branch.
+
+          ----------------------------------------------------------------------
           HARD RULES
           ----------------------------------------------------------------------
 
@@ -750,6 +839,8 @@ jobs:
           - NEVER merge a human-authored PR.
           - NEVER modify a human-authored PR.
           - NEVER commit directly to the default/base branch.
+          - NEVER write package.json's version, and NEVER create or push a tag; write the
+            file named by BUMP_FILE and let the step after you compute the number.
           - NEVER push directly to the default/base branch.
           - All compatibility fixes must go to the existing bot PR head branch.
           - NEVER force-push.
@@ -763,7 +854,8 @@ jobs:
           - NEVER disable CI merely to make an upgrade pass.
           - NEVER weaken security checks merely to make an upgrade pass.
           - NEVER delete or weaken tests merely to make an upgrade pass.
-          - NEVER make unrelated refactors.
+          - NEVER make unrelated refactors. Repairing a failing gate in pre-existing
+            code is not a refactor and IS expected of you; gratuitous restructuring is not.
           - NEVER add unrelated features.
           - NEVER silently accept an unexplained breaking change.
           - NEVER assume patch/minor means safe.
@@ -790,6 +882,8 @@ jobs:
             #123 — example-lib 2.4.1 → 2.5.0 — merged — no fixes — validation and final CI passed
             #124 — foo 7.2 → 8.0 — merged — fixes committed — migrated removed API; tests and final CI passed
             #125 — bar 3.1 → 4.0 — left open — no fixes — migration requires an architectural decision
+
+          Then one last line naming the bump you wrote to BUMP_FILE, and why.
           AGENT_PROMPT
 
           codex exec \
@@ -797,6 +891,80 @@ jobs:
             --sandbox danger-full-access \
             --output-last-message summary.md \
             "$(cat prompt.md)"
+
+      # The agent picks the word; this picks the number. Keeping the arithmetic here is
+      # what makes the version verifiable — a model cannot check a version string against
+      # anything, and an unvalidated one ships under a tag that means nothing.
+      - name: Cut the release
+        id: cut
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$BUMP_FILE" ]; then
+            echo "No bump file — the agent merged nothing." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          bump=$(jq -r '.bump // "none"' "$BUMP_FILE")
+          reason=$(jq -r '.reason // ""' "$BUMP_FILE")
+
+          if [ "$bump" = "none" ]; then
+            echo "Nothing merged — no release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # An unrecognised word means the prompt drifted. Patch is the conservative
+          # reading, and saying so in the summary is what makes the drift visible.
+          case "$bump" in
+            patch|minor|major) ;;
+            *)
+              echo "::warning::unrecognised bump '${bump}', treating as patch"
+              reason="${reason} (bump '${bump}' not recognised, treated as patch)"
+              bump=patch
+              ;;
+          esac
+
+          git fetch origin main --tags
+          git checkout main
+          git reset --hard origin/main
+
+          current=$(jq -r .version package.json)
+          IFS='.' read -r major minor patch <<< "$current"
+
+          # SemVer §4: below 1.0.0 a breaking change bumps the minor, so `major` lands on
+          # the minor until this project reaches 1.0.0.
+          case "$bump" in
+            major) if [ "$major" -eq 0 ]; then next="0.$((minor + 1)).0"; else next="$((major + 1)).0.0"; fi ;;
+            minor) if [ "$major" -eq 0 ]; then next="0.$((minor + 1)).0"; else next="${major}.$((minor + 1)).0"; fi ;;
+            patch) next="${major}.${minor}.$((patch + 1))" ;;
+          esac
+
+          if git rev-parse "v${next}" >/dev/null 2>&1; then
+            echo "::error::tag v${next} already exists"
+            exit 1
+          fi
+
+          jq --arg v "$next" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          npm install --package-lock-only --ignore-scripts >/dev/null 2>&1 || true
+
+          git add package.json package-lock.json
+          git commit -m "chore: release v${next}"
+          # Annotated: `git push --follow-tags` silently ignores a lightweight tag, and the
+          # release workflow would then never run.
+          git tag -a "v${next}" -m "v${next}"
+          git push origin HEAD:main --follow-tags
+
+          {
+            echo "## Release v${next}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Previous** | \`${current}\` |"
+            echo "| **Next** | \`${next}\` |"
+            echo "| **Bump** | ${bump} |"
+            echo "| **Reason** | ${reason} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summary
         if: always()
