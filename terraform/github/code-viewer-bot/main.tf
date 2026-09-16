@@ -3,6 +3,7 @@ locals {
   default_branch   = "main"
   agent_workflow   = ".github/workflows/ai-pr-agent.yml"
   publish_workflow = ".github/workflows/publish-marketplace.yml"
+  verify_workflow  = ".github/workflows/verify.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
 
@@ -66,6 +67,55 @@ resource "github_actions_variable" "deepseek_model" {
 # Add a pull_request workflow to the repo (with a workflow_dispatch trigger too), then
 # add the variable here pointing at it.
 
+# verify.yml is the repo's PR check: format:check, lint, jest and a waited-on SonarCloud
+# gate. publish-marketplace.yml cannot serve as one — it is workflow_dispatch only and
+# takes a human-chosen version, so there is nothing for the agent to start on a PR.
+resource "github_actions_variable" "pr_check_workflow" {
+  repository    = github_repository.this.name
+  variable_name = "PR_CHECK_WORKFLOW"
+  value         = "verify.yml"
+}
+
+# --- SonarCloud ---------------------------------------------------------------------
+# verify.yml's analysis step waits on the quality gate, so a failing gate fails the check
+# the agent refuses to merge without. The step is guarded on `SONAR_TOKEN != '' &&
+# SONAR_PROJECT_KEY != ''`, which means a missing project key silently downgrades the gate
+# to nothing. Check the step ran, not just that the check went green.
+#
+# `count` guards the value rather than the resource: an apply with SONAR_TOKEN unset in the
+# environment would otherwise overwrite the stored secret with an empty string and disable
+# the gate.
+resource "github_actions_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository  = github_repository.this.name
+  secret_name = "SONAR_TOKEN"
+  value       = var.sonar_token
+}
+
+# The same key in the second store, for the same reason DEEPSEEK_APIKEY is in both: GitHub
+# withholds Actions secrets from Dependabot-triggered runs, so on exactly the PRs the agent
+# is meant to merge the guard above would see an empty token and skip the analysis.
+resource "github_dependabot_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository      = github_repository.this.name
+  secret_name     = "SONAR_TOKEN"
+  plaintext_value = var.sonar_token
+}
+
+resource "github_actions_variable" "sonar_project_key" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEY"
+  value         = var.sonar_project_key
+}
+
+resource "github_actions_variable" "sonar_organization" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_ORGANIZATION"
+  value         = var.sonar_organization
+}
+
 # --- The agent itself ---------------------------------------------------------------
 
 # --- The agent's git credential -----------------------------------------------------
@@ -109,6 +159,17 @@ resource "github_repository_file" "dependabot" {
   file                = local.dependabot_file
   content             = file("${path.module}/dependabot.yml")
   commit_message      = "chore: sync dependabot config from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+resource "github_repository_file" "verify_workflow" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.verify_workflow
+  content             = file("${path.module}/workflows/verify.yml")
+  commit_message      = "chore: sync verify workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
