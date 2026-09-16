@@ -111,9 +111,9 @@ jobs:
              a. Read the change:  gh pr diff <n> --repo ${REPO}
              b. Decide. Merge only if ALL of these hold:
                   - nothing but dependency manifests and lockfiles changed
-                  - the bump is a patch or minor version of a dependency that already existed
-                  - no new dependency is introduced
                   - no workflow, build script or CI configuration is touched
+                A major bump is in scope like any other: the test suite and build are the
+                gate, and the release workflow reads the major itself to pick the version.
                 Otherwise leave it open and comment briefly saying why.
              c. If the PR is behind its base branch, update it:
                   gh api -X PUT repos/${REPO}/pulls/<n>/update-branch

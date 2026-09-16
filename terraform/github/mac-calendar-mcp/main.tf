@@ -58,12 +58,13 @@ resource "github_actions_variable" "deepseek_model" {
   value         = var.deepseek_model
 }
 
-# No PR_CHECK_WORKFLOW variable on purpose: this repo has no workflow that runs on
-# pull_request (release.yml fires only on push to main), so there is nothing for the
-# agent to dispatch or wait on. With the variable unset it reviews and comments but
-# never merges, which is the correct behaviour — it must not merge unchecked code.
-# Add a pull_request workflow to the repo (with a workflow_dispatch trigger too), then
-# add the variable here pointing at it.
+# The repo's own CI. release.yml runs on pull_request and also has a workflow_dispatch
+# trigger, which is what the agent needs to start it on a PR that has no check runs.
+resource "github_actions_variable" "pr_check_workflow" {
+  repository    = github_repository.this.name
+  variable_name = "PR_CHECK_WORKFLOW"
+  value         = "release.yml"
+}
 
 # --- The agent itself ---------------------------------------------------------------
 

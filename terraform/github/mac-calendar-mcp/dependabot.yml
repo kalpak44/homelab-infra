@@ -27,13 +27,18 @@ updates:
     # The agent has no per-run limit of its own, so this is sized to not withhold
     # proposals. It throttles how many sit open at once, not how many exist.
     open-pull-requests-limit: 10
+    # The updater invokes npm with a 3-day minimum release age whether or not this is
+    # set. Without it the checker still picks a younger version, which npm then refuses
+    # to write, and the run fails with "No files were updated!".
+    cooldown:
+      default-days: 3
     # Dependabot proposes only DIRECT dependencies unless told otherwise; for npm the
     # indirect ones are lockfile-only changes and fold into the group below.
     allow:
       - dependency-type: all
     # Minor and patch bumps arrive as one PR, so the lockfile is resolved at once. Majors
-    # are deliberately NOT in this group: they arrive as one PR each, which is what makes
-    # a break attributable to a single package.
+    # are deliberately NOT in this group: they arrive as one PR each, which keeps a break
+    # attributable and is the signal release.yml bumps the minor rather than the patch on.
     groups:
       npm-minor-and-patch:
         patterns:
