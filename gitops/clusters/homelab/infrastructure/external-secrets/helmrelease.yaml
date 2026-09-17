@@ -5,10 +5,11 @@ metadata:
   namespace: external-secrets
 spec:
   interval: 10m
+  timeout: 15m
   chart:
     spec:
       chart: external-secrets
-      version: "0.10.x"
+      version: "2.10.x"
       sourceRef:
         kind: HelmRepository
         name: external-secrets
@@ -17,3 +18,11 @@ spec:
     crds: Create
   upgrade:
     crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    crds:
+      # Scaffolding for the v1beta1 to v1 move, removed once every ExternalSecret and
+      # ClusterSecretStore here is on v1. 2.x stops serving v1beta1 by default, and
+      # unserving it while a manifest still asks for it halts Vault syncing everywhere.
+      unsafeServeV1Beta1: true
