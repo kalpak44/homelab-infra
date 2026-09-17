@@ -223,6 +223,10 @@ spec:
                 cscli allowlists add trusted_ips 62.176.70.79 -d "Trusted client IP" 2>/dev/null || true
                 cscli allowlists add trusted_ips 46.10.148.46 -d "Trusted client IP" 2>/dev/null || true
                 cscli allowlists add trusted_ips 77.85.26.124 -d "Trusted client IP" 2>/dev/null || true
+                # Agents register under their pod name and `cscli lapi register` has no
+                # --force, so a record that outlives the pod makes the replacement's init
+                # container fail for ever. Clear the dead ones before they reconnect.
+                cscli machines prune --duration 1h --force 2>/dev/null || true
                 cscli bouncers delete traefik 2>/dev/null || true
                 cscli bouncers add traefik --key "${BOUNCER_KEY_traefik}"
                 # --force is required for idempotency: without it, a machine
