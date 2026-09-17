@@ -9,3 +9,9 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments/scale", "statefulsets/scale"]
     verbs: ["get", "update", "patch"]
+  # Sablier lists CloudNativePG clusters even where the CRD is absent. It treats a missing
+  # CRD as "none found", but a Forbidden aborts the whole reconcile loop, which stops idle
+  # apps ever scaling back down. Read-only: nothing here hibernates a Postgres cluster.
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch"]
