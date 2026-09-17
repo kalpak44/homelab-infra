@@ -20,6 +20,10 @@ spec:
     crds: CreateReplace
     remediation:
       retries: 3
+    # Nine unused generator CRDs carry a stale NamesAccepted=False, from a shortName the
+    # old chart set equal to its own singular. Re-applying does not clear it, and Helm's
+    # readiness gate reads it as failed, which stalls every upgrade of this release.
+    disableWait: true
   values:
     crds:
       # Scaffolding for the v1beta1 to v1 move, removed once every ExternalSecret and
