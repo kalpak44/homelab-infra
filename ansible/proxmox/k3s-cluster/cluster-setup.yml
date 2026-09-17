@@ -17,19 +17,23 @@
   become: true
 
   tasks:
-    - name: Check if k3s is installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/k3s
-      register: k3s_bin
+    - name: Read installed k3s version
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: k3s_installed
+      changed_when: false
+      failed_when: false
 
-    - name: Install k3s server
+    # Keyed on the running version rather than the binary existing. A presence check
+    # makes every version bump a silent no-op, so the pinned version and the cluster
+    # drift apart with nothing reporting it. Re-running the installer upgrades in place.
+    - name: Install or upgrade k3s server
       ansible.builtin.shell:
         cmd: >-
           curl -sfL https://get.k3s.io |
           INSTALL_K3S_VERSION="{{ k3s_version }}"
           INSTALL_K3S_EXEC="--disable servicelb --node-ip={{ k3s_server_ip }} --tls-san={{ k3s_server_ip }} --write-kubeconfig-mode=644"
           sh -
-      when: not k3s_bin.stat.exists
+      when: k3s_version not in (k3s_installed.stdout | default(''))
 
     - name: Wait for node to be ready
       ansible.builtin.command: k3s kubectl wait --for=condition=Ready node/k3s-1 --timeout=120s
@@ -52,12 +56,15 @@
   become: true
 
   tasks:
-    - name: Check if k3s is installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/k3s
-      register: k3s_bin
+    - name: Read installed k3s version
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: k3s_installed
+      changed_when: false
+      failed_when: false
 
-    - name: Install k3s agent
+    # Same version keying as the server: the agent must not be left a release behind
+    # because its binary happened to exist.
+    - name: Install or upgrade k3s agent
       ansible.builtin.shell:
         cmd: >-
           curl -sfL https://get.k3s.io |
@@ -65,7 +72,7 @@
           K3S_URL="https://{{ k3s_server_ip }}:6443"
           K3S_TOKEN="{{ hostvars['k3s-1']['k3s_node_token'] }}"
           sh -
-      when: not k3s_bin.stat.exists
+      when: k3s_version not in (k3s_installed.stdout | default(''))
 
     - name: Wait for k3s-2 to join
       ansible.builtin.command: k3s kubectl get node k3s-2
