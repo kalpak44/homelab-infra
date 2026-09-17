@@ -4,6 +4,9 @@ metadata:
   name: capacity-planner
   namespace: public
 spec:
+  # A new image tag on every bump leaves the superseded ReplicaSet behind for ever, and
+  # the image scanner reports each one, burying live findings under dead revisions.
+  revisionHistoryLimit: 2
   # No `replicas` on purpose — Sablier owns the replica count. See the note in
   # bunker-game-app/deployment.yaml.
   selector:

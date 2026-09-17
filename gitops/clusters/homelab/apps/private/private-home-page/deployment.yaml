@@ -4,6 +4,9 @@ metadata:
   name: private-home-page
   namespace: private
 spec:
+  # A new image tag on every bump leaves the superseded ReplicaSet behind for ever, and
+  # the image scanner reports each one, burying live findings under dead revisions.
+  revisionHistoryLimit: 2
   replicas: 1
   selector:
     matchLabels:

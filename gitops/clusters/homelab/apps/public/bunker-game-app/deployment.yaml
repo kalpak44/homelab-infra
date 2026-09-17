@@ -4,6 +4,9 @@ metadata:
   name: bunker-game-app
   namespace: public
 spec:
+  # A new image tag on every bump leaves the superseded ReplicaSet behind for ever, and
+  # the image scanner reports each one, burying live findings under dead revisions.
+  revisionHistoryLimit: 2
   # No `replicas` on purpose. Sablier owns the replica count — it scales this up on the
   # first request and back to 0 after the middleware's sessionDuration. Declaring it
   # here would make kustomize-controller own the field under server-side apply and
