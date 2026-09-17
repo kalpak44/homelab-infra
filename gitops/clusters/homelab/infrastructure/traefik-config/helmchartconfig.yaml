@@ -26,6 +26,10 @@ spec:
       additionalServices:
         private:
           spec:
+            # type is stated rather than inherited: the chart defaults an additional
+            # service to ClusterIP, so leaving it out drops the LAN address on a chart
+            # upgrade and every *.internal host resolves to nothing that answers.
+            type: LoadBalancer
             loadBalancerIP: "192.168.1.121"
           annotations:
             metallb.universe.tf/address-pool: homelab
