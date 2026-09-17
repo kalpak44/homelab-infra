@@ -36,13 +36,16 @@ spec:
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10
+          # 256Mi was OOM-killed during the initial history import, crash-looping the pod
+          # out of reach of its own UI. The importer holds the whole lookback window in
+          # memory, so the ceiling has to cover that spike, not the idle footprint.
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 200m
+              cpu: 100m
               memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
       volumes:
         - name: data
           persistentVolumeClaim:
