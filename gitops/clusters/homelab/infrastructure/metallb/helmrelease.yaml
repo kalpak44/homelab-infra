@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: metallb
-      version: "0.15.*"
+      version: "0.16.*"
       sourceRef:
         kind: HelmRepository
         name: metallb
@@ -17,3 +17,12 @@ spec:
     crds: Create
   upgrade:
     crds: CreateReplace
+  values:
+    # This cluster advertises over L2 only — there is no BGPPeer anywhere — so both FRR
+    # backends are pure attack surface. 0.16 makes frrk8s the default, so leaving it unset
+    # trades the speaker's FRR sidecars for an frr-k8s DaemonSet running the same images.
+    frrk8s:
+      enabled: false
+    speaker:
+      frr:
+        enabled: false
