@@ -5,6 +5,16 @@ metadata:
   namespace: nfs-provisioner
 spec:
   interval: 10m
+  # The first rollout was slower than the default timeout and stalled the release for
+  # good: with no retries Flux gives up after one failed upgrade and stops reconciling,
+  # while the Deployment itself goes healthy minutes later.
+  timeout: 15m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: nfs-subdir-external-provisioner
