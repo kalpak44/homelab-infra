@@ -78,8 +78,14 @@ jobs:
       # qualitygate.wait is what makes this block a merge. A missing project key skips
       # rather than fails, so check the step ran. SONAR_TOKEN must be in the Dependabot
       # store too, or it skips on exactly the PRs the gate exists for.
+      #
+      # Never on a tag. The scanner takes its branch name from the ref, so a tag run asks
+      # SonarCloud about a branch called `v1.2.3` that has never existed, and the gate
+      # lookup answers "Not authorized or project not found" — which reads as a bad token
+      # and is not. The tag points at a commit main analysed moments earlier, so there is
+      # nothing to re-analyse; without this the release job never runs.
       - name: SonarCloud analysis
-        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != '' }}
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != '' && github.ref_type != 'tag' }}
         uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_HOST_URL: https://sonarcloud.io
