@@ -162,9 +162,12 @@ spec:
         crowdsec-bouncer-traefik-plugin:
           moduleName: "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
           version: "v1.6.0"
+        # The plugin lives in its own repo from sablier 1.11 on; the main repo's root has
+        # no .traefik.yml past 1.10.1. Traefik disables *every* plugin when one manifest
+        # fails to load, so a stale module path here also takes the crowdsec bouncer down.
         sablier:
-          moduleName: "github.com/sablierapp/sablier"
-          version: "v1.10.1"
+          moduleName: "github.com/sablierapp/sablier-traefik-plugin"
+          version: "v1.3.0"
 
     volumes:
       - name: crowdsec-bouncer-secret
