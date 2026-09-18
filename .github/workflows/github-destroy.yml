@@ -12,6 +12,7 @@ on:
         options:
           - bunker-party
           - code-viewer-bot
+          - deepaudit
           - kalpak44
           - kubectl-awscli
           - mac-calendar-mcp

@@ -177,6 +177,20 @@ Four things about this pair are load-bearing. **One sweep cuts one release**, be
 
 **`code-viewer-bot` carries three traps the other does not.** Its `npm ci` must pass `--ignore-scripts` in `verify`, because `robotjs` runs `node-gyp rebuild` at install time, needs X11 headers and does not build on Node 24 — `SKIP_ROBOTJS_REBUILD=1` skips only the *postinstall*. The tag-triggered build job does the opposite: it installs the X11 headers and rebuilds, because the packaged VSIX ships the native binding. `.prettierignore` must list `.github`, or prettier reformats the generated workflows, the next apply restores Terraform's copy, and `format:check` then fails on files no one can fix in the repo — blocking every merge. Its coverage thresholds are per-path with no `global` block, because Jest removes path-matched files from the global pool and a global floor would measure only the modules that require `vscode` or `robotjs` and cannot load outside a VS Code host. A fourth was fixed rather than documented: `.gitignore` contained `test/`, which held the whole suite out of git — the tests passed locally and CI reported `No tests found, exiting with code 1`.
 
+**Exception — `deepaudit` keeps its `.github/` in the repo.** `terraform/github/deepaudit/` is the whole layer
+dir: repo settings, the `DEEPSEEK_API_KEY` secret and the `DEEPSEEK_MODEL` variable, and no `github_repository_file`
+at all. It has no PR agent, so the argument that put every other repo's workflows here — keeping the merge gate and
+the thing that ships from drifting apart — buys nothing, and `audit.yml` is a manual workflow that takes a target
+URL and two consent flags, which is a thing to edit next to the code it drives. The cost is real and is the reason
+this is an exception rather than a new default: nothing stops a hand edit in the target repo, and its
+`dependabot.yml` therefore *does* carry the `github-actions` ecosystem, which every generated-workflow repo has to
+omit.
+
+**The secret is `DEEPSEEK_API_KEY`, not `DEEPSEEK_APIKEY`.** The CLI and `audit.yml` read that spelling, and since
+Terraform does not generate that workflow the repo's name is the one the secret has to match. It goes in the Actions
+store only — the both-stores rule exists for agents running on Dependabot-triggered PRs, and nothing here reads the
+key on such a run, so a Dependabot copy would be a credential with no reader.
+
 **Exception — the container-image repos.** `kubectl-awscli` and `postgres-awscli` get `workflows/release.yml` instead
 of `ai-pr-agent.yml`, and that file *is* their CI. It is one workflow, and now one **job**, because every step needs
 the working tree the step before it produced and because nothing may reach the registry until the whole chain has

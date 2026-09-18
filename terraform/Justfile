@@ -123,6 +123,7 @@ list:
     @echo "GitHub - repo settings + DeepSeek PR agent (just deploy github <resource>):"
     @printf "  %-30s %s\n" "bunker-party"                   "kalpak44/bunker-party · same + SonarCloud gate pass + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-30s %s\n" "code-viewer-bot"                "kalpak44/code-viewer-bot · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered VSIX release + Marketplace) + dependabot"
+    @printf "  %-30s %s\n" "deepaudit"                      "kalpak44/deepaudit · repo settings + DEEPSEEK_API_KEY/DEEPSEEK_MODEL only · the repo owns its own .github/"
     @printf "  %-30s %s\n" "kalpak44"                       "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI PR agent workflow"
     @printf "  %-30s %s\n" "kubectl-awscli"                 "kalpak44/kubectl-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "mac-calendar-mcp"               "kalpak44/mac-calendar-mcp · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered release) + dependabot"
