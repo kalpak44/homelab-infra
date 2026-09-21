@@ -183,8 +183,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/kalpak44/postgres-awscli
-  SYFT_VERSION: v1.29.1
-  GRYPE_VERSION: v0.98.0
+  SYFT_VERSION: v1.52.0
+  GRYPE_VERSION: v0.119.0
   # Each remediation attempt is a full build + smoke + scan. Four is enough to walk
   # from any supported Alpine tag to the newest one; the cap is reported when hit.
   REMEDIATION_MAX_ATTEMPTS: "4"

@@ -44,8 +44,8 @@ permissions:
 
 env:
   # Pinned: an unpinned scanner changes the report without the image changing.
-  SYFT_VERSION: v1.51.1
-  GRYPE_VERSION: v0.118.0
+  SYFT_VERSION: v1.52.0
+  GRYPE_VERSION: v0.119.0
   IMAGE: ghcr.io/${{ github.repository_owner }}/noco-google-connector-web-page
 
 jobs:

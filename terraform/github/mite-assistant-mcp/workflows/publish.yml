@@ -40,8 +40,8 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository }}
   # Pinned so the report cannot change without a commit to attribute it to.
-  SYFT_VERSION: v1.51.1
-  GRYPE_VERSION: v0.118.0
+  SYFT_VERSION: v1.52.0
+  GRYPE_VERSION: v0.119.0
 
 jobs:
   verify:

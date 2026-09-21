@@ -154,8 +154,8 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}
       # Pinned: an unpinned scanner changes the report without the image changing.
-      SYFT_VERSION: v1.51.1
-      GRYPE_VERSION: v0.118.0
+      SYFT_VERSION: v1.52.0
+      GRYPE_VERSION: v0.119.0
     steps:
       # The package is private; syft and grype read the config this writes.
       - name: Log in to GHCR
