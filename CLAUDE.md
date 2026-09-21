@@ -101,7 +101,8 @@ homelab-infra/
     ├── github-deploy.yml           # just deploy github <repo>
     ├── github-destroy.yml          # just destroy github <repo>
     ├── ansible-configure.yml       # just configure <resource>
-    └── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
+    ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
+    └── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)
 ```
 
 ---

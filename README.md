@@ -498,6 +498,7 @@ Seven workflows, all `workflow_dispatch` (manual), all running on the self-hoste
 | `github-destroy.yml`     | 5 github/ repos                 | `just destroy github <resource>`     |
 | `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
+| `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |
 
 Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [
 `terraform/README.md`](terraform/README.md) and [`ansible/README.md`](ansible/README.md).

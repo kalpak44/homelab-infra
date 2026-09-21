@@ -87,6 +87,133 @@ output layer resource name:
     # fall back to -json rather than making every caller know which kind it is.
     terraform output -raw {{name}} 2>/dev/null || terraform output -json {{name}}
 
+# Point the syft/grype pins at the newest upstream release, then apply what moved
+bump-scanners:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # These pins sit in generated workflow files, where no dependency updater can reach
+    # them: Dependabot only scans .github/workflows/, and here they are ordinary files
+    # under terraform/. Moving them by hand is what let them drift.
+    export GH_TOKEN="${GH_ADMIN_TOKEN:-}"
+
+    sha256() {
+        if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$1" | cut -d' ' -f1
+        else
+            shasum -a 256 "$1" | cut -d' ' -f1
+        fi
+    }
+
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+
+    # Prints "<tag> <installer-sha256>". The checksum is recomputed from the tag being
+    # pinned, which is why a version bump alone is not enough to move these.
+    resolve() {
+        local tool=$1 tag installer sum
+        tag=$(gh api "repos/anchore/${tool}/releases/latest" --jq .tag_name)
+        installer="${work}/${tool}-install.sh"
+        curl -fsSL "https://raw.githubusercontent.com/anchore/${tool}/${tag}/install.sh" -o "$installer"
+        sum=$(sha256 "$installer")
+
+        # A release that does not install is worse than a stale pin: it fails every
+        # pipeline at once, and those pipelines are what would have reported it.
+        sh "$installer" -b "$work" "$tag" >/dev/null 2>&1
+        "${work}/${tool}" version >/dev/null
+        echo "${tool} ${tag} installs and runs" >&2
+
+        echo "$tag $sum"
+    }
+
+    read -r syft_tag syft_sum < <(resolve syft)
+    read -r grype_tag grype_sum < <(resolve grype)
+
+    files=$(grep -rl "SYFT_VERSION:" github/*/workflows/*.yml || true)
+
+    if [ -z "$files" ]; then
+        echo "no workflow pins either scanner — nothing to bump" >&2
+        exit 1
+    fi
+
+    # Saved copies, because the rollback below must put back exactly what this rewrote.
+    # `git checkout --` on the directory would also discard unrelated work sitting
+    # uncommitted beside it.
+    changed=""
+
+    for f in $files; do
+        cp "$f" "${work}/$(echo "$f" | tr '/' '_')"
+
+        sed -i.bak -E \
+            -e "s|^( *SYFT_VERSION: ).*$|\1${syft_tag}|" \
+            -e "s|^( *GRYPE_VERSION: ).*$|\1${grype_tag}|" \
+            -e "s|^( *SYFT_INSTALLER_SHA256: ).*$|\1${syft_sum}|" \
+            -e "s|^( *GRYPE_INSTALLER_SHA256: ).*$|\1${grype_sum}|" \
+            "$f" && rm -f "${f}.bak"
+
+        if ! cmp -s "$f" "${work}/$(echo "$f" | tr '/' '_')"; then
+            changed="${changed} ${f}"
+        fi
+    done
+
+    if [ -z "$changed" ]; then
+        echo "syft ${syft_tag}, grype ${grype_tag} — already pinned everywhere"
+        exit 0
+    fi
+
+    # The repo is the dir the file sits in, and it is applied once however many of its
+    # lines moved.
+    repos=$(for f in $changed; do echo "$f" | cut -d/ -f2; done | sort -u)
+
+    echo "bumping:$(echo $repos | sed 's/^/ /')"
+
+    if [ "${DRY_RUN:-}" = "1" ]; then
+        for f in $changed; do
+            cp "${work}/$(echo "$f" | tr '/' '_')" "$f"
+        done
+        exit 0
+    fi
+
+    cd ..
+    git config user.name  "homelab-infra"
+    git config user.email "homelab-infra@users.noreply.github.com"
+    for f in $changed; do
+        git add "terraform/${f}"
+    done
+    git commit -m "bump syft ${syft_tag}, grype ${grype_tag}"
+
+    # Rebase and retry rather than fail, as the image bump does: nothing serialises this
+    # against a human push, and losing that race is not a reason to leave every scanner a
+    # version behind for a week.
+    pushed=0
+    for attempt in 1 2 3; do
+        if git push; then
+            pushed=1
+            break
+        fi
+
+        echo "push rejected (attempt $attempt) — rebasing onto the current main" >&2
+
+        if ! git pull --rebase --quiet; then
+            git rebase --abort || true
+            echo "the bump conflicts with what is already on main — resolve it by hand" >&2
+            exit 1
+        fi
+    done
+
+    if [ "$pushed" -ne 1 ]; then
+        echo "push still rejected after 3 attempts — something is pushing to main continuously" >&2
+        exit 1
+    fi
+
+    # A commit here changes nothing in the target repos until Terraform pushes the file
+    # into them, so the apply is part of the bump rather than a thing to remember later.
+    cd terraform
+    for repo in $repos; do
+        echo "applying ${repo}"
+        just deploy github "$repo"
+    done
+
 # List every deployable resource with a short description
 list:
     @echo "Cloudflare - DNS + shared (just deploy cloudflare <resource>):"
@@ -120,11 +247,11 @@ list:
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"
     @echo
-    @echo "GitHub - repo settings + DeepSeek PR agent (just deploy github <resource>):"
+    @echo "GitHub - repo settings + DeepSeek maintenance agent (just deploy github <resource>):"
     @printf "  %-30s %s\n" "bunker-party"                   "kalpak44/bunker-party · same + SonarCloud gate pass + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-30s %s\n" "code-viewer-bot"                "kalpak44/code-viewer-bot · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered VSIX release + Marketplace) + dependabot"
     @printf "  %-30s %s\n" "deepaudit"                      "kalpak44/deepaudit · repo settings + DEEPSEEK_API_KEY/DEEPSEEK_MODEL only · the repo owns its own .github/"
-    @printf "  %-30s %s\n" "kalpak44"                       "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI PR agent workflow"
+    @printf "  %-30s %s\n" "kalpak44"                       "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI maintenance agent workflow"
     @printf "  %-30s %s\n" "kubectl-awscli"                 "kalpak44/kubectl-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "mac-calendar-mcp"               "kalpak44/mac-calendar-mcp · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered release) + dependabot"
     @printf "  %-30s %s\n" "mite-assistant-mcp"             "kalpak44/mite-assistant-mcp · same + lint/format/80%-coverage/Sonar gate + publish.yml (PR check, publish, syft/grype report, batched deploy) + dependabot"

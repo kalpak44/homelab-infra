@@ -1,8 +1,8 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Eight workflows, all running on the **self-hosted** runner (VM 101 on the
-Proxmox node). All are `workflow_dispatch` (manual) except `gitops-bump-images.yml`, which is also on a daily
-`schedule`:
+All CI/CDs live in `.github/workflows/`. Nine workflows, all running on the **self-hosted** runner (VM 101 on the
+Proxmox node). All are `workflow_dispatch` (manual) except the two on a `schedule`: `gitops-bump-images.yml` daily
+and `scanners-bump-pins.yml` weekly.
 
 | File                     | Purpose                                    | Underlying command                   |
 |--------------------------|--------------------------------------------|--------------------------------------|
@@ -14,6 +14,7 @@ Proxmox node). All are `workflow_dispatch` (manual) except `gitops-bump-images.y
 | `github-destroy.yml`     | Terraform destroy on a managed GitHub repo | `just destroy github <repo>`         |
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
 | `gitops-bump-images.yml` | Point public apps at the newest published image | `just bump-images` (in `gitops/`) |
+| `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
 
 Every workflow has one job with three steps: `checkout`, `extractions/setup-just@v2`, and a single `just <recipe>` call.
 All actual logic lives in the layer's `Justfile`.

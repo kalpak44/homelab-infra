@@ -21,6 +21,16 @@ on:
   push:
     branches:
       - main
+    # A sync of the generated agent files must not rebuild the image and roll the cluster.
+    # On `push` only: a pull request whose check never runs is a pull request the agent
+    # will not merge, because it requires a green one. publish.yml is deliberately absent
+    # from the list, so a change to this file still builds and rescans.
+    paths-ignore:
+      - "README.md"
+      - ".github/dependabot.yml"
+      - ".github/agent-prompts/**"
+      - ".github/workflows/ai-maintenance-agent.yml"
+      - ".github/workflows/ai-issue-resolver-agent.yml"
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,44 @@
+name: Scanners - Bump pins
+
+# Points syft and grype at their newest upstream release, verifies that release installs
+# and runs before pinning it, then applies every managed repo whose pin moved.
+#
+# The pins live in generated workflow files under terraform/, where no dependency
+# updater can see them — Dependabot only scans .github/workflows/. Weekly, because a
+# scanner left a version behind reports against an older vulnerability database.
+on:
+  schedule:
+    - cron: "0 5 * * 1" # 05:00 UTC Monday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# The bump ends in a push to main and then in several Terraform applies, so two of these
+# at once means one loses the push race and the other applies a half-written pin.
+concurrency:
+  group: scanners-bump-pins
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      GH_ADMIN_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+      GH_OWNER: ${{ secrets.GH_OWNER }}
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pushes the bump commit back here, which the job's own GITHUB_TOKEN cannot do.
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+      - uses: extractions/setup-just@v2
+      - run: just bump-scanners
