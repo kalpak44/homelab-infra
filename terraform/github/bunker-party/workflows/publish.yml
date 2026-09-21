@@ -168,8 +168,8 @@ jobs:
 
       # Installers are fetched from the release tag, not `main`, and their checksums are
       # verified before anything executes. Piping a moving script straight into a shell
-      # gives an upstream compromise a direct path onto the runner. Bump the two SHA256
-      # values whenever SYFT_VERSION or GRYPE_VERSION moves.
+      # gives an upstream compromise a direct path onto the runner. The version and both
+      # checksums are rewritten together by the weekly sweep that moves these pins.
       - name: Install syft and grype
         env:
           SYFT_INSTALLER_SHA256: ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24

@@ -284,6 +284,22 @@ notes and the run summary. The inventory is probed from the image about to ship 
 is the whole point: `aws-cli` and the PostgreSQL client have no pin to restate. Read package versions with
 `apk list -I <pkg>`, not `apk info -v <pkg>` — the latter prints the description, not the version.
 
+**The release notes also say how far behind upstream the image is, and that report gates nothing.**
+`aws-cli` and the PostgreSQL client are installed unversioned on purpose, so no change in these
+repositories can move them — only an Alpine bump can. An "Upstream check" table therefore reports
+what each tool's own release channel currently offers beside what the built image actually has:
+`dl.k8s.io/release/stable.txt` for kubectl, `aws/aws-cli` tags for the CLI, `postgresql.org/versions.json`
+for the client. A failed lookup prints `unavailable`, never `current` — a network error must not read as
+a claim that the image is up to date. Making it blocking would be wrong for the same reason the scan is
+not blocking: a version this pipeline cannot set must not stop a build. What it buys is the measurement —
+`aws-cli` was two minors behind upstream with nothing in the pipeline saying so.
+
+**`syft` and `grype` are installed from the pinned tag with a verified checksum here too.** These two
+repositories fetched `install.sh` from `main` and piped it into a shell, which hands an upstream
+compromise a direct path onto the runner; the publishing repos already did it properly. The pins and
+both checksums now move together on the weekly sweep. A second defect went with it: the release notes
+printed the contents table twice, because the CHANGELOG section they copy already carries one.
+
 **Roll a rejected attempt back with a saved copy, not `git checkout -- Dockerfile`.** The version agent's edits are
 uncommitted working-tree changes, so checking out from `HEAD` silently discards the base bump the run just made and
 validated. The remediation steps snapshot the Dockerfile to `/tmp/sec/Dockerfile.incumbent` and restore from that.
