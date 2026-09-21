@@ -218,6 +218,12 @@ rescans, and refreshes the SARIF; it just does not publish. Do not add an early 
 found nothing — the vulnerability picture changes without the pins changing, and that is the whole point of a weekly
 run.
 
+**Both agent prompts are files, not heredocs, and they are pushed into the target repo.** `agent-prompts/release-version-agent.md` and `agent-prompts/release-remediation-agent.md` map to `.github/agent-prompts/` the way `workflows/` maps to `.github/workflows/`, and `release.yml` reads them from its own checkout. Extracting them took the workflow from about 1900 lines to 1600 and made the prompts reviewable as prose. The workflow `depends_on` both, so a run cannot start between the file landing and the instructions it executes.
+
+**Neither image ships `aws-cli` any longer, and that is what removed the findings.** On Alpine it is the Python build: it depends on `py3-jmespath` and `py3-cryptography`, which carried both Criticals and four of the five Highs in each image, with no fixed version Alpine had packaged — so the remediation loop could never reach them. `postgres-awscli` now reaches S3 through `minio-client`, whose binary is `mcli` (Alpine's `mc` package is Midnight Commander); `kubectl-awscli` ships no S3 client. Measured: 50 MB to 21 MB and 65 MB to 25 MB, 94 packages to 36, and only an unfixable `zlib` High left. The cost is real and was accepted: `mcli` takes credentials through `mcli alias set`, not an IAM role, and a bare `MC_HOST_` URL cannot carry a secret key containing `/` or `+`.
+
+**The retention policy is the part to be careful with.** It reads `mcli ls --json` through jq, so the field names are a contract between the two, and `.key` is the object's *basename* — the prefix has to be put back on before deleting, or the wrong path is removed. The smoke suite checks this offline by listing a real local directory, which emits the same shape as an S3 listing; a canned JSON sample would keep passing after mcli renamed a field, which is the one failure worth catching.
+
 **No versions file.** The Dockerfile holds the pins; the newest `## vX.Y.Z` heading in `CHANGELOG.md` is the published
 version. Do not reintroduce a `versions.env` — it was tried and removed. It only duplicated what the Dockerfile already
 states, and gave the agent a second place to write a number that the build would then not actually use.

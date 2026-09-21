@@ -1,7 +1,9 @@
 locals {
-  repository       = "postgres-awscli"
-  default_branch   = "main"
-  release_workflow = ".github/workflows/release.yml"
+  repository         = "postgres-awscli"
+  default_branch     = "main"
+  release_workflow   = ".github/workflows/release.yml"
+  version_prompt     = ".github/agent-prompts/release-version-agent.md"
+  remediation_prompt = ".github/agent-prompts/release-remediation-agent.md"
 }
 
 # The repo already exists — adopt it instead of creating it. The import block is a no-op
@@ -61,6 +63,32 @@ resource "github_actions_variable" "deepseek_model" {
 # Dockerfile and CHANGELOG.md inside the repo — neither is managed here, so a bump
 # never fights Terraform.
 
+# The two prompts release.yml runs, kept as prose instead of heredocs inside it: a
+# workflow that buries three hundred lines of instructions is not reviewable. The
+# workflow reads them from its own checkout, so they have to be in the repo, not only
+# here.
+resource "github_repository_file" "version_prompt" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.version_prompt
+  content             = file("${path.module}/agent-prompts/release-version-agent.md")
+  commit_message      = "chore: sync version agent prompt from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+resource "github_repository_file" "remediation_prompt" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.remediation_prompt
+  content             = file("${path.module}/agent-prompts/release-remediation-agent.md")
+  commit_message      = "chore: sync remediation agent prompt from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
 resource "github_repository_file" "release_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
@@ -70,4 +98,11 @@ resource "github_repository_file" "release_workflow" {
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+
+  # A run that started between the workflow landing and its prompts would find no
+  # prompt to execute.
+  depends_on = [
+    github_repository_file.version_prompt,
+    github_repository_file.remediation_prompt,
+  ]
 }

@@ -465,10 +465,17 @@ comparison is against what was really published. A PostgreSQL client major move 
 and as a major bump once the image reaches 1.0.0.
 
 **Pinned vs recorded.** Only what can be reliably pinned is pinned: the Alpine tag, and `KUBECTL_VERSION` in
-`kubectl-awscli` (dl.k8s.io keeps every release). `aws-cli` and the PostgreSQL client are installed *unversioned* from
-the Alpine package repo, because an exact `=version` apk pin breaks the moment Alpine drops that package - and
-`postgresql-client` without a number resolves to whichever major the release ships. Their versions are read back out of
-the built image and recorded in the labels and release notes instead. Bumping the Alpine tag is what moves them.
+`kubectl-awscli` (dl.k8s.io keeps every release). Everything from the Alpine package repo - the PostgreSQL client, the
+MinIO client, jq, curl - is installed *unversioned*, because an exact `=version` apk pin breaks the moment Alpine drops
+that package, and `postgresql-client` without a number resolves to whichever major the release ships. Their versions
+are read back out of the built image and recorded in the labels and release notes instead. Bumping the Alpine tag is
+what moves them.
+
+**Neither image ships the AWS CLI any more.** On Alpine it is the Python build, and it brought a Python runtime plus
+about sixty packages with it - which was every Critical and all but one High finding both images had, none of them with
+a fixed version Alpine had packaged. `postgres-awscli` reaches S3 through the MinIO client instead, which needs static
+credentials rather than an IAM role; `kubectl-awscli` ships no S3 client at all. The images went 50 MB to 21 MB and
+65 MB to 25 MB.
 
 ### `GH_ADMIN_TOKEN` scopes
 

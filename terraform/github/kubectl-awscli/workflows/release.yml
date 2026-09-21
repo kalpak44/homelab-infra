@@ -65,9 +65,7 @@
 #      above so "we could not fix this" is never confused with "we did not try".
 #
 # What is deliberately NOT done, because it trades a working image for a green
-# scanner: pinning apk packages to exact versions, pulling from edge/testing, and
-# pip-installing over the Python libraries that Alpine's aws-cli package owns. The
-# three cryptography findings below are reachable only that last way, so they stay.
+# scanner: pinning apk packages to exact versions, and pulling from edge/testing.
 #
 # ---------------------------------------------------------------------------------
 # REMEDIATION — the levers, and what was measured
@@ -372,12 +370,10 @@ jobs:
           # ship, as `name=version` lines. Used for the stability guard and for the
           # SemVer decision.
           probe() {
-            local img="$1" k a
+            local img="$1" k
             k=$(docker run --rm --entrypoint sh "$img" -c 'kubectl version --client=true -o json' \
                 | jq -r '.clientVersion.gitVersion')
-            a=$(docker run --rm --entrypoint sh "$img" -c 'aws --version 2>&1' \
-                | head -1 | awk '{print $1}' | cut -d/ -f2)
-            printf 'kubectl=%s\nawscli=%s\n' "$k" "$a"
+            printf 'kubectl=%s\n' "$k"
           }
 
           # inventory <image> — every tool this image ships and its version, as
@@ -388,11 +384,9 @@ jobs:
           v() { printf '%s\t%s\n' "$1" "$2"; }
                     v alpine          "$(cat /etc/alpine-release 2>/dev/null)"
             v kubectl         "$(kubectl version --client=true -o json 2>/dev/null | grep -o '"gitVersion": *"[^"]*"' | head -1 | cut -d'"' -f4)"
-            v aws-cli         "$(aws --version 2>&1 | head -1 | awk '{print $1}' | cut -d/ -f2)"
             v bash            "$(bash --version 2>/dev/null | head -1 | awk '{print $4}' | cut -d'(' -f1)"
             v curl            "$(curl --version 2>/dev/null | head -1 | awk '{print $2}')"
             v jq              "$(jq --version 2>/dev/null | sed 's/^jq-//')"
-            v python3         "$(python3 --version 2>&1 | awk '{print $2}')"
           apkv() { apk list -I "$1" 2>/dev/null | head -1 | awk '{print $1}' | sed "s/^$1-//"; }
           v musl            "$(apkv musl)"
           v openssl         "$(apkv libssl3)"
@@ -434,7 +428,6 @@ jobs:
           echo "smoke: $IMG"
 
           check "kubectl runs"              run 'kubectl version --client=true'
-          check "aws runs"                  run 'aws --version'
           check "jq runs"                   run 'jq --version'
           check "curl runs"                 run 'curl --version'
           check "bash runs"                 run 'bash --version'
@@ -444,18 +437,10 @@ jobs:
           check "TLS trust store works"     run 'curl -fsS -o /dev/null https://dl.k8s.io/release/stable.txt && echo tls-ok'
           check "kubectl reports errors"    run 'kubectl get pods --context=nope 2>&1 | grep -q . && echo errors-ok'
 
-          # aws-cli on Alpine is the Python build and vendors botocore inside the
-          # `awscli` package rather than shipping it as a top-level module. Importing
-          # the real names is what proves a package-level remediation did not quietly
-          # gut the CLI, and compiling the JMESPath expression proves --query still
-          # works, which is the thing py3-jmespath is actually needed for.
-          out=$(docker run --rm -i --entrypoint python3 "$IMG" - <<'PY' 2>&1
-          import awscli, awscli.botocore, jmespath, urllib3, cryptography
-          jmespath.compile("reverse(sort_by(Contents || `[]`, &LastModified))[].Key")
-          print("py-ok", awscli.__version__, "jmespath", jmespath.__version__)
-          PY
-          )
-          if [ $? -eq 0 ]; then pass "aws python deps + JMESPath" "$out"; else fail "aws python deps + JMESPath" "$out"; fi
+          # Nothing in this image interprets a scripting runtime, and the whole Python
+          # stack left with the CLI that needed it. Finding an interpreter back in the
+          # image means a package pulled one in, which is worth failing over.
+          check "no interpreter crept back in" run '! command -v python3 >/dev/null && echo no-python3'
 
           exit "$FAILED"
           SMOKE
@@ -525,240 +510,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          cat > /tmp/prompt.md <<'AGENT_PROMPT'
-          You are the release agent for this container image repository.
-
-          `git`, `docker`, `curl`, `jq` and the `gh` CLI are installed and authenticated.
-
-          Your job is to decide whether this image should be rebuilt against newer
-          upstream tooling and, if so, to make that change in the Dockerfile itself.
-
-          You do NOT tag, push, publish or release anything, and you do NOT commit.
-          Later steps in this same workflow run do all of that. You only edit files.
-
-          You also do NOT choose the release version number. Later steps compute it
-          from what actually changed. Write the literal placeholder `vNEXT` where the
-          version goes and they will substitute it.
-
-          ----------------------------------------------------------------------
-          WHERE THE VERSIONS LIVE
-          ----------------------------------------------------------------------
-
-          There is no versions file. The Dockerfile is the source of truth. Read it
-          before you do anything else:
-
-            cat Dockerfile
-
-          It contains exactly two pins:
-
-            FROM alpine:<tag>              — the base image
-            ARG KUBECTL_VERSION=<version>  — kubectl, fetched from dl.k8s.io at build
-
-          aws-cli is installed from the Alpine package repository and is deliberately
-          NOT pinned: an exact apk pin breaks the moment Alpine drops the old package.
-          Its version follows the Alpine release. Do not add a pin for it.
-
-          ----------------------------------------------------------------------
-          THE ONE RULE THAT MATTERS: NEVER GUESS
-          ----------------------------------------------------------------------
-
-          Every version you write into the Dockerfile must come from a command you
-          actually ran in this session and whose output you actually read.
-
-          Not from memory. Not from what looks plausible. Not from a pattern like
-          "the next minor after this one probably exists". Run the command, read the
-          output, use that exact string.
-
-          If a lookup fails, times out, or returns something you did not expect:
-          change nothing, and report the failure. A skipped week is completely
-          harmless. A wrong version is not.
-
-          Later steps re-verify every pin you write against upstream and fail the run
-          if it does not resolve. You cannot smuggle a guess past them, so do not try.
-
-          ----------------------------------------------------------------------
-          1. RESOLVE kubectl
-          ----------------------------------------------------------------------
-
-          The current stable release is published as plain text:
-
-            curl -fsSL https://dl.k8s.io/release/stable.txt
-
-          Use that value verbatim, including its leading `v`.
-
-          Then confirm the binary for it actually exists before using it:
-
-            curl -fsIL -o /dev/null -w '%{http_code}\n' \
-              "https://dl.k8s.io/release/<VERSION>/bin/linux/amd64/kubectl"
-
-          That must print 200.
-
-          ----------------------------------------------------------------------
-          2. RESOLVE ALPINE
-          ----------------------------------------------------------------------
-
-          List the available 3.x tags and take the highest:
-
-            curl -fsSL 'https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100' \
-              | jq -r '.results[].name' | grep -E '^3\.[0-9]+$' | sort -V | tail -1
-
-          Then confirm the tag really exists in the registry:
-
-            docker manifest inspect alpine:<TAG> > /dev/null && echo ok
-
-          Move ALPINE forward by at most ONE minor release per run (3.20 to 3.21,
-          never 3.20 straight to 3.24). Stepping one release at a time keeps any
-          regression attributable to a single change, and next week's run continues
-          the climb.
-
-          Never move backwards. Never use `edge`, `latest`, or a release candidate.
-
-          A later step in this run scans the built image for CVEs and is allowed to
-          move the base further than you did if it measures that doing so removes
-          Critical or High findings. That is deliberate and it is not your job. Do not
-          try to pre-empt it, and do not reason about CVEs at all — resolve versions.
-
-          ----------------------------------------------------------------------
-          3. DECIDE WHETHER ANYTHING CHANGED
-          ----------------------------------------------------------------------
-
-          Compare each resolved version against what the Dockerfile currently pins.
-
-          If NEITHER would change:
-
-            - change NOTHING
-            - do not touch the Dockerfile
-            - do not touch CHANGELOG.md
-            - report that the image is already current, and stop
-
-          Leaving the files untouched is how you signal "no version bump". A later
-          step detects it by diffing the working tree. The image is still rebuilt,
-          scanned and reported on; it just is not republished.
-
-          ----------------------------------------------------------------------
-          4. EDIT THE DOCKERFILE
-          ----------------------------------------------------------------------
-
-          Change ONLY the pinned values. Do not reformat, reorder, restructure,
-          "improve" or otherwise rewrite the Dockerfile. Do not add or remove
-          packages, stages, users, entrypoints or commands. A reviewer reading your
-          diff should see one or two changed values and nothing else.
-
-          Never add `apk upgrade`. It has been measured on this image and does
-          nothing: the official alpine:X.Y tag already carries the newest patch level
-          and `apk add --no-cache` already fetches current packages.
-
-          The single exception: if a version bump genuinely requires a corresponding
-          Dockerfile change to keep building — an Alpine release renames a package,
-          drops one, or moves it between repositories — then make that change too,
-          keep it as small as possible, and explain it in the changelog prose.
-
-          Do not assume such a change is needed. Find out. Check whether the packages
-          the Dockerfile installs actually resolve in the new Alpine before deciding:
-
-            docker run --rm alpine:<NEW_TAG> \
-              sh -c 'apk add --no-cache --simulate bash ca-certificates curl jq aws-cli'
-
-          Read what that prints. It also tells you which aws-cli version the new
-          Alpine ships, which is useful for the changelog.
-
-          ----------------------------------------------------------------------
-          5. PROVE IT BUILDS
-          ----------------------------------------------------------------------
-
-          You must build the image yourself before you are done:
-
-            docker build -t candidate:local .
-
-          Then confirm the tools in it actually run:
-
-            docker run --rm --entrypoint sh candidate:local \
-              -c 'kubectl version --client=true && aws --version'
-
-          If the build fails, or a tool does not run, do not leave the repository in
-          a broken state. Either fix the cause — if the fix is small, obvious and
-          clearly caused by the bump — or revert your edits with `git checkout --`
-          and report that the bump is not currently viable.
-
-          Never leave a state you have not built. A later step builds it again, runs a
-          much larger compatibility suite against it, and will fail the run — but that
-          is a backstop, not your excuse to skip this.
-
-          ----------------------------------------------------------------------
-          6. WRITE THE CHANGELOG ENTRY
-          ----------------------------------------------------------------------
-
-          Read the current newest version for context:
-
-            head -20 CHANGELOG.md
-
-          Prepend a new section directly beneath the file's `# Changelog` title and
-          above the previous entry, in exactly this shape:
-
-            ## vNEXT — <YYYY-MM-DD>
-
-            | tool | from | to |
-            |------|------|----|
-            | kubectl | v1.36.4 | v1.36.5 |
-            | alpine | 3.20 | 3.21 |
-
-            <one short paragraph of prose>
-
-          Write `vNEXT` literally. Do NOT invent a version number — the workflow
-          computes it from what changed and substitutes it for you. A heading with a
-          real number in it where `vNEXT` belongs will fail the run.
-
-          Get the date from the environment — `date -u +%F` — never from memory.
-
-          The table is the machine-readable part: one row per value you actually
-          changed, and nothing else.
-
-          The prose is the human part. In two to four sentences, say what moved and
-          why someone pulling this image would care. Mention notable kubectl changes
-          when the minor version moved, and note that aws-cli follows Alpine when the
-          base image moved. Be concrete and factual.
-
-          Do not pad it. Do not speculate about changes you have not verified. If you
-          have nothing substantive to add beyond the table, one sentence is right.
-
-          ----------------------------------------------------------------------
-          HARD RULES
-          ----------------------------------------------------------------------
-
-          These override everything else.
-
-          - NEVER write a version you did not obtain from a command you ran.
-          - NEVER move a version backwards.
-          - NEVER move Alpine more than one minor release in a single run.
-          - NEVER write a release version number; the heading is `## vNEXT`.
-          - NEVER add `apk upgrade` to the Dockerfile.
-          - NEVER add a version number to an apk package name.
-          - Edit ONLY Dockerfile and CHANGELOG.md.
-          - NEVER edit anything under .github/ — that directory is managed by the
-            homelab-infra repository and your changes there would be overwritten.
-          - NEVER run git commit, git push, git tag, docker push, or gh release.
-          - NEVER restructure the Dockerfile; change pinned values only.
-          - NEVER leave the working tree in a state you have not successfully built.
-          - If any upstream lookup fails, change nothing and report it.
-
-          ----------------------------------------------------------------------
-          FINAL OUTPUT
-          ----------------------------------------------------------------------
-
-          One line per tool you considered:
-
-            <tool> — <old> -> <new> — <changed|already current>
-
-          Then one final line:
-
-            RESULT: <bumped|no change>
-          AGENT_PROMPT
+          # The prompt is a file rather than a heredoc so it stays readable as prose and
+          # this step shows what it runs instead of burying it.
+          prompt=.github/agent-prompts/release-version-agent.md
+
+          if [ ! -f "$prompt" ]; then
+            echo "$prompt is missing — has it been synced into this repository?" >&2
+            exit 1
+          fi
 
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
             --output-last-message /tmp/version-agent.md \
-            "$(cat /tmp/prompt.md)"
+            "$(cat "$prompt")"
 
       - name: Gate — the agent stayed in scope
         run: |
@@ -956,7 +721,6 @@ jobs:
           # exactly what this workflow must not do.
           probe candidate:local > /tmp/sec/candidate-tools.env
           CUR_KUBECTL_MAJOR=$(major "$(grep '^kubectl=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
-          CUR_AWSCLI_MAJOR=$(major "$(grep '^awscli=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
 
           # --- assemble the candidate list ------------------------------------
           # Each entry is `alpine|kubectl`. Newest Alpine first: a blind +1 step is
@@ -1045,10 +809,9 @@ jobs:
 
             probe remediation:local > /tmp/sec/attempt-tools.env
             try_kubectl_major=$(major "$(grep '^kubectl=' /tmp/sec/attempt-tools.env | cut -d= -f2)")
-            try_awscli_major=$(major "$(grep '^awscli=' /tmp/sec/attempt-tools.env | cut -d= -f2)")
 
-            if [ "$try_kubectl_major" != "$CUR_KUBECTL_MAJOR" ] || [ "$try_awscli_major" != "$CUR_AWSCLI_MAJOR" ]; then
-              note "- rejected: would move a tool's major version (kubectl ${CUR_KUBECTL_MAJOR}->${try_kubectl_major}, aws-cli ${CUR_AWSCLI_MAJOR}->${try_awscli_major}). A breaking upgrade is not an acceptable way to clear a CVE."
+            if [ "$try_kubectl_major" != "$CUR_KUBECTL_MAJOR" ]; then
+              note "- rejected: would move kubectl's major version (${CUR_KUBECTL_MAJOR}->${try_kubectl_major}). A breaking upgrade is not an acceptable way to clear a CVE."
               cp /tmp/sec/Dockerfile.incumbent Dockerfile
               continue
             fi
@@ -1114,97 +877,20 @@ jobs:
           # rejected AI proposal must roll back to that, not to HEAD.
           cp Dockerfile /tmp/sec/Dockerfile.incumbent
 
-          cat > /tmp/sec/prompt.md <<'AGENT_PROMPT'
-          You are the security remediation agent for this container image repository.
+          # The prompt is a file rather than a heredoc so it stays readable as prose and
+          # this step shows what it runs instead of burying it.
+          prompt=.github/agent-prompts/release-remediation-agent.md
 
-          A candidate image has already been built from the Dockerfile in the working
-          tree, smoke-tested, and scanned. A mechanical search has already tried the
-          obvious levers — moving the Alpine base tag forward and moving kubectl to
-          the current stable release — and kept whatever helped.
-
-          What is left is in /tmp/sec/remaining.md (a table) and
-          /tmp/sec/remaining.json (the same data). Read both.
-
-          Your job: decide whether ONE more minimal Dockerfile change could remove any
-          of the remaining Critical or High findings WITHOUT breaking the image, and
-          if so, make it. You only edit the Dockerfile. You do not commit, tag, push
-          or release, and you do not touch CHANGELOG.md.
-
-          Most of the time the correct answer is TO CHANGE NOTHING. That is a real
-          result, not a failure. Say so and stop.
-
-          ----------------------------------------------------------------------
-          WHAT YOU MAY DO
-          ----------------------------------------------------------------------
-
-          - Remove an apk package that this image genuinely does not need, if a
-            finding is against that package and nothing else depends on it. Prove it:
-
-              docker run --rm alpine:<TAG> sh -c 'apk add --no-cache --simulate <rest of the list>'
-
-            and confirm the removed package does not come back as a dependency.
-
-          - Replace a package with a smaller equivalent that Alpine ships, if that
-            genuinely drops a vulnerable dependency and every tool still works.
-
-          - Move the Alpine tag, if you can show the mechanical search missed a tag
-            that helps. It tried newest-first; check /tmp/sec/remediation-log.md before
-            assuming it missed anything.
-
-          ----------------------------------------------------------------------
-          WHAT YOU MAY NOT DO — these break images
-          ----------------------------------------------------------------------
-
-          - NEVER pin an apk package to an exact version with `=`. It breaks the
-            moment Alpine drops that package.
-          - NEVER add `apk upgrade`. It has been measured on this image and changes
-            nothing; the alpine:X.Y tag already carries the newest patch level.
-          - NEVER add edge, testing or community repositories from another release.
-            Mixing branches breaks musl and every dynamically linked tool with it.
-          - NEVER pip install, pip upgrade, or hand-replace a Python library that the
-            `aws-cli` apk package owns. Several remaining findings are against
-            `cryptography` and `py3-jmespath`, whose fixed versions Alpine has not
-            packaged. Overwriting them out of band is how you get an aws-cli that
-            imports but fails at runtime. Leave them and report them.
-          - NEVER remove bash, ca-certificates, curl, jq or aws-cli. They are the
-            point of this image.
-          - NEVER change ENTRYPOINT, CMD, USER, WORKDIR, ENV or the uid.
-          - NEVER move a tool to a new MAJOR version.
-          - NEVER edit anything except the Dockerfile.
-
-          ----------------------------------------------------------------------
-          HOW YOUR WORK IS JUDGED
-          ----------------------------------------------------------------------
-
-          After you finish, the workflow rebuilds the image, runs the full
-          compatibility suite against it, and rescans it. Your change is kept ONLY if
-          Criticals do not increase AND Critical+High strictly decreases AND every
-          smoke check still passes. Otherwise it is reverted and the run continues
-          without it. You cannot make the image worse, so there is no reason to gamble
-          — but there is also no credit for a change that does not measurably help.
-
-          ----------------------------------------------------------------------
-          FINAL OUTPUT
-          ----------------------------------------------------------------------
-
-          A short report, in this shape:
-
-            CHANGED: <yes|no>
-            <if yes: one line saying exactly what you changed and which finding ids it targets>
-
-            For each remaining Critical/High finding, one line:
-              <id> — <package> — <why it cannot be safely fixed here>
-
-          Be specific about "why". "No upstream fix exists", "fixed in cryptography
-          48.0.1 but Alpine 3.24 ships 47.0.0", and "only fixable by removing aws-cli"
-          are useful. "Cannot be fixed" is not.
-          AGENT_PROMPT
+          if [ ! -f "$prompt" ]; then
+            echo "$prompt is missing — has it been synced into this repository?" >&2
+            exit 1
+          fi
 
           codex exec \
             --skip-git-repo-check \
             --sandbox danger-full-access \
             --output-last-message /tmp/sec/ai-remediation.md \
-            "$(cat /tmp/sec/prompt.md)" || true
+            "$(cat "$prompt")" || true
 
           # --- gate whatever it did -------------------------------------------
           CHANGED=$(git status --porcelain | awk '{print $NF}')
@@ -1258,11 +944,9 @@ jobs:
 
           probe ai-remediation:local > /tmp/sec/ai-tools.env
           AI_KUBECTL_MAJOR=$(major "$(grep '^kubectl=' /tmp/sec/ai-tools.env | cut -d= -f2)")
-          AI_AWSCLI_MAJOR=$(major "$(grep '^awscli=' /tmp/sec/ai-tools.env | cut -d= -f2)")
           CUR_KUBECTL_MAJOR=$(major "$(grep '^kubectl=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
-          CUR_AWSCLI_MAJOR=$(major "$(grep '^awscli=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
 
-          if [ "$AI_KUBECTL_MAJOR" != "$CUR_KUBECTL_MAJOR" ] || [ "$AI_AWSCLI_MAJOR" != "$CUR_AWSCLI_MAJOR" ]; then
+          if [ "$AI_KUBECTL_MAJOR" != "$CUR_KUBECTL_MAJOR" ]; then
             echo "::warning::AI remediation moved a tool's major version — reverting."
             cp /tmp/sec/Dockerfile.incumbent Dockerfile
             exit 0
@@ -1377,22 +1061,20 @@ jobs:
 
           echo "resolved by this release: $(jq 'length' /tmp/sec/resolved.json) Critical/High finding(s)"
           NEW_KUBECTL=$(grep '^kubectl=' /tmp/sec/final-tools.env | cut -d= -f2)
-          NEW_AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)
           NEW_ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
 
-          OLD_KUBECTL=""; OLD_AWSCLI=""; OLD_ALPINE=""
+          OLD_KUBECTL=""; OLD_ALPINE=""
           if [ "${{ steps.published.outputs.exists }}" = "true" ]; then
             OLD_KUBECTL=$(jq -r '."io.homelab.tools.kubectl" // ""'  /tmp/sec/published-labels.json)
-            OLD_AWSCLI=$(jq  -r '."io.homelab.tools.aws-cli" // ""'  /tmp/sec/published-labels.json)
             OLD_ALPINE=$(jq  -r '."io.homelab.tools.alpine"  // ""'  /tmp/sec/published-labels.json)
           fi
 
-          echo "shipped now : kubectl=${NEW_KUBECTL} aws-cli=${NEW_AWSCLI} alpine=${NEW_ALPINE}"
-          echo "shipped last: kubectl=${OLD_KUBECTL:-?} aws-cli=${OLD_AWSCLI:-?} alpine=${OLD_ALPINE:-?}"
+          echo "shipped now : kubectl=${NEW_KUBECTL} alpine=${NEW_ALPINE}"
+          echo "shipped last: kubectl=${OLD_KUBECTL:-?} alpine=${OLD_ALPINE:-?}"
 
           feature() { [ "$LEVEL" = "breaking" ] || LEVEL=feature; }
 
-          if [ -z "$OLD_KUBECTL" ] || [ -z "$OLD_AWSCLI" ] || [ -z "$OLD_ALPINE" ]; then
+          if [ -z "$OLD_KUBECTL" ] || [ -z "$OLD_ALPINE" ]; then
             # No labels to compare against — treat as a feature release rather than
             # silently calling a possibly-large change a patch.
             if [ "$LEVEL" != "none" ]; then
@@ -1402,9 +1084,7 @@ jobs:
           else
             [ "$NEW_ALPINE" = "$OLD_ALPINE" ]                        || feature
             [ "$(minor "$NEW_KUBECTL")" = "$(minor "$OLD_KUBECTL")" ] || feature
-            [ "$(minor "$NEW_AWSCLI")"  = "$(minor "$OLD_AWSCLI")"  ] || feature
             [ "$(major "$NEW_KUBECTL")" = "$(major "$OLD_KUBECTL")" ] || LEVEL=breaking
-            [ "$(major "$NEW_AWSCLI")"  = "$(major "$OLD_AWSCLI")"  ] || LEVEL=breaking
           fi
 
           # An apk package disappearing changes what the image ships.
@@ -1487,7 +1167,7 @@ jobs:
               if [ "$REMEDIATED" = "true" ]; then
                 echo "Security remediation was applied after the table above was written. The image"
                 echo "published for this version is alpine ${NEW_ALPINE}, kubectl ${NEW_KUBECTL}," \
-                     "aws-cli ${NEW_AWSCLI}, scanning as $(n_crit /tmp/sec/candidate.ch.json) Critical" \
+                     "scanning as $(n_crit /tmp/sec/candidate.ch.json) Critical" \
                      "and $(n_high /tmp/sec/candidate.ch.json) High."
                 echo
               fi
@@ -1527,9 +1207,6 @@ jobs:
               fi
               if [ -n "$OLD_KUBECTL" ] && [ "$NEW_KUBECTL" != "$OLD_KUBECTL" ]; then
                 echo "| kubectl | ${OLD_KUBECTL} | ${NEW_KUBECTL} |"
-              fi
-              if [ -n "$OLD_AWSCLI" ] && [ "$NEW_AWSCLI" != "$OLD_AWSCLI" ]; then
-                echo "| aws-cli | ${OLD_AWSCLI} | ${NEW_AWSCLI} |"
               fi
             } > /tmp/sec/rows.md
 
@@ -1684,7 +1361,6 @@ jobs:
           {
             echo "ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')"
             echo "KUBECTL=$(grep '^kubectl=' /tmp/sec/final-tools.env | cut -d= -f2)"
-            echo "AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)"
             echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)"
             echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
@@ -1695,7 +1371,7 @@ jobs:
         # `cache-from: gha` reuses the exact amd64 layers the candidate build wrote,
         # so the amd64 image published here is the one that was scanned and smoke
         # tested. arm64 is built fresh; the Dockerfile's own RUN steps assert that
-        # kubectl and aws run on it, so a broken arm64 fails the build before any push.
+        # kubectl, curl and jq run on it, so a broken arm64 fails the build before a push.
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -1708,14 +1384,13 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.meta.outputs.SHORT_SHA }}
           labels: |
             org.opencontainers.image.title=kubectl-awscli
-            org.opencontainers.image.description=Alpine ${{ steps.meta.outputs.ALPINE }} with kubectl ${{ steps.meta.outputs.KUBECTL }} and aws-cli ${{ steps.meta.outputs.AWSCLI }}
+            org.opencontainers.image.description=Alpine ${{ steps.meta.outputs.ALPINE }} with kubectl ${{ steps.meta.outputs.KUBECTL }}, curl and jq
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.created=${{ steps.meta.outputs.BUILD_DATE }}
             org.opencontainers.image.base.name=docker.io/library/alpine:${{ steps.meta.outputs.ALPINE }}
             io.homelab.tools.kubectl=${{ steps.meta.outputs.KUBECTL }}
-            io.homelab.tools.aws-cli=${{ steps.meta.outputs.AWSCLI }}
             io.homelab.tools.alpine=${{ steps.meta.outputs.ALPINE }}
             io.homelab.security.critical=${{ steps.policy.outputs.crit }}
             io.homelab.security.high=${{ steps.policy.outputs.high }}
@@ -1743,8 +1418,6 @@ jobs:
 
           # Each tool's own release channel, never a mirror that could lag behind it.
           kubectl_latest=$(curl -fsSL https://dl.k8s.io/release/stable.txt || echo "")
-          awscli_latest=$(gh api 'repos/aws/aws-cli/tags?per_page=100' \
-            --jq '[.[].name | select(test("^2\\.[0-9]+\\.[0-9]+$"))] | first' 2>/dev/null || echo "")
 
           # An unavailable lookup is reported as unavailable. Silently printing "current"
           # would turn a network failure into a claim that the image is up to date.
@@ -1766,8 +1439,6 @@ jobs:
             echo "|---|---|---|---|"
             row kubectl "$(onboard kubectl)" "$kubectl_latest" \
               "behind — this pipeline pins it, so the version agent should move it"
-            row aws-cli "$(onboard aws-cli)" "$awscli_latest" \
-              "behind — unversioned from Alpine, so only an Alpine bump moves it"
           } > /tmp/sec/upstream.md
 
       - name: Assemble the security report
@@ -1795,8 +1466,8 @@ jobs:
             fi
             echo "\`fix available upstream\` means a fixed version exists somewhere — it does"
             echo "not mean Alpine has packaged it. Where it has not, the only routes left are"
-            echo "pip-installing over an apk-owned library or dropping aws-cli, both of which"
-            echo "break the image, so the finding stays and is reported here instead."
+            echo "overwriting an apk-owned library or dropping a tool this image exists to ship,"
+            echo "both of which break it, so the finding stays and is reported here instead."
           } > /tmp/sec/report.md
 
           if [ -f /tmp/sec/upstream.md ]; then
