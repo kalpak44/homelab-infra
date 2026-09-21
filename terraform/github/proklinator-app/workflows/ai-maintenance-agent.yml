@@ -31,10 +31,10 @@ on:
       - "AI Issue Resolver Agent"
     types: [completed]
 
+# Least privilege by default; the job that needs to write widens it itself. A grant made
+# here reaches every job, including the one that only reads an event payload.
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write # needed to start a PR check that never ran, and to re-run a failed one
+  contents: read
 
 # Never let two runs modify/merge into the same repository at once. One broken commit can
 # fail several pipelines within seconds, and they would otherwise repair it in parallel.
@@ -57,6 +57,9 @@ jobs:
       github.event.workflow_run.conclusion == 'timed_out'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
+    # Reads the event payload and queries runs with a PAT, so it needs nothing of its own.
+    permissions: {}
 
     outputs:
       proceed: ${{ steps.decide.outputs.proceed }}
@@ -142,6 +145,11 @@ jobs:
     if: needs.triage.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write # start a PR check that never ran, and re-run a failed one
 
     env:
       # gh is preinstalled on GitHub-hosted runners; this authenticates it.
