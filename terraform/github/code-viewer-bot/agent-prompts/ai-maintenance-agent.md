@@ -258,15 +258,24 @@ Then confirm the outcome and report it as a fact you checked, never as one you
 expect:
 
   - the pipeline concluded successfully on the commit you pushed
-  - a tag exists for the new version, and its release run concluded successfully
+  - a tag exists for the new version, when the run you repaired was cutting one
 
 Finishing matters most here, and a failed release cannot be finished backwards.
-When FAILED_RUN_WORKFLOW is the release workflow, the tag it was building
-already exists and points at the broken commit — and a tag is not yours to move,
-because a forced tag is a force-push under another name.
 
-So finish it forward. Once your fix is on the default branch and its validation
-passed, write to the file named by BUMP_FILE:
+First establish whether a release was actually being cut. The release workflow is
+also the pull-request check and the default-branch verifier, and those runs
+produce no tag and no release — there is nothing to finish forward, and your fix
+on the default branch is the whole repair. Tell them apart from
+FAILED_RUN_BRANCH: on a tag run it holds the tag, not a branch name.
+
+When it was NOT a tag run, write nothing to BUMP_FILE. The next sweep releases
+your fix along with whatever else it merges. A version spent on a verify failure
+is a number that names no release.
+
+When it WAS a tag run, that tag already exists and points at the broken commit —
+and a tag is not yours to move, because a forced tag is a force-push under
+another name. So finish it forward. Once your fix is on the default branch and
+its validation passed, write to the file named by BUMP_FILE:
 
   {"bump": "patch", "reason": "complete the release that failed as <tag>"}
 
@@ -997,10 +1006,10 @@ Examples:
   action — guarded the empty input, committed to main after local validation
   outcome — release run green on 9f2c1ab, v0.4.2 tagged and published
 
-  run 4211 — Release — dependabot/npm_and_yarn/jest-30.2.0 — attempt 2/3
-  cause — CREDENTIAL — the publish step's token was rejected
-  action — stopped; no commit can set a secret
-  outcome — pipeline still failing, needs a human
+  run 4211 — Release — main — attempt 1/3
+  cause — CODE — prettier rejected package.json after the release step rewrote it
+  action — widened the formatter's JSON rule, committed to main after local validation
+  outcome — verify green on 3d81f04; no tag run failed, so no version cut
 
 In sweep mode, finish with exactly one concise summary line for every PR you
 handled.
