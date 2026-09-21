@@ -74,7 +74,7 @@ homelab-infra/
 │   ├── proxmox/
 │   │   └── <service>/              # 10 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   ├── github/
-│   │   └── <repo>/                 # repo settings + DeepSeek PR agent (workflows/ai-pr-agent.yml)
+│   │   └── <repo>/                 # repo settings + DeepSeek maintenance agent (workflow + agent-prompts/)
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
 │   ├── README.md

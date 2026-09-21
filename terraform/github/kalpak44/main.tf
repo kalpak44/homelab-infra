@@ -1,7 +1,8 @@
 locals {
   repository       = "kalpak44"
   default_branch   = "main"
-  agent_workflow   = ".github/workflows/ai-pr-agent.yml"
+  agent_workflow   = ".github/workflows/ai-maintenance-agent.yml"
+  agent_prompt     = ".github/agent-prompts/ai-maintenance-agent.md"
   publish_workflow = ".github/workflows/publish.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
@@ -111,15 +112,33 @@ resource "github_actions_secret" "homelab_dispatch" {
 # — so editing publish.yml runs a full build, publish and deploy. That is intended, and
 # it is also why the file is only rewritten when it really changes.
 
+# The policy the agent runs on, kept as prose instead of a heredoc inside the workflow:
+# a thousand lines of prompt buried in YAML is neither readable nor reviewable. The
+# workflow reads it from the checkout, so it has to be in the repo, not only here.
+resource "github_repository_file" "agent_prompt" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.agent_prompt
+  content             = file("${path.module}/agent-prompts/ai-maintenance-agent.md")
+  commit_message      = "chore: sync AI maintenance agent prompt from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
 resource "github_repository_file" "agent_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
   file                = local.agent_workflow
-  content             = file("${path.module}/workflows/ai-pr-agent.yml")
-  commit_message      = "chore: sync AI PR agent workflow from homelab-infra"
+  content             = file("${path.module}/workflows/ai-maintenance-agent.yml")
+  commit_message      = "chore: sync AI maintenance agent workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+
+  # The prompt is what this workflow runs; a scheduled run that lands between the
+  # two files would start the agent with nothing to execute.
+  depends_on = [github_repository_file.agent_prompt]
 }
 
 resource "github_repository_file" "publish_workflow" {
@@ -133,9 +152,10 @@ resource "github_repository_file" "publish_workflow" {
   overwrite_on_create = true
 }
 
-# Dependabot is the agent's input side — no dependency PRs, nothing for ai-pr-agent.yml
-# to sweep. It lives beside `workflows/` here because it lands beside them in the target
-# repo: `workflows/` maps to .github/workflows/, this maps to .github/dependabot.yml.
+# Dependabot is the agent's input side — no dependency PRs, nothing for
+# ai-maintenance-agent.yml to sweep. It lives beside `workflows/` here because it lands
+# beside them in the target repo: `workflows/` maps to .github/workflows/, this maps to
+# .github/dependabot.yml.
 resource "github_repository_file" "dependabot" {
   repository          = github_repository.this.name
   branch              = local.default_branch

@@ -6,7 +6,7 @@
 # rollout are conditional, so a dependency PR is fully validated, Dockerfiles included,
 # without publishing.
 #
-# ai-pr-agent.yml and ai-issue-resolver-agent.yml both gate on this file
+# ai-maintenance-agent.yml and ai-issue-resolver-agent.yml both gate on this file
 # (PR_CHECK_WORKFLOW) and dispatch it for a pull request with no checks, so
 # `workflow_dispatch` is load-bearing.
 #
@@ -452,10 +452,10 @@ jobs:
       # A PAT: this job's token cannot dispatch a workflow in another repository.
       GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
     steps:
-      # A bot-PR merge publishes its images but holds the rollout; ai-pr-agent.yml
-      # dispatches one rollout when its sweep ends, so ten merges roll out once.
-      # Never hold the publish as well: the scheduled deploy reads the tag from the last
-      # successful push run, so every commit on main needs images behind it.
+      # A bot-PR merge publishes its images but holds the rollout;
+      # ai-maintenance-agent.yml dispatches one rollout when its sweep ends, so ten merges
+      # roll out once. Never hold the publish as well: the scheduled deploy reads the tag
+      # from the last successful push run, so every commit on main needs images behind it.
       - name: Hold the rollout while the agent is mid-batch
         id: hold
         if: github.event_name == 'push'
@@ -469,7 +469,7 @@ jobs:
 
           if [ "$author_type" = "Bot" ]; then
             echo "held=true" >> "$GITHUB_OUTPUT"
-            echo "Rollout held — bot PR merge, the AI PR agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
+            echo "Rollout held — bot PR merge, the AI maintenance agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # Both inputs are required: this run is still in_progress, so a lookup would

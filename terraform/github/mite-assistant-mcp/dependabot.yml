@@ -1,8 +1,8 @@
 # Managed by homelab-infra — terraform/github/mite-assistant-mcp/dependabot.yml
 # Edits made here in the target repo are overwritten by `just deploy github mite-assistant-mcp`.
 #
-# Opens the PRs ai-pr-agent.yml reviews and merges, at 05:00 Europe/Sofia. The zone is
-# named so the hour does not slide over EET/EEST.
+# Opens the PRs ai-maintenance-agent.yml reviews and merges, at 05:00 Europe/Sofia. The
+# zone is named so the hour does not slide over EET/EEST.
 #
 # One entry per manifest in the tree: a `directory` with no manifest silently never opens
 # a PR rather than erroring.

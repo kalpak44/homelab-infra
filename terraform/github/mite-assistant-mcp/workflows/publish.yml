@@ -4,8 +4,8 @@
 # verify -> image -> scan -> deploy. Only the GHCR push and the rollout are conditional,
 # so a dependency PR is fully validated, Dockerfile included, without publishing.
 #
-# ai-pr-agent.yml gates on this file (PR_CHECK_WORKFLOW) and dispatches it for a PR with
-# no checks, so `workflow_dispatch` is load-bearing.
+# ai-maintenance-agent.yml gates on this file (PR_CHECK_WORKFLOW) and dispatches it for a
+# PR with no checks, so `workflow_dispatch` is load-bearing.
 #
 # Renaming this file breaks the deploy that looks it up by name. Action versions are
 # bumped by hand, because Dependabot does not scan a generated file.
@@ -360,7 +360,7 @@ jobs:
       # A PAT: this job's token cannot dispatch a workflow in another repo.
       GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
     steps:
-      # A bot-PR merge publishes its image but holds the rollout; ai-pr-agent.yml
+      # A bot-PR merge publishes its image but holds the rollout; ai-maintenance-agent.yml
       # dispatches one rollout when its sweep ends, so ten merges roll out once.
       # Never hold the publish as well: the scheduled deploy reads the tag from the last
       # successful push run, so every commit on main needs an image behind it.
@@ -377,7 +377,7 @@ jobs:
 
           if [ "$author_type" = "Bot" ]; then
             echo "held=true" >> "$GITHUB_OUTPUT"
-            echo "Rollout held — bot PR merge, the AI PR agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
+            echo "Rollout held — bot PR merge, the AI maintenance agent deploys the batch." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # Both inputs are required: this run is still in_progress, so a lookup would

@@ -98,7 +98,7 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `CLOUDFLARE_TUNNEL_TOKEN`                                            | Token from `terraform output -raw tunnel_token` after deploying `cloudflare/shared/zero-trust`               |
 | `GH_ADMIN_TOKEN`                                                     | PAT used by the `github/` Terraform layer – see [Managed GitHub repos](#managed-github-repos)                |
 | `GH_OWNER`                                                           | GitHub user/org owning the managed repos, e.g. `kalpak44` (optional; defaults to `kalpak44`)                 |
-| `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI PR agent                                        |
+| `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI maintenance agent                                        |
 | `SONAR_TOKEN`                                                        | SonarCloud token – optional, `bunker-party` only; mirrored into its Dependabot secret store so the quality gate runs on Dependabot PRs |
 
 ### 4. Cloudflare API token - required scopes
@@ -274,16 +274,16 @@ layers.
 
 | Repo                                      | Terraform dir                           | What it manages |
 |-------------------------------------------|-----------------------------------------|------------------------------------------------------------------------------------|
-| `kalpak44/bunker-party`                   | `github/bunker-party`                   | squash-only merges, `DEEPSEEK_APIKEY`, and **every workflow the repo has**: the AI PR agent (shared publishing variant — repairs the branch, reads the Sonar gate and the image scan, never tags), `publish.yml` (its CI *and* its PR check, which publishes `ghcr.io/kalpak44/bunker-party` and dispatches **GitOps - Bump images** for `bunker-game-app` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
-| `kalpak44/code-viewer-bot`                | `github/code-viewer-bot`                | same, plus **both workflows the repo has**: `release.yml` (its PR check and its publisher — `format:check`, `lint`, jest with per-path coverage floors and a waited-on SonarCloud gate; for a `v*` tag it also builds four platform VSIX files, cuts the GitHub release and publishes to the VS Code Marketplace) and `ai-pr-agent.yml`, identical to `mac-calendar-mcp`'s. Also gets `VSCE_PAT`, `GH_ADMIN_TOKEN` and `SONAR_TOKEN` in both secret stores |
+| `kalpak44/bunker-party`                   | `github/bunker-party`                   | squash-only merges, `DEEPSEEK_APIKEY`, and **every workflow the repo has**: the AI maintenance agent (shared publishing variant — repairs the branch, reads the Sonar gate and the image scan, never tags), `publish.yml` (its CI *and* its PR check, which publishes `ghcr.io/kalpak44/bunker-party` and dispatches **GitOps - Bump images** for `bunker-game-app` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
+| `kalpak44/code-viewer-bot`                | `github/code-viewer-bot`                | same, plus **both workflows the repo has**: `release.yml` (its PR check and its publisher — `format:check`, `lint`, jest with per-path coverage floors and a waited-on SonarCloud gate; for a `v*` tag it also builds four platform VSIX files, cuts the GitHub release and publishes to the VS Code Marketplace) and `ai-maintenance-agent.yml`, identical to `mac-calendar-mcp`'s. Also gets `VSCE_PAT`, `GH_ADMIN_TOKEN` and `SONAR_TOKEN` in both secret stores |
 | `kalpak44/deepaudit`                      | `github/deepaudit`                      | repo settings, `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` - and nothing else. The repo owns its own `.github/`, so it gets no generated workflow and no PR agent: `ci.yml` and the manual `audit.yml` are edited in the repo itself |
-| `kalpak44/kalpak44`                       | `github/kalpak44`                       | squash-only merges, `DEEPSEEK_APIKEY`, and **every file the repo has under `.github/`**: the AI PR agent, `publish.yml` (its CI, which publishes `ghcr.io/kalpak44/kalpak44` and dispatches **GitOps - Bump images** for `personal-web-page` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
+| `kalpak44/kalpak44`                       | `github/kalpak44`                       | squash-only merges, `DEEPSEEK_APIKEY`, and **every file the repo has under `.github/`**: the AI maintenance agent, `publish.yml` (its CI, which publishes `ghcr.io/kalpak44/kalpak44` and dispatches **GitOps - Bump images** for `personal-web-page` to deploy it) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
 | `kalpak44/kubectl-awscli`                 | `github/kubectl-awscli`                 | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
-| `kalpak44/mac-calendar-mcp`               | `github/mac-calendar-mcp`               | same, plus **both workflows the repo has**: `release.yml` (its PR check and its publisher — `format:check`, `lint`, jest at an 80% coverage threshold, the bundle build and a waited-on SonarCloud gate; releases only for a `v*` tag, carrying the zip) and `ai-pr-agent.yml`, which sweeps the bot PRs, repairs pre-existing gate failures on the branch, then cuts **one** tag for the whole sweep. Also gets `GH_ADMIN_TOKEN` (the tag push must start a run) and `SONAR_TOKEN` in both secret stores |
+| `kalpak44/mac-calendar-mcp`               | `github/mac-calendar-mcp`               | same, plus **both workflows the repo has**: `release.yml` (its PR check and its publisher — `format:check`, `lint`, jest at an 80% coverage threshold, the bundle build and a waited-on SonarCloud gate; releases only for a `v*` tag, carrying the zip) and `ai-maintenance-agent.yml`, which sweeps the bot PRs, repairs pre-existing gate failures on the branch, then cuts **one** tag for the whole sweep. Also gets `GH_ADMIN_TOKEN` (the tag push must start a run) and `SONAR_TOKEN` in both secret stores |
 | `kalpak44/mite-assistant-mcp`             | `github/mite-assistant-mcp`             | same, plus `publish.yml` (its CI, its PR check, and its deploy trigger in one — `format:check`, `lint`, `npm test` at 80% coverage and a waited-on SonarCloud quality gate, then publishes `ghcr.io/kalpak44/mite-assistant-mcp`, scans it with syft + grype into the run summary as a report (0 Critical / 0 High since the move to `node:24-alpine`), and dispatches **GitOps - Bump images** for `mite-assistant-mcp`) and `dependabot.yml`, which proposes at 05:00 Europe/Sofia for the agent's 04:00 UTC sweep. Every merge in that sweep publishes its image but holds the rollout; the agent dispatches one rollout of the batch when it finishes. Also gets `GH_ADMIN_TOKEN` and `SONAR_TOKEN` (both secret stores) |
 | `kalpak44/noco-google-connector-web-page` | `github/noco-google-connector-web-page` | same, plus `publish.yml` (its PR check, which publishes `ghcr.io/kalpak44/noco-google-connector-web-page` and dispatches **GitOps - Bump images** for `noco-google-connector-web-page`) and `dependabot.yml`. Also gets `GH_ADMIN_TOKEN` for that dispatch |
 | `kalpak44/postgres-awscli`                | `github/postgres-awscli`                | repo settings, `DEEPSEEK_APIKEY`, and the **release agent** workflow - not the PR agent |
-| `kalpak44/proklinator-app`                | `github/proklinator-app`                | squash-only merges, `DEEPSEEK_APIKEY`, `SONAR_TOKEN`, and **all three workflows the repo has**: `publish.yml` (its CI *and* its PR check — format, lint, two vitest suites and two SonarCloud gates, then both `ghcr.io/kalpak44/proklinator-app` and `ghcr.io/kalpak44/proklinator-api` from one commit, a report-only image scan, and **GitOps - Bump images** for `proklinator`), `ai-issue-resolver-agent.yml` (implements an `ai:ready` issue, browser-tests it, opens a PR and merges it once green, capped by `AI_MAX_FIX_ROUNDS`) and `ai-pr-agent.yml` (sweeps the bot dependency PRs its `dependabot.yml` opens at 05:00 Sofia). Also gets `GH_ADMIN_TOKEN` for that dispatch |
+| `kalpak44/proklinator-app`                | `github/proklinator-app`                | squash-only merges, `DEEPSEEK_APIKEY`, `SONAR_TOKEN`, and **all three workflows the repo has**: `publish.yml` (its CI *and* its PR check — format, lint, two vitest suites and two SonarCloud gates, then both `ghcr.io/kalpak44/proklinator-app` and `ghcr.io/kalpak44/proklinator-api` from one commit, a report-only image scan, and **GitOps - Bump images** for `proklinator`), `ai-issue-resolver-agent.yml` (implements an `ai:ready` issue, browser-tests it, opens a PR and merges it once green, capped by `AI_MAX_FIX_ROUNDS`) and `ai-maintenance-agent.yml` (sweeps the bot dependency PRs its `dependabot.yml` opens at 05:00 Sofia). Also gets `GH_ADMIN_TOKEN` for that dispatch |
 
 **CI stays with the repo, mostly.** This layer ships the agent and points it at the repo's own check via the
 `PR_CHECK_WORKFLOW` variable (`publish.yml` / `pr-check.yml`) - for most repos it does not manage the check itself. A
@@ -299,11 +299,19 @@ Deploy: `just deploy github <repo>` (or the **GitHub - Deploy** workflow).
 
 ### What the agent does
 
-Terraform pushes `.github/workflows/ai-pr-agent.yml` into the managed repo. It runs **daily at 06:00 UTC** (`schedule`)
-or on demand (`workflow_dispatch`) - it is not triggered per pull request.
+Terraform pushes two files into the managed repo: `.github/workflows/ai-maintenance-agent.yml` and the prompt it runs,
+`.github/agent-prompts/ai-maintenance-agent.md`. The workflow only decides whether there is work and hands the agent its
+context; every policy decision is in the prompt.
 
-One job: it installs the [Codex CLI](https://github.com/openai/codex), points it at DeepSeek, and hands it the `gh` CLI
-plus a prompt. The agent then walks the open **bot-authored** PRs oldest first and, for each one in turn:
+It runs in **two modes**, decided by a short `triage` job before a runner is spent on the agent at all:
+
+| Trigger | Mode | What it does |
+|---|---|---|
+| `schedule` daily 06:00 UTC, or `workflow_dispatch` | sweep | walks the open bot dependency PRs |
+| `workflow_run` on a **failed** pipeline run | repair | fixes the cause and finishes what that run was doing |
+
+**Sweep.** The agent installs the [Codex CLI](https://github.com/openai/codex), points it at DeepSeek, and hands it the
+`gh` CLI plus the prompt. It then walks the open **bot-authored** PRs oldest first and, for each one in turn:
 
 1. reads the diff and decides whether it is a safe dependency bump,
 2. updates the branch if it is behind, and dispatches the repo's own `PR_CHECK_WORKFLOW` if the head commit has no
@@ -313,7 +321,25 @@ plus a prompt. The agent then walks the open **bot-authored** PRs oldest first a
 5. confirms the merge landed before moving to the next PR,
 6. leaves a short comment explaining the decision.
 
-Human-authored PRs are never merged. The merge policy lives in the prompt, not in bash.
+It then reads the SonarCloud quality gate and the image scan on every sweep, including one that found no PR at all.
+
+**Repair.** A failed run wakes the agent with that run's id, workflow, branch, commit and failure count. It reads the
+failing step, classifies the cause — infrastructure, code, configuration or credential — and acts on the
+classification: an infrastructure failure is re-run once and nothing is edited; a credential or workflow fault is
+reported and left alone, because no commit here can fix either; a code fault is repaired on the PR branch when the
+failure was on one, and directly on the default branch when it was not, with the repository's own validation run
+locally first, since nothing else stands between that commit and what ships.
+
+It finishes the job rather than the run: it waits for the pipeline its fix started, confirms what that pipeline was
+supposed to produce actually exists, and — where the repo releases by tag — cuts the next version to complete a release
+that failed, because the broken tag cannot be moved.
+
+Human-authored PRs and branches are never touched. The merge policy lives in the prompt, not in bash.
+
+**Why it cannot loop.** The agent pushes with a PAT, so its own fixes start pipeline runs, and a fix that does not work
+would wake it again. `triage` counts how many runs of that workflow have already failed on that commit — derived from
+the commit, never stored — and abandons the repair past `AI_MAX_FIX_ROUNDS` (3 by default). The agent's own workflow is
+also absent from the `workflow_run` trigger list, so a failed repair cannot trigger another one.
 
 **Why sequential.** Dependency PRs almost always touch the same lockfile. `gh pr merge --auto` arms them all at once and
 they collide; merging one at a time means each PR rebases onto the previous merge instead of conflicting.

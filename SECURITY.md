@@ -51,9 +51,10 @@ This is a personal, unfunded project – there is no bug bounty.
   written to disk.
 - Flux CD manifests under `gitops/` - Traefik, cert-manager, External Secrets, CrowdSec, and app manifests, including
   ingress exposure and RBAC.
-- GitHub Actions workflows in `.github/workflows/` and the agent workflow template shipped by
-  `terraform/github/<repo>/workflows/ai-pr-agent.yml` - injection into workflow inputs, secret exfiltration,
-  privilege escalation on the self-hosted runner.
+- GitHub Actions workflows in `.github/workflows/`, and the agent template shipped by
+  `terraform/github/<repo>/workflows/ai-maintenance-agent.yml` together with the prompt it runs at
+  `terraform/github/<repo>/agent-prompts/ai-maintenance-agent.md` - injection into workflow inputs or into the prompt,
+  secret exfiltration, privilege escalation on the self-hosted runner.
 - Any credential, token, or private key accidentally committed to this repo or its history. **Report this privately and
   urgently.**
 

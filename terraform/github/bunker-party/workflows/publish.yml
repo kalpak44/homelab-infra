@@ -6,9 +6,10 @@
 # being built is main and never on a pull request, so a dependency bump is fully
 # validated without pushing an image.
 #
-# This is also the workflow the AI PR agent gates on (PR_CHECK_WORKFLOW=publish.yml). It
-# refuses to merge without a green check here, and it can dispatch this workflow on a PR
-# branch whose head commit has no checks — hence workflow_dispatch.
+# This is also the workflow the AI maintenance agent gates on
+# (PR_CHECK_WORKFLOW=publish.yml). It refuses to merge without a green check here, and it
+# can dispatch this workflow on a PR branch whose head commit has no checks — hence
+# workflow_dispatch.
 #
 # Renaming this file means renaming it in homelab-infra too, in three places: the `apps`
 # list in gitops/Justfile, which finds the last successful run here to read a tag from,

@@ -1,0 +1,304 @@
+# Managed by homelab-infra — terraform/github/mite-assistant-mcp/workflows/ai-maintenance-agent.yml
+# Edits made here in the target repo are overwritten by `just deploy github mite-assistant-mcp`.
+#
+# Codex CLI driving DeepSeek, with the gh CLI, in two modes. On a schedule it sweeps the
+# open bot dependency PRs, repairs what the upgrades break, reads the quality gate and
+# merges what is safe. When a pipeline run fails it wakes on that failure instead,
+# classifies it, fixes the cause, and drives the work that run existed to do through to
+# completion rather than stopping at a green re-run.
+#
+# The policy is the prompt in .github/agent-prompts/, not bash — this file only decides
+# whether there is work and hands the agent its context. There is no matrix and no
+# auto-merge: the agent reviews the final combined change and requires successful CI.
+#
+# DeepSeek serves the OpenAI Responses API directly, which is the wire protocol used
+# by Codex here, so Codex talks to it with no proxy in between.
+
+name: AI Maintenance Agent
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+  workflow_dispatch:
+  # By display name — `workflows` takes no wildcard, so a pipeline missing from this list
+  # never wakes the agent, and a name no workflow here uses simply never matches. This
+  # workflow is deliberately absent: a failed repair must not trigger another one.
+  workflow_run:
+    workflows:
+      - "Build, Publish, Deploy"
+      - "Verify, Publish, Deploy"
+      - "Release"
+      - "AI Issue Resolver Agent"
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write # needed to start a PR check that never ran, and to re-run a failed one
+
+# Never let two runs modify/merge into the same repository at once. One broken commit can
+# fail several pipelines within seconds, and they would otherwise repair it in parallel.
+concurrency:
+  group: ai-maintenance-agent
+  cancel-in-progress: false
+
+jobs:
+  # Decides whether there is anything to do before a runner spends 45 minutes finding out
+  # there was not. Also the loop brake: the agent pushes with a PAT, so its own fixes start
+  # pipeline runs, and a fix that does not work would otherwise wake it again for ever.
+  triage:
+    # A green pipeline must not start a runner. This is also the self-exclusion: the agent
+    # is absent from the trigger list above, and comparing the names keeps that true if the
+    # list is ever widened.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.name != github.workflow &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
+      mode: ${{ steps.decide.outputs.mode }}
+      run_id: ${{ steps.decide.outputs.run_id }}
+      workflow: ${{ steps.decide.outputs.workflow }}
+      branch: ${{ steps.decide.outputs.branch }}
+      sha: ${{ steps.decide.outputs.sha }}
+      event: ${{ steps.decide.outputs.event }}
+      attempts: ${{ steps.decide.outputs.attempts }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+      REPO: ${{ github.repository }}
+      AI_MAX_FIX_ROUNDS: ${{ vars.AI_MAX_FIX_ROUNDS || '3' }}
+
+    steps:
+      - name: Decide the mode
+        id: decide
+        run: |
+          set -euo pipefail
+
+          # One writer per output key: a key written twice leaves which value wins to the
+          # runner, and the one that decides whether the agent runs cannot be ambiguous.
+          stop() {
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "$1" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_run" ]; then
+            {
+              echo "proceed=true"
+              echo "mode=sweep"
+            } >> "$GITHUB_OUTPUT"
+            echo "Scheduled sweep of the open dependency pull requests." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          name=$(jq -r '.workflow_run.name' "$GITHUB_EVENT_PATH")
+          branch=$(jq -r '.workflow_run.head_branch' "$GITHUB_EVENT_PATH")
+          sha=$(jq -r '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")
+          event=$(jq -r '.workflow_run.event' "$GITHUB_EVENT_PATH")
+          id=$(jq -r '.workflow_run.id' "$GITHUB_EVENT_PATH")
+
+          # How many runs of that workflow have already failed on that commit, this one
+          # included. Derived from the commit rather than stored, so it cannot drift. An
+          # empty answer means the API has not indexed this run yet, which is one attempt.
+          attempts=$(gh run list --repo "$REPO" --commit "$sha" --limit 100 \
+            --json workflowName,conclusion \
+            --jq "[.[] | select(.workflowName == \"${name}\" and .conclusion == \"failure\")] | length")
+          [ -n "$attempts" ] && [ "$attempts" -gt 0 ] || attempts=1
+
+          if [ "$attempts" -gt "$AI_MAX_FIX_ROUNDS" ]; then
+            stop "$(printf '## Repair abandoned\n\n`%s` has failed %s times on `%s`, past AI_MAX_FIX_ROUNDS (%s). A human needs to look at it.' \
+              "$name" "$attempts" "$sha" "$AI_MAX_FIX_ROUNDS")"
+          fi
+
+          {
+            echo "proceed=true"
+            echo "mode=repair"
+            echo "run_id=${id}"
+            echo "workflow=${name}"
+            echo "branch=${branch}"
+            echo "sha=${sha}"
+            echo "event=${event}"
+            echo "attempts=${attempts}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Repair"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Workflow** | ${name} |"
+            echo "| **Branch** | \`${branch}\` |"
+            echo "| **Commit** | \`${sha}\` |"
+            echo "| **Attempt** | ${attempts}/${AI_MAX_FIX_ROUNDS} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  agent:
+    needs: triage
+    if: needs.triage.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # gh is preinstalled on GitHub-hosted runners; this authenticates it.
+      # A PAT, not GITHUB_TOKEN. GitHub starts no push-triggered run for a push made with
+      # GITHUB_TOKEN, which means neither a merge to the default branch nor a fix this
+      # agent pushes raises any workflow run. On a repo that publishes, that silently skips
+      # the build; everywhere it makes the PR check depend on the dispatch fallback rather
+      # than firing naturally.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+
+      # What triage decided, and the run it decided it from. The FAILED_RUN_* values are
+      # empty in sweep mode, where there is no failed run to describe.
+      AGENT_MODE: ${{ needs.triage.outputs.mode }}
+      FAILED_RUN_ID: ${{ needs.triage.outputs.run_id }}
+      FAILED_RUN_WORKFLOW: ${{ needs.triage.outputs.workflow }}
+      FAILED_RUN_BRANCH: ${{ needs.triage.outputs.branch }}
+      FAILED_RUN_SHA: ${{ needs.triage.outputs.sha }}
+      FAILED_RUN_EVENT: ${{ needs.triage.outputs.event }}
+      FAILED_RUN_ATTEMPTS: ${{ needs.triage.outputs.attempts }}
+      AI_MAX_FIX_ROUNDS: ${{ vars.AI_MAX_FIX_ROUNDS || '3' }}
+
+      # Optional workflow that can be explicitly started if no checks exist
+      # for a PR head commit, or if a push raised no run at all.
+      PR_CHECK_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+      # The agent reads the quality gate from SonarCloud's API rather than guessing at it:
+      # sonar-scanner exits 3 for any gate that is not OK, so the CI log names no rule.
+      # Costs no new credential — these are the ones the pipeline already uses.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      # Three keys, because a repo may analyse more than one project — a site and an API
+      # built from the same commit are separate Sonar projects with separate gates. Each
+      # is empty where it does not apply; the prompt reads whichever are set.
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_PROJECT_KEY_SITE: ${{ vars.SONAR_PROJECT_KEY_SITE }}
+      SONAR_PROJECT_KEY_API: ${{ vars.SONAR_PROJECT_KEY_API }}
+      # Read by the image-scan section of the prompt. The scan runs only on a published
+      # image, so it never exists for a pull request — the agent reads the default
+      # branch's latest instead.
+      IMAGE_SCAN_WORKFLOW: ${{ vars.PR_CHECK_WORKFLOW }}
+
+      # Where the agent's closing summary is written. Outside the working tree, because
+      # the prompt requires a clean tree before it commits and an untracked file there
+      # would read as uncommitted work.
+      SUMMARY_FILE: /tmp/agent-summary.md
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # The agent may check out PR branches, the commit a run failed on, and the
+          # default branch, and commit fixes to them.
+          fetch-depth: 0
+          persist-credentials: true
+          # The PAT, not the default GITHUB_TOKEN: this credential is what `git push`
+          # uses, and GitHub starts no workflow run for a GITHUB_TOKEN push — a fix would
+          # land and nothing would build it.
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install Codex CLI
+        # Pinned and --ignore-scripts: an unpinned global install takes whatever the
+        # registry serves that morning, and this package declares no scripts, so
+        # skipping them costs nothing. Bump the version deliberately.
+        run: npm install -g @openai/codex@0.154.0 --ignore-scripts
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in the repository secret store?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        # One cheap call so credential/model/API problems fail here instead of
+        # halfway through a sweep.
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o /tmp/smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 /tmp/smoke.json
+            echo
+            exit 1
+          fi
+
+      - name: Run the agent
+        # The prompt is a file rather than a heredoc so it stays readable and reviewable as
+        # prose, and so this workflow shows what it wires up instead of burying it. It is
+        # read before the agent starts, so a branch checkout cannot swap it mid-run.
+        run: |
+          set -euo pipefail
+
+          prompt=.github/agent-prompts/ai-maintenance-agent.md
+
+          if [ ! -f "$prompt" ]; then
+            echo "$prompt is missing — has it been synced into this repository?" >&2
+            exit 1
+          fi
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$SUMMARY_FILE" \
+            "$(cat "$prompt")"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f "$SUMMARY_FILE" ]; then
+            {
+              echo "## AI Maintenance Agent"
+              echo
+              cat "$SUMMARY_FILE"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## AI Maintenance Agent"
+              echo
+              echo "Agent did not produce a summary."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

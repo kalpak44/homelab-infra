@@ -1,7 +1,8 @@
 locals {
   repository       = "noco-google-connector-web-page"
   default_branch   = "main"
-  agent_workflow   = ".github/workflows/ai-pr-agent.yml"
+  agent_workflow   = ".github/workflows/ai-maintenance-agent.yml"
+  agent_prompt     = ".github/agent-prompts/ai-maintenance-agent.md"
   publish_workflow = ".github/workflows/publish.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
@@ -79,17 +80,31 @@ resource "github_actions_secret" "homelab_dispatch" {
   value       = var.github_token
 }
 
+# The policy the agent runs on, kept as prose instead of a heredoc inside the workflow:
+# a thousand lines of prompt buried in YAML is neither readable nor reviewable. The
+# workflow reads it from the checkout, so it has to be in the repo, not only here.
+resource "github_repository_file" "agent_prompt" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.agent_prompt
+  content             = file("${path.module}/agent-prompts/ai-maintenance-agent.md")
+  commit_message      = "chore: sync AI maintenance agent prompt from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
 resource "github_repository_file" "agent_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
   file                = local.agent_workflow
-  content             = file("${path.module}/workflows/ai-pr-agent.yml")
-  commit_message      = "chore: sync AI PR agent workflow from homelab-infra"
+  content             = file("${path.module}/workflows/ai-maintenance-agent.yml")
+  commit_message      = "chore: sync AI maintenance agent workflow from homelab-infra"
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
 
-  depends_on = [github_actions_secret.homelab_dispatch]
+  depends_on = [github_repository_file.agent_prompt, github_actions_secret.homelab_dispatch]
 }
 
 resource "github_repository_file" "publish_workflow" {
