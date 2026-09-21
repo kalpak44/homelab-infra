@@ -246,14 +246,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Installers are fetched from the release tag, not `main`, and their checksums are
+      # verified before anything executes. Piping a moving script straight into a shell
+      # gives an upstream compromise a direct path onto the runner. The version and both
+      # checksums are rewritten together by the weekly sweep that moves these pins.
       - name: Install syft and grype
+        env:
+          SYFT_INSTALLER_SHA256: ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
+          GRYPE_INSTALLER_SHA256: 8646f06a90b10ca64992c1809b4aa00c44e30b4f551f63c309b0b0ab66873556
         run: |
           set -euo pipefail
 
-          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
-          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
+          fetch_verified() {
+            url="$1"; want="$2"; out="$3"
+            curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$out"
+            echo "${want}  ${out}" | sha256sum -c -
+          }
+
+          fetch_verified \
+            "https://raw.githubusercontent.com/anchore/syft/${SYFT_VERSION}/install.sh" \
+            "$SYFT_INSTALLER_SHA256" syft-install.sh
+          fetch_verified \
+            "https://raw.githubusercontent.com/anchore/grype/${GRYPE_VERSION}/install.sh" \
+            "$GRYPE_INSTALLER_SHA256" grype-install.sh
+
+          sh syft-install.sh -b /usr/local/bin "${SYFT_VERSION}"
+          sh grype-install.sh -b /usr/local/bin "${GRYPE_VERSION}"
+
+          rm -f syft-install.sh grype-install.sh
 
           syft version
           grype version
@@ -1545,6 +1565,51 @@ jobs:
       # 6. Report
       # =======================================================================
 
+      # The image ships more than it pins: the tools installed from Alpine carry no
+      # version here, so nothing in this repository can move them and only an Alpine bump
+      # will. Reporting what upstream has anyway is what turns "three minors behind" from
+      # something nobody measures into a line in the release notes. Report only — it
+      # gates nothing, because a version this pipeline cannot set must not block a build.
+      - name: Compare the shipped tools against upstream
+        if: always()
+        run: |
+          set -euo pipefail
+
+          [ -f /tmp/sec/inventory.tsv ] || exit 0
+
+          onboard() { awk -F'\t' -v k="$1" '$1==k {print $2; exit}' /tmp/sec/inventory.tsv; }
+
+          # Each tool's own release channel, never a mirror that could lag behind it.
+          pg_latest=$(curl -fsSL https://www.postgresql.org/versions.json \
+            | jq -r '[.[] | select(.supported)] | max_by(.major | tonumber)
+                     | "\(.major).\(.latestMinor)"' 2>/dev/null || echo "")
+          awscli_latest=$(gh api 'repos/aws/aws-cli/tags?per_page=100' \
+            --jq '[.[].name | select(test("^2\\.[0-9]+\\.[0-9]+$"))] | first' 2>/dev/null || echo "")
+
+          # An unavailable lookup is reported as unavailable. Silently printing "current"
+          # would turn a network failure into a claim that the image is up to date.
+          row() {
+            if [ -z "$3" ]; then
+              printf '| %s | `%s` | unavailable | upstream lookup failed |\n' "$1" "$2"
+            elif [ "$2" = "$3" ]; then
+              printf '| %s | `%s` | `%s` | current |\n' "$1" "$2" "$3"
+            else
+              printf '| %s | `%s` | `%s` | %s |\n' "$1" "$2" "$3" "$4"
+            fi
+          }
+
+          {
+            echo
+            echo "### Upstream check"
+            echo
+            echo "| tool | on board | upstream | |"
+            echo "|---|---|---|---|"
+            row psql "$(onboard psql)" "$pg_latest" \
+              "behind — unversioned from Alpine, so only an Alpine bump moves it"
+            row aws-cli "$(onboard aws-cli)" "$awscli_latest" \
+              "behind — unversioned from Alpine, so only an Alpine bump moves it"
+          } > /tmp/sec/upstream.md
+
       - name: Assemble the security report
         if: always()
         run: |
@@ -1574,6 +1639,10 @@ jobs:
             echo "retention policy needs, or moving the PostgreSQL client major. All three"
             echo "break the image, so the finding stays and is reported here instead."
           } > /tmp/sec/report.md
+
+          if [ -f /tmp/sec/upstream.md ]; then
+            cat /tmp/sec/upstream.md >> /tmp/sec/report.md
+          fi
 
           if [ -f /tmp/sec/remediation-log.md ]; then
             {
