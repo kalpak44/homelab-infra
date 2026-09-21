@@ -28,8 +28,7 @@ It contains exactly one pin:
 
   FROM alpine:<tag>
 
-Everything else — the PostgreSQL client, the MinIO client, jq, bash,
-coreutils — is
+Everything else — the PostgreSQL client, aws-cli, bash, coreutils — is
 installed unversioned from the Alpine package repository. That is
 deliberate: an exact apk pin breaks the moment Alpine drops the old
 package, and `postgresql-client` without a number resolves to whichever
@@ -37,7 +36,7 @@ major that Alpine release ships. Do not add version numbers to any apk
 package name.
 
 So the Alpine tag is your only lever. Moving it is what moves the
-PostgreSQL client and the MinIO client.
+PostgreSQL client and aws-cli.
 
 The repository also contains backup.sh, restore.sh and entrypoint.sh. They
 are application code and none of your business.
@@ -93,7 +92,7 @@ still resolves in the candidate release, and see which versions you would
 get:
 
   docker run --rm alpine:<NEW_TAG> sh -c \
-    'apk add --no-cache --simulate postgresql-client minio-client jq bash ca-certificates coreutils openssl'
+    'apk add --no-cache --simulate postgresql-client aws-cli bash ca-certificates coreutils'
 
 Read that output carefully. It prints the concrete package versions that
 would be installed — including which `postgresqlNN-client` the unversioned
@@ -155,7 +154,7 @@ You must build the image yourself before you are done:
 Then confirm the tools in it actually run:
 
   docker run --rm --entrypoint sh candidate:local \
-    -c 'psql --version && pg_dump --version && pg_restore --version && mcli --version'
+    -c 'psql --version && pg_dump --version && pg_restore --version && aws --version'
 
 If the build fails, or a tool does not run, do not leave the repository in
 a broken state. Either fix the cause — if the fix is small, obvious and
@@ -183,7 +182,7 @@ above the previous entry, in exactly this shape:
   |------|------|----|
   | alpine | 3.23 | 3.24 |
   | postgresql-client | 18.6 | 18.7 |
-  | mcli | RELEASE.2025-07-21T05-28-08Z | RELEASE.2025-08-13T08-35-41Z |
+  | aws-cli | 2.34.63 | 2.35.1 |
 
   <one short paragraph of prose>
 

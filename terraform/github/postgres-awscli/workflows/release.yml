@@ -23,8 +23,8 @@
 # version is computed by this workflow (see SEMVER below) rather than chosen by the
 # agent — the agent writes `## vNEXT` and step `version` resolves it.
 #
-# The PostgreSQL client and the MinIO client are installed unversioned from the Alpine
-# package repository, so the Alpine tag is the only pin — bumping it is what moves them.
+# The PostgreSQL client and aws-cli are installed unversioned from the Alpine package
+# repository, so the Alpine tag is the only pin — bumping it is what moves them.
 #
 # ---------------------------------------------------------------------------------
 # SECURITY POLICY — when does an image get published?
@@ -69,7 +69,8 @@
 #      above so "we could not fix this" is never confused with "we did not try".
 #
 # What is deliberately NOT done, because it trades a working image for a green
-# scanner: pinning apk packages to exact versions, and pulling from edge/testing.
+# scanner: pinning apk packages to exact versions, pulling from edge/testing, and
+# pip-installing over the Python libraries that Alpine's aws-cli package owns.
 #
 # The single most consequential thing that can break this image is the PostgreSQL
 # client major moving: pg_dump refuses to operate against a server newer than itself.
@@ -106,7 +107,7 @@
 # Levers, in the order the search tries them:
 #
 #   1. the Alpine tag -> the newest tag that improves, newest first, rejecting any
-#      that moves the PostgreSQL client major or drops the object-storage client
+#      that moves the PostgreSQL client or aws-cli major
 #   2. reverting an Alpine bump this very run made, if it made things worse and
 #      nothing forward is better (never below the tag :latest was built from)
 #   3. an AI round: Codex is shown what is left and may propose one more minimal
@@ -245,34 +246,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Installers are fetched from the release tag, not `main`, and their checksums are
-      # verified before anything executes. Piping a moving script straight into a shell
-      # gives an upstream compromise a direct path onto the runner. The version and both
-      # checksums are rewritten together by the weekly sweep that moves these pins.
       - name: Install syft and grype
-        env:
-          SYFT_INSTALLER_SHA256: ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
-          GRYPE_INSTALLER_SHA256: 8646f06a90b10ca64992c1809b4aa00c44e30b4f551f63c309b0b0ab66873556
         run: |
           set -euo pipefail
 
-          fetch_verified() {
-            url="$1"; want="$2"; out="$3"
-            curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$out"
-            echo "${want}  ${out}" | sha256sum -c -
-          }
-
-          fetch_verified \
-            "https://raw.githubusercontent.com/anchore/syft/${SYFT_VERSION}/install.sh" \
-            "$SYFT_INSTALLER_SHA256" syft-install.sh
-          fetch_verified \
-            "https://raw.githubusercontent.com/anchore/grype/${GRYPE_VERSION}/install.sh" \
-            "$GRYPE_INSTALLER_SHA256" grype-install.sh
-
-          sh syft-install.sh -b /usr/local/bin "${SYFT_VERSION}"
-          sh grype-install.sh -b /usr/local/bin "${GRYPE_VERSION}"
-
-          rm -f syft-install.sh grype-install.sh
+          curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
+          curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
 
           syft version
           grype version
@@ -381,12 +362,12 @@ jobs:
           # SemVer decision. The real ENTRYPOINT dispatches on MODE and dials a
           # database, so these go through `sh`.
           probe() {
-            local img="$1" psql_v pgdump_v mcli_v
+            local img="$1" psql_v pgdump_v aws_v
             psql_v=$(docker run --rm --entrypoint sh "$img" -c 'psql --version'    | awk '{print $3}')
             pgdump_v=$(docker run --rm --entrypoint sh "$img" -c 'pg_dump --version' | awk '{print $3}')
-            mcli_v=$(docker run --rm --entrypoint sh "$img" -c 'mcli --version 2>&1' \
-                     | head -1 | awk '{print $3}')
-            printf 'psql=%s\npgdump=%s\nmcli=%s\n' "$psql_v" "$pgdump_v" "$mcli_v"
+            aws_v=$(docker run --rm --entrypoint sh "$img" -c 'aws --version 2>&1' \
+                    | head -1 | awk '{print $1}' | cut -d/ -f2)
+            printf 'psql=%s\npgdump=%s\nawscli=%s\n' "$psql_v" "$pgdump_v" "$aws_v"
           }
 
           # inventory <image> — every tool this image ships and its version, as
@@ -400,10 +381,10 @@ jobs:
             v pg_dump         "$(pg_dump --version 2>/dev/null | awk '{print $3}')"
             v pg_restore      "$(pg_restore --version 2>/dev/null | awk '{print $3}')"
             v pg_dumpall      "$(pg_dumpall --version 2>/dev/null | awk '{print $3}')"
-            v mcli            "$(mcli --version 2>/dev/null | head -1 | awk '{print $3}')"
-            v jq              "$(jq --version 2>/dev/null | sed 's/^jq-//')"
+            v aws-cli         "$(aws --version 2>&1 | head -1 | awk '{print $1}' | cut -d/ -f2)"
             v bash            "$(bash --version 2>/dev/null | head -1 | awk '{print $4}' | cut -d'(' -f1)"
             v coreutils       "$(date --version 2>/dev/null | head -1 | awk '{print $4}')"
+            v python3         "$(python3 --version 2>&1 | awk '{print $2}')"
           apkv() { apk list -I "$1" 2>/dev/null | head -1 | awk '{print $1}' | sed "s/^$1-//"; }
           v musl            "$(apkv musl)"
           v openssl         "$(apkv libssl3)"
@@ -463,8 +444,7 @@ jobs:
           check "pg_dump runs"             sh_c 'pg_dump --version'
           check "pg_restore runs"          sh_c 'pg_restore --version'
           check "pg_dumpall runs"          sh_c 'pg_dumpall --version'
-          check "mcli runs"                sh_c 'mcli --version'
-          check "jq runs"                  sh_c 'jq --version'
+          check "aws runs"                 sh_c 'aws --version'
           check "bash runs"                sh_c 'bash --version'
           check "coreutils date -u works"  sh_c 'date -u +%Y%m%dT%H%M%SZ'
           check "mktemp works"             sh_c 'mktemp /tmp/smoke.XXXXXX'
@@ -482,26 +462,124 @@ jobs:
           check_rejects "restore mode validates env" 'Missing required environment variable' \
             docker run --rm -e MODE=restore "$IMG"
 
-          # The retention policy reads `mcli ls --json` through jq, so the field names
-          # in that output are a contract between the two. `mcli ls` works on a local
-          # directory and emits the same shape it emits for S3, which is what makes
-          # this checkable with no bucket and no credentials. Run against real files,
-          # never a canned sample: a sample would keep passing after mcli renamed a
-          # field, which is the one failure this is here to catch.
-          check "mcli ls --json feeds the retention filter" sh_c '
-            d=$(mktemp -d); : > "$d/a.sql.gz"; : > "$d/b.sql.gz"
-            got=$(mcli ls --json "$d" \
-              | jq -r "select(.type==\"file\") | [.lastModified, .key] | @tsv" \
-              | sort -r | cut -f2 | tr "\n" " ")
-            case "$got" in
-              *a.sql.gz*|*b.sql.gz*) echo "retention-filter-ok $got" ;;
-              *) echo "retention filter extracted nothing: [$got]" >&2; exit 1 ;;
-            esac'
+          # aws-cli on Alpine is the Python build and vendors botocore inside the
+          # `awscli` package rather than shipping it as a top-level module. Importing
+          # the real names proves a package-level remediation did not quietly gut the
+          # CLI. The JMESPath expression is the exact one backup.sh hands to
+          # `aws s3api --query`, so this is what proves dropping or downgrading
+          # py3-jmespath would break the retention policy.
+          out=$(docker run --rm -i --entrypoint python3 "$IMG" - <<'PY' 2>&1
+          import awscli, awscli.botocore, jmespath, urllib3, cryptography
+          jmespath.compile("reverse(sort_by(Contents || `[]`, &LastModified))[].Key")
+          print("py-ok", awscli.__version__, "jmespath", jmespath.__version__)
+          PY
+          )
+          if [ $? -eq 0 ]; then pass "aws python deps + JMESPath" "$out"; else fail "aws python deps + JMESPath" "$out"; fi
 
-          # The three object operations backup.sh and restore.sh actually call. Proving
-          # the subcommands exist is what stops a remediation from swapping the client
-          # for something that scans clean and cannot copy a file.
-          check "mcli has cp, ls and rm"   sh_c 'mcli --help | grep -qE "^  cp " && mcli --help | grep -qE "^  ls " && mcli --help | grep -qE "^  rm " && echo subcommands-ok'
+
+          # ---------------------------------------------------------------------
+          # Integration: a real database, a real bucket, a real round trip.
+          #
+          # Everything above proves the binaries exist. This proves the scripts work:
+          # a dump is taken from a live PostgreSQL, uploaded to a live S3, the table
+          # is dropped, and the restore puts the rows back. Then a second backup with
+          # RETENTION_COUNT=1 proves the retention policy prunes, which is the part
+          # that deletes data and the part no version check can see.
+          #
+          # The two dependencies track moving tags on purpose. A pin here rots
+          # silently and needs its own bump; a moving tag fails loudly in this gate.
+          # ---------------------------------------------------------------------
+          PG_IMAGE="${SMOKE_PG_IMAGE:-public.ecr.aws/docker/library/postgres:18-alpine}"
+          S3_IMAGE="${SMOKE_S3_IMAGE:-quay.io/minio/minio:latest}"
+
+          NET="smoke-net-$$"; PGC="smoke-pg-$$"; S3C="smoke-s3-$$"
+          PGPASS=smokepass; AKID=smokekey; SECRET=smokesecret123
+
+          integration_cleanup() {
+            docker rm -f "$PGC" "$S3C" >/dev/null 2>&1 || true
+            docker network rm "$NET" >/dev/null 2>&1 || true
+          }
+          trap integration_cleanup EXIT
+
+          # MinIO has no KMS here, so SSE is off for the test. The upload path is the
+          # same; only the header differs.
+          backup_run() {
+            docker run --rm --network "$NET" \
+              -e MODE=backup \
+              -e PGHOST="$PGC" -e PGPORT=5432 -e PGDATABASE=smokedb \
+              -e PGUSER=postgres -e PGPASSWORD="$PGPASS" \
+              -e S3_BUCKET=smoke -e S3_PREFIX=pg \
+              -e AWS_DEFAULT_REGION=us-east-1 \
+              -e AWS_ACCESS_KEY_ID="$AKID" -e AWS_SECRET_ACCESS_KEY="$SECRET" \
+              -e AWS_ENDPOINT_URL="http://${S3C}:9000" \
+              -e S3_SSE= -e RETENTION_COUNT="$1" \
+              "$IMG"
+          }
+
+          aws_in_image() {
+            docker run --rm --network "$NET" --entrypoint sh "$IMG" -c \
+              "AWS_ACCESS_KEY_ID=$AKID AWS_SECRET_ACCESS_KEY=$SECRET AWS_DEFAULT_REGION=us-east-1 \
+               aws --endpoint-url http://${S3C}:9000 $1"
+          }
+
+          integration() {
+            docker network create "$NET" >/dev/null
+
+            docker run -d --name "$PGC" --network "$NET" \
+              -e POSTGRES_PASSWORD="$PGPASS" -e POSTGRES_DB=smokedb "$PG_IMAGE" >/dev/null
+            docker run -d --name "$S3C" --network "$NET" \
+              -e MINIO_ROOT_USER="$AKID" -e MINIO_ROOT_PASSWORD="$SECRET" \
+              "$S3_IMAGE" server /data >/dev/null
+
+            i=0
+            while ! docker exec "$PGC" pg_isready -U postgres -d smokedb >/dev/null 2>&1; do
+              i=$((i + 1)); [ "$i" -gt 90 ] && { echo "postgres never became ready"; return 1; }
+              sleep 1
+            done
+
+            i=0
+            until aws_in_image "s3 mb s3://smoke" >/dev/null 2>&1; do
+              i=$((i + 1)); [ "$i" -gt 90 ] && { echo "the bucket could not be created"; return 1; }
+              sleep 1
+            done
+
+            docker exec "$PGC" psql -U postgres -d smokedb -q \
+              -c "CREATE TABLE t (id int primary key, name text);" \
+              -c "INSERT INTO t VALUES (1,'alpha'),(2,'beta'),(3,'gamma');" || return 1
+
+            backup_run 10 >/dev/null || { echo "backup failed"; return 1; }
+
+            key=$(aws_in_image "s3api list-objects-v2 --bucket smoke --prefix pg/ --query 'Contents[0].Key' --output text" | tr -d '\r\n')
+            [ -n "$key" ] && [ "$key" != "None" ] || { echo "nothing was uploaded"; return 1; }
+
+            # Dropped so the row count below can only come from the restore.
+            docker exec "$PGC" psql -U postgres -d smokedb -q -c "DROP TABLE t;" || return 1
+
+            docker run --rm --network "$NET" \
+              -e MODE=restore \
+              -e PGHOST="$PGC" -e PGPORT=5432 -e PGDATABASE=smokedb \
+              -e PGUSER=postgres -e PGPASSWORD="$PGPASS" \
+              -e S3_BUCKET=smoke \
+              -e AWS_DEFAULT_REGION=us-east-1 \
+              -e AWS_ACCESS_KEY_ID="$AKID" -e AWS_SECRET_ACCESS_KEY="$SECRET" \
+              -e AWS_ENDPOINT_URL="http://${S3C}:9000" \
+              -e RESTORE_S3_KEY="$key" \
+              "$IMG" >/dev/null || { echo "restore failed"; return 1; }
+
+            rows=$(docker exec "$PGC" psql -U postgres -d smokedb -tAc "SELECT count(*) FROM t;" | tr -d '[:space:]')
+            [ "$rows" = "3" ] || { echo "restored $rows rows, expected 3"; return 1; }
+
+            # The object key carries a timestamp to the second, so two backups inside
+            # one second would be one object and prove nothing.
+            sleep 1
+            backup_run 1 >/dev/null || { echo "second backup failed"; return 1; }
+            left=$(aws_in_image "s3api list-objects-v2 --bucket smoke --prefix pg/ --query 'length(Contents)' --output text" | tr -d '\r\n')
+            [ "$left" = "1" ] || { echo "retention left ${left} objects, expected 1"; return 1; }
+
+            echo "round-trip-ok 3 rows restored, retention pruned to 1"
+          }
+
+          check "backup, restore and retention against a live database" integration
 
           exit "$FAILED"
           SMOKE
@@ -780,6 +858,7 @@ jobs:
           # broken backups.
           probe candidate:local > /tmp/sec/candidate-tools.env
           CUR_PSQL_MAJOR=$(major "$(grep '^psql=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
+          CUR_AWSCLI_MAJOR=$(major "$(grep '^awscli=' /tmp/sec/candidate-tools.env | cut -d= -f2)")
 
           # --- assemble the candidate list ------------------------------------
           # Newest Alpine first: a blind +1 step is measurably worse on the sibling
@@ -858,7 +937,7 @@ jobs:
 
             probe remediation:local > /tmp/sec/attempt-tools.env
             try_psql_major=$(major "$(grep '^psql=' /tmp/sec/attempt-tools.env | cut -d= -f2)")
-            try_mcli=$(grep '^mcli=' /tmp/sec/attempt-tools.env | cut -d= -f2)
+            try_awscli_major=$(major "$(grep '^awscli=' /tmp/sec/attempt-tools.env | cut -d= -f2)")
 
             if [ "$try_psql_major" != "$CUR_PSQL_MAJOR" ]; then
               note "- rejected: would move the PostgreSQL client major (${CUR_PSQL_MAJOR} -> ${try_psql_major}). pg_dump will not read a newer server, so this is a breaking change and not an acceptable way to clear a CVE. The version agent may make this move deliberately; a security remediation may not."
@@ -866,12 +945,8 @@ jobs:
               continue
             fi
 
-            # The object client has a release timestamp for a version, so there is no
-            # major to compare. Losing it altogether is the regression worth catching:
-            # an attempt that clears a CVE by dropping the client leaves an image that
-            # cannot upload a backup.
-            if [ -z "$try_mcli" ]; then
-              note "- rejected: the object-storage client is gone from the image. Backups cannot be uploaded without it, so this is not an acceptable way to clear a CVE."
+            if [ "$try_awscli_major" != "$CUR_AWSCLI_MAJOR" ]; then
+              note "- rejected: would move the aws-cli major (${CUR_AWSCLI_MAJOR} -> ${try_awscli_major})."
               cp /tmp/sec/Dockerfile.incumbent Dockerfile
               continue
             fi
@@ -1118,22 +1193,22 @@ jobs:
 
           echo "resolved by this release: $(jq 'length' /tmp/sec/resolved.json) Critical/High finding(s)"
           NEW_PSQL=$(grep '^psql=' /tmp/sec/final-tools.env | cut -d= -f2)
-          NEW_MCLI=$(grep '^mcli=' /tmp/sec/final-tools.env | cut -d= -f2)
+          NEW_AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)
           NEW_ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')
 
-          OLD_PSQL=""; OLD_MCLI=""; OLD_ALPINE=""
+          OLD_PSQL=""; OLD_AWSCLI=""; OLD_ALPINE=""
           if [ "${{ steps.published.outputs.exists }}" = "true" ]; then
             OLD_PSQL=$(jq   -r '."io.homelab.tools.postgresql-client" // ""' /tmp/sec/published-labels.json)
-            OLD_MCLI=$(jq   -r '."io.homelab.tools.mcli" // ""'              /tmp/sec/published-labels.json)
+            OLD_AWSCLI=$(jq -r '."io.homelab.tools.aws-cli" // ""'           /tmp/sec/published-labels.json)
             OLD_ALPINE=$(jq -r '."io.homelab.tools.alpine"  // ""'           /tmp/sec/published-labels.json)
           fi
 
-          echo "shipped now : postgresql-client=${NEW_PSQL} mcli=${NEW_MCLI} alpine=${NEW_ALPINE}"
-          echo "shipped last: postgresql-client=${OLD_PSQL:-?} mcli=${OLD_MCLI:-?} alpine=${OLD_ALPINE:-?}"
+          echo "shipped now : postgresql-client=${NEW_PSQL} aws-cli=${NEW_AWSCLI} alpine=${NEW_ALPINE}"
+          echo "shipped last: postgresql-client=${OLD_PSQL:-?} aws-cli=${OLD_AWSCLI:-?} alpine=${OLD_ALPINE:-?}"
 
           feature() { [ "$LEVEL" = "breaking" ] || LEVEL=feature; }
 
-          if [ -z "$OLD_PSQL" ] || [ -z "$OLD_MCLI" ] || [ -z "$OLD_ALPINE" ]; then
+          if [ -z "$OLD_PSQL" ] || [ -z "$OLD_AWSCLI" ] || [ -z "$OLD_ALPINE" ]; then
             # No labels to compare against — treat as a feature release rather than
             # silently calling a possibly-large change a patch.
             if [ "$LEVEL" != "none" ]; then
@@ -1143,11 +1218,9 @@ jobs:
           else
             [ "$NEW_ALPINE" = "$OLD_ALPINE" ]                       || feature
             [ "$(minor "$NEW_PSQL")"   = "$(minor "$OLD_PSQL")"   ] || feature
-            # The object client's version is a release timestamp, so it has no major
-            # or minor to read. Any move is a feature; breaking is left to the package
-            # and entrypoint gates below, which is where it is actually detectable.
-            [ "$NEW_MCLI" = "$OLD_MCLI" ]                           || feature
+            [ "$(minor "$NEW_AWSCLI")" = "$(minor "$OLD_AWSCLI")" ] || feature
             [ "$(major "$NEW_PSQL")"   = "$(major "$OLD_PSQL")"   ] || LEVEL=breaking
+            [ "$(major "$NEW_AWSCLI")" = "$(major "$OLD_AWSCLI")" ] || LEVEL=breaking
           fi
 
           # An apk package disappearing changes what the image ships.
@@ -1230,7 +1303,7 @@ jobs:
               if [ "$REMEDIATED" = "true" ]; then
                 echo "Security remediation was applied after the table above was written. The image"
                 echo "published for this version is alpine ${NEW_ALPINE}, PostgreSQL client ${NEW_PSQL}," \
-                     "mcli ${NEW_MCLI}, scanning as $(n_crit /tmp/sec/candidate.ch.json) Critical" \
+                     "aws-cli ${NEW_AWSCLI}, scanning as $(n_crit /tmp/sec/candidate.ch.json) Critical" \
                      "and $(n_high /tmp/sec/candidate.ch.json) High."
                 echo
               fi
@@ -1271,8 +1344,8 @@ jobs:
               if [ -n "$OLD_PSQL" ] && [ "$NEW_PSQL" != "$OLD_PSQL" ]; then
                 echo "| postgresql-client | ${OLD_PSQL} | ${NEW_PSQL} |"
               fi
-              if [ -n "$OLD_MCLI" ] && [ "$NEW_MCLI" != "$OLD_MCLI" ]; then
-                echo "| mcli | ${OLD_MCLI} | ${NEW_MCLI} |"
+              if [ -n "$OLD_AWSCLI" ] && [ "$NEW_AWSCLI" != "$OLD_AWSCLI" ]; then
+                echo "| aws-cli | ${OLD_AWSCLI} | ${NEW_AWSCLI} |"
               fi
             } > /tmp/sec/rows.md
 
@@ -1428,7 +1501,7 @@ jobs:
             echo "ALPINE=$(grep -m1 -E '^FROM alpine:' Dockerfile | cut -d: -f2 | tr -d '[:space:]')"
             echo "PSQL=$(grep '^psql=' /tmp/sec/final-tools.env | cut -d= -f2)"
             echo "PGDUMP=$(grep '^pgdump=' /tmp/sec/final-tools.env | cut -d= -f2)"
-            echo "MCLI=$(grep '^mcli=' /tmp/sec/final-tools.env | cut -d= -f2)"
+            echo "AWSCLI=$(grep '^awscli=' /tmp/sec/final-tools.env | cut -d= -f2)"
             echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)"
             echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
@@ -1439,7 +1512,7 @@ jobs:
         # `cache-from: gha` reuses the exact amd64 layers the candidate build wrote,
         # so the amd64 image published here is the one that was scanned and smoke
         # tested. arm64 is built fresh; the Dockerfile's own RUN steps assert that
-        # psql, pg_dump and mcli run on it, so a broken arm64 fails the build before
+        # psql, pg_dump and aws run on it, so a broken arm64 fails the build before
         # any push.
         uses: docker/build-push-action@v6
         with:
@@ -1453,14 +1526,14 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.meta.outputs.SHORT_SHA }}
           labels: |
             org.opencontainers.image.title=postgres-awscli
-            org.opencontainers.image.description=Alpine ${{ steps.meta.outputs.ALPINE }} with the PostgreSQL ${{ steps.meta.outputs.PSQL }} client, the MinIO client ${{ steps.meta.outputs.MCLI }} and backup/restore scripts
+            org.opencontainers.image.description=Alpine ${{ steps.meta.outputs.ALPINE }} with the PostgreSQL ${{ steps.meta.outputs.PSQL }} client, aws-cli ${{ steps.meta.outputs.AWSCLI }} and backup/restore scripts
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.created=${{ steps.meta.outputs.BUILD_DATE }}
             org.opencontainers.image.base.name=docker.io/library/alpine:${{ steps.meta.outputs.ALPINE }}
             io.homelab.tools.postgresql-client=${{ steps.meta.outputs.PSQL }}
-            io.homelab.tools.mcli=${{ steps.meta.outputs.MCLI }}
+            io.homelab.tools.aws-cli=${{ steps.meta.outputs.AWSCLI }}
             io.homelab.tools.alpine=${{ steps.meta.outputs.ALPINE }}
             io.homelab.security.critical=${{ steps.policy.outputs.crit }}
             io.homelab.security.high=${{ steps.policy.outputs.high }}
@@ -1471,50 +1544,6 @@ jobs:
       # =======================================================================
       # 6. Report
       # =======================================================================
-
-      # The image ships more than it pins: the tools installed from Alpine carry no
-      # version here, so nothing in this repository can move them and only an Alpine bump
-      # will. Reporting what upstream has anyway is what turns "three minors behind" from
-      # something nobody measures into a line in the release notes. Report only — it
-      # gates nothing, because a version this pipeline cannot set must not block a build.
-      - name: Compare the shipped tools against upstream
-        if: always()
-        run: |
-          set -euo pipefail
-
-          [ -f /tmp/sec/inventory.tsv ] || exit 0
-
-          onboard() { awk -F'\t' -v k="$1" '$1==k {print $2; exit}' /tmp/sec/inventory.tsv; }
-
-          # Each tool's own release channel, never a mirror that could lag behind it.
-          pg_latest=$(curl -fsSL https://www.postgresql.org/versions.json \
-            | jq -r '[.[] | select(.supported)] | max_by(.major | tonumber)
-                     | "\(.major).\(.latestMinor)"' 2>/dev/null || echo "")
-          mcli_latest=$(gh api repos/minio/mc/releases/latest --jq .tag_name 2>/dev/null || echo "")
-
-          # An unavailable lookup is reported as unavailable. Silently printing "current"
-          # would turn a network failure into a claim that the image is up to date.
-          row() {
-            if [ -z "$3" ]; then
-              printf '| %s | `%s` | unavailable | upstream lookup failed |\n' "$1" "$2"
-            elif [ "$2" = "$3" ]; then
-              printf '| %s | `%s` | `%s` | current |\n' "$1" "$2" "$3"
-            else
-              printf '| %s | `%s` | `%s` | %s |\n' "$1" "$2" "$3" "$4"
-            fi
-          }
-
-          {
-            echo
-            echo "### Upstream check"
-            echo
-            echo "| tool | on board | upstream | |"
-            echo "|---|---|---|---|"
-            row psql "$(onboard psql)" "$pg_latest" \
-              "behind — unversioned from Alpine, so only an Alpine bump moves it"
-            row mcli "$(onboard mcli)" "$mcli_latest" \
-              "behind — unversioned from Alpine, so only an Alpine bump moves it"
-          } > /tmp/sec/upstream.md
 
       - name: Assemble the security report
         if: always()
@@ -1545,10 +1574,6 @@ jobs:
             echo "retention policy needs, or moving the PostgreSQL client major. All three"
             echo "break the image, so the finding stays and is reported here instead."
           } > /tmp/sec/report.md
-
-          if [ -f /tmp/sec/upstream.md ]; then
-            cat /tmp/sec/upstream.md >> /tmp/sec/report.md
-          fi
 
           if [ -f /tmp/sec/remediation-log.md ]; then
             {
@@ -1652,8 +1677,12 @@ jobs:
 
           {
             echo
-            # No inventory table here: the CHANGELOG section copied above already carries
-            # one, and printing it twice is what the notes used to do.
+            echo "### Contents"
+            echo
+            if [ -f /tmp/sec/inventory.tsv ]; then
+              md_tools /tmp/sec/inventory.tsv
+            fi
+            echo
             cat /tmp/sec/report.md
             echo
             echo "### Image"

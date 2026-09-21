@@ -26,9 +26,9 @@ WHAT THIS IMAGE IS FOR — do not break it
 
 It runs /app/backup.sh and /app/restore.sh, which between them use: pg_dump,
 psql, pg_restore, gzip, gunzip, mktemp, date, tr, printf, and the AWS CLI —
-including `mcli ls --json` piped through jq, which is what the retention
-policy reads. Removing either would silently stop old backups being pruned.
-Do not.
+including `aws s3api list-objects-v2 --query`, whose JMESPath expression is
+evaluated by py3-jmespath. Two of the remaining Criticals are against
+py3-jmespath. Removing it would silently break the retention policy. Do not.
 
 ----------------------------------------------------------------------
 WHAT YOU MAY DO
@@ -60,11 +60,12 @@ WHAT YOU MAY NOT DO — these break images
   nothing; the alpine:X.Y tag already carries the newest patch level.
 - NEVER add edge, testing or community repositories from another release.
   Mixing branches breaks musl and every dynamically linked tool with it.
-- NEVER pip install, pip upgrade, or hand-replace a library that an apk
-  package owns. Where Alpine has not packaged a fixed version, overwriting
-  it out of band is how you get a tool that
+- NEVER pip install, pip upgrade, or hand-replace a Python library that the
+  `aws-cli` apk package owns. Several remaining findings are against
+  `cryptography` and `py3-jmespath`, whose fixed versions Alpine has not
+  packaged. Overwriting them out of band is how you get an aws-cli that
   imports but fails at runtime. Leave them and report them.
-- NEVER remove postgresql-client, minio-client, jq, bash, ca-certificates or
+- NEVER remove postgresql-client, aws-cli, bash, ca-certificates or
   coreutils. They are the point of this image.
 - NEVER change ENTRYPOINT, CMD, USER, WORKDIR, ENV or the COPY of the
   scripts.
@@ -95,6 +96,7 @@ A short report, in this shape:
   For each remaining Critical/High finding, one line:
     <id> — <package> — <why it cannot be safely fixed here>
 
-Be specific about "why". "No upstream fix exists", "fixed upstream but
-Alpine has not packaged it yet", and "only fixable by removing the client
-the backup upload needs" are useful. "Cannot be fixed" is not.
+Be specific about "why". "No upstream fix exists", "fixed in cryptography
+48.0.1 but Alpine 3.24 ships 47.0.0", and "only fixable by removing the
+JMESPath support the retention policy needs" are useful. "Cannot be fixed"
+is not.

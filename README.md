@@ -471,11 +471,16 @@ that package, and `postgresql-client` without a number resolves to whichever maj
 are read back out of the built image and recorded in the labels and release notes instead. Bumping the Alpine tag is
 what moves them.
 
-**Neither image ships the AWS CLI any more.** On Alpine it is the Python build, and it brought a Python runtime plus
-about sixty packages with it - which was every Critical and all but one High finding both images had, none of them with
-a fixed version Alpine had packaged. `postgres-awscli` reaches S3 through the MinIO client instead, which needs static
-credentials rather than an IAM role; `kubectl-awscli` ships no S3 client at all. The images went 50 MB to 21 MB and
-65 MB to 25 MB.
+**`kubectl-awscli` no longer ships the AWS CLI.** On Alpine it is the Python build, and it brought a Python runtime
+plus about sixty packages with it - which was every Critical and all but one High finding the image had, none of them
+with a fixed version Alpine had packaged. Dropping it took the image from 65 MB to 25 MB and left one unfixable `zlib`
+High. `postgres-awscli` keeps it: swapping in a Go S3 client was tried and reverted, because grype catalogs a Go
+binary's vendored modules and `minio-client` scans as 8 Critical against the AWS CLI's 2.
+
+**`postgres-awscli`'s gate runs a real round trip.** The smoke suite starts a PostgreSQL and a MinIO container, takes a
+backup, drops the table, restores it, checks the row count, and then runs a second backup with `RETENTION_COUNT=1` to
+prove the retention policy prunes. Every remediation attempt re-runs it, so a change that clears a CVE and breaks the
+backup is rejected rather than published.
 
 ### `GH_ADMIN_TOKEN` scopes
 
