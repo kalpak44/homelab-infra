@@ -20,9 +20,10 @@ on:
   schedule:
     - cron: "0 6 * * *" # 06:00 UTC daily
   workflow_dispatch:
-  # By display name — `workflows` takes no wildcard, so a pipeline missing from this list
-  # never wakes the agent, and a name no workflow here uses simply never matches. This
-  # workflow is deliberately absent: a failed repair must not trigger another one.
+  # By display name — `workflows` takes no wildcard and omitting it makes the file
+  # unparseable, so every pipeline that may wake the agent is named here and a name no
+  # workflow in this repository uses simply never matches. This workflow is deliberately
+  # absent: a failed repair must not trigger another one.
   workflow_run:
     workflows:
       - "Build, Publish, Deploy"
@@ -38,6 +39,7 @@ permissions:
 
 # Never let two runs modify/merge into the same repository at once. One broken commit can
 # fail several pipelines within seconds, and they would otherwise repair it in parallel.
+# It also absorbs a burst of green checks: one run stays pending and the rest cancel.
 concurrency:
   group: ai-maintenance-agent
   cancel-in-progress: false
@@ -47,14 +49,16 @@ jobs:
   # there was not. Also the loop brake: the agent pushes with a PAT, so its own fixes start
   # pipeline runs, and a fix that does not work would otherwise wake it again for ever.
   triage:
-    # A green pipeline must not start a runner. This is also the self-exclusion: the agent
-    # is absent from the trigger list above, and comparing the names keeps that true if the
-    # list is ever widened.
+    # The self-exclusion: the agent is absent from the trigger list above, and comparing
+    # the names keeps that true if the list is ever widened. A green run gets through only
+    # from a pull request, where a passing check is what unblocks a merge.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.name != github.workflow &&
       (github.event.workflow_run.conclusion == 'failure' ||
-      github.event.workflow_run.conclusion == 'timed_out'))
+      github.event.workflow_run.conclusion == 'timed_out' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -104,6 +108,25 @@ jobs:
           sha=$(jq -r '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")
           event=$(jq -r '.workflow_run.event' "$GITHUB_EVENT_PATH")
           id=$(jq -r '.workflow_run.id' "$GITHUB_EVENT_PATH")
+          conclusion=$(jq -r '.workflow_run.conclusion' "$GITHUB_EVENT_PATH")
+
+          # A check turning green is the moment a sweep has something to merge, which is
+          # the whole reason a success gets this far. Anything but a bot's pull request
+          # stops here rather than spending a runner to find nothing to do.
+          if [ "$conclusion" = "success" ]; then
+            bots=$(gh api "repos/${REPO}/commits/${sha}/pulls" \
+              --jq '[.[] | select(.state == "open" and .user.type == "Bot")] | length')
+            [ -n "$bots" ] && [ "$bots" -gt 0 ] \
+              || stop "$(printf 'No open bot pull request on `%s`; nothing to sweep.' "$sha")"
+
+            {
+              echo "proceed=true"
+              echo "mode=sweep"
+            } >> "$GITHUB_OUTPUT"
+            printf '`%s` passed on `%s`. Sweeping the open dependency pull requests.\n' \
+              "$name" "$branch" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           # How many runs of that workflow have already failed on that commit, this one
           # included. Derived from the commit rather than stored, so it cannot drift. An
