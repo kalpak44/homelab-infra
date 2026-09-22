@@ -111,7 +111,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned, unlike every other job here: this is the only one that compiles
+          # against the runner's own X11 headers and toolchain. Unpin once a build on
+          # the newer image has been seen to produce a working binding.
+          - os: ubuntu-24.04
             target: linux-x64
             asset_name: code-viewer-bot-linux-x64.vsix
           - os: macos-latest
@@ -153,7 +156,18 @@ jobs:
         run: npm run build
 
       - name: Rebuild robotjs
-        run: npm rebuild robotjs || true
+        run: npm rebuild robotjs
+
+      # A swallowed rebuild shipped a VSIX with no native binding — broken for the user,
+      # green in the pipeline. The check is that the binary exists, not that it loads:
+      # robotjs opens an X display on import and there is none on a runner.
+      - name: Verify the native binding is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          binding=$(find node_modules -path '*robotjs*' -name '*.node' -type f | head -1)
+          [ -n "$binding" ] || { echo "robotjs produced no compiled binding"; exit 1; }
+          echo "$binding"
 
       - name: Package VSIX
         run: vsce package --target ${{ matrix.target }} --out ${{ matrix.asset_name }}
