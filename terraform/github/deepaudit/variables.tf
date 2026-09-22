@@ -15,9 +15,3 @@ variable "deepseek_api_key" {
   type        = string
   sensitive   = true
 }
-
-variable "deepseek_model" {
-  description = "DeepSeek model the audit workflow runs against"
-  type        = string
-  default     = "deepseek-flash"
-}

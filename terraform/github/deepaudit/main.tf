@@ -42,8 +42,34 @@ resource "github_actions_secret" "deepseek" {
 # audit.yml is workflow_dispatch and the test workflow needs no key — so a second copy
 # would be a credential with no reader.
 
-resource "github_actions_variable" "deepseek_model" {
+# The PAT that lets the supervisor dispatch worker runs on their own runners; without it
+# the audit still runs, just on a single runner instead of scaling out. Reuses the same
+# token the provider already authenticates with, rather than adding a second credential.
+
+resource "github_actions_secret" "gh_admin_token" {
+  repository  = github_repository.this.name
+  secret_name = "GH_ADMIN_TOKEN"
+  value       = var.github_token
+}
+
+# --- LLM endpoint config --------------------------------------------------------------
+# audit.yml passes these into the job env unconditionally, so an unset repo variable
+# becomes an empty string that overrides lib/llm.py's own defaults and crashes the client.
+
+resource "github_actions_variable" "llm_base_url" {
   repository    = github_repository.this.name
-  variable_name = "DEEPSEEK_MODEL"
-  value         = var.deepseek_model
+  variable_name = "LLM_BASE_URL"
+  value         = "https://api.deepseek.com"
+}
+
+resource "github_actions_variable" "llm_model_fast" {
+  repository    = github_repository.this.name
+  variable_name = "LLM_MODEL_FAST"
+  value         = "deepseek-chat"
+}
+
+resource "github_actions_variable" "llm_model_strong" {
+  repository    = github_repository.this.name
+  variable_name = "LLM_MODEL_STRONG"
+  value         = "deepseek-reasoner"
 }
