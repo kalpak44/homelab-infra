@@ -20,6 +20,7 @@ on:
           - noco-google-connector-web-page
           - postgres-awscli
           - proklinator-app
+          - relay-dsl
 
 jobs:
   destroy:

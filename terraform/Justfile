@@ -258,3 +258,4 @@ list:
     @printf "  %-30s %s\n" "noco-google-connector-web-page" "kalpak44/noco-google-connector-web-page · same + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-30s %s\n" "postgres-awscli"                "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "proklinator-app"                "kalpak44/proklinator-app · PR sweep + issue resolver + publish.yml (2 Sonar gates, 2 images, deploy)"
+    @printf "  %-30s %s\n" "relay-dsl"                      "kalpak44/relay-dsl · repo settings only · no secrets and no agent until the repo has CI"
