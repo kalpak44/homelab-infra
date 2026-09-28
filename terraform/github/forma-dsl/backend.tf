@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    key    = "homelab/github/relay-dsl.tfstate"
+    key    = "homelab/github/forma-dsl.tfstate"
     region = "auto"
 
     skip_credentials_validation = true

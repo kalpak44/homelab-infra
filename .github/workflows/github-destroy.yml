@@ -13,6 +13,7 @@ on:
           - bunker-party
           - code-viewer-bot
           - deepaudit
+          - forma-dsl
           - kalpak44
           - kubectl-awscli
           - mac-calendar-mcp
@@ -20,7 +21,6 @@ on:
           - noco-google-connector-web-page
           - postgres-awscli
           - proklinator-app
-          - relay-dsl
 
 jobs:
   destroy:

@@ -1,5 +1,5 @@
 locals {
-  repository = "relay-dsl"
+  repository = "forma-dsl"
 }
 
 # No import block: this repo is created here, unlike the adopted ones under
@@ -8,18 +8,19 @@ resource "github_repository" "this" {
   name       = local.repository
   visibility = "public"
 
-  description = "A lightweight workflow DSL with Java and JavaScript interpreters, supporting retries, conditions, and fallbacks."
+  description = "A declarative DSL for 3D modeling and scene composition, reusable components, and live previews. Built with Java and JavaScript."
   topics = [
     "dsl",
-    "domain-specific-language",
-    "workflow-automation",
+    "declarative",
+    "3d-modeling",
+    "scene-description",
+    "computer-graphics",
+    "constructive-solid-geometry",
+    "parametric-modeling",
     "java",
     "javascript",
-    "interpreter",
     "parser",
-    "automation",
-    "retry",
-    "error-handling",
+    "language-design",
   ]
 
   has_issues   = true
@@ -33,7 +34,7 @@ resource "github_repository" "this" {
   allow_auto_merge       = true
   delete_branch_on_merge = true
 
-  # `just destroy github relay-dsl` archives the repo — it never deletes it.
+  # `just destroy github forma-dsl` archives the repo — it never deletes it.
   archive_on_destroy = true
 }
 
