@@ -14,6 +14,15 @@ name: Pages
 on:
   push:
     branches: [main]
+    # A sync of the agent's prompt, the agent workflow, the release workflow or the
+    # Dependabot config changes nothing that ends up in the site. Without this, each of
+    # those pushes rebuilt and redeployed identical output. This workflow is deliberately
+    # absent from the list, so a change to the build itself still redeploys.
+    paths-ignore:
+      - ".github/agent-prompts/**"
+      - ".github/workflows/ai-maintenance-agent.yml"
+      - ".github/workflows/release.yml"
+      - ".github/dependabot.yml"
   workflow_dispatch:
 
 permissions:
