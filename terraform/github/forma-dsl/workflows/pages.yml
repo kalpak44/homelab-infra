@@ -1,0 +1,101 @@
+# Managed by homelab-infra — terraform/github/forma-dsl/workflows/pages.yml
+# Edits made here in the target repo are overwritten by `just deploy github forma-dsl`.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+#
+# The site is the editor at the root and the reference docs under /docs/. Both come out of
+# `npm run build`, so what is published is exactly what the Release check already builds on
+# every pull request — including the docs link checker, which fails the build rather than
+# shipping a dead cross-reference.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one halfway: a run that is killed mid-deploy
+# leaves the site serving a half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Pinned rather than `ubuntu-latest`: that label migrates to Ubuntu 26 on 19 October
+  # 2026, and a runner image changing under the build is not something CI should discover
+  # for itself. Bump it deliberately.
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Reads the Pages configuration; it cannot create it. Turning Pages on is a one-time
+      # admin action — Settings → Pages → Source: GitHub Actions — because creating a site
+      # needs `administration: write`, which is not a permission a workflow token can hold
+      # at all. `enablement: true` here only trades the clear "verify that the repository
+      # has Pages enabled" for an opaque "Resource not accessible by integration".
+      - uses: actions/configure-pages@v6
+        id: pages
+
+      # Pages serves a project site from /<repo>/, so every absolute asset URL has to carry
+      # that prefix. `configure-pages` works the path out from the repository itself rather
+      # than it being hard-coded here and going stale if the repo is renamed.
+      - name: Build the site
+        run: npm run build
+        env:
+          VITE_BASE: ${{ steps.pages.outputs.base_path }}/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
+
+      # The run summary is where someone lands from a commit status, so the deployed URLs
+      # belong there rather than only in the deploy step's log. The URL goes through `env`
+      # rather than being interpolated into the script, so it stays data rather than shell.
+      - name: Summarise the deployment
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          # `page_url` normally carries a trailing slash; trimming first means the paths
+          # below are right whether or not it does.
+          base="${PAGE_URL%/}"
+          {
+            echo "## Deployed"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Editor | [$base/]($base/) |"
+            echo "| Reference docs | [$base/docs/]($base/docs/) |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,5 +1,5 @@
-# Managed by homelab-infra — terraform/github/code-viewer-bot/workflows/ai-maintenance-agent.yml
-# Edits made here in the target repo are overwritten by `just deploy github code-viewer-bot`.
+# Managed by homelab-infra — terraform/github/forma-dsl/workflows/ai-maintenance-agent.yml
+# Edits made here in the target repo are overwritten by `just deploy github forma-dsl`.
 #
 # Codex CLI driving DeepSeek, with the gh CLI, in two modes. On a schedule it sweeps the
 # open bot dependency PRs, repairs what the upgrades break, reads the quality gate and
@@ -214,7 +214,7 @@ jobs:
       # The manifest holding the version a release bumps. An env var rather than a literal:
       # in a workspace the published package is not the repository root, and the root
       # manifest is private and carries no version at all.
-      PACKAGE_MANIFEST: package.json
+      PACKAGE_MANIFEST: packages/forma-dsl/package.json
 
       # Where the agent records the release it wants cut. A file, not stdout: the step
       # after this one is bash, and it must not have to parse prose. A literal path, not

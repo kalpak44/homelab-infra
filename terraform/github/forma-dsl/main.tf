@@ -1,9 +1,20 @@
 locals {
-  repository = "forma-dsl"
+  repository       = "forma-dsl"
+  default_branch   = "main"
+  agent_workflow   = ".github/workflows/ai-maintenance-agent.yml"
+  agent_prompt     = ".github/agent-prompts/ai-maintenance-agent.md"
+  release_workflow = ".github/workflows/release.yml"
+  pages_workflow   = ".github/workflows/pages.yml"
+  dependabot_file  = ".github/dependabot.yml"
 }
 
-# No import block: this repo is created here, unlike the adopted ones under
-# terraform/github/. Once it exists the create is a no-op and apply stays idempotent.
+# The repo already exists — adopt it instead of creating it. The import block is a no-op
+# once the resource is in state, so `terraform apply` stays idempotent from a cold start.
+import {
+  to = github_repository.this
+  id = local.repository
+}
+
 resource "github_repository" "this" {
   name       = local.repository
   visibility = "public"
@@ -27,7 +38,7 @@ resource "github_repository" "this" {
   has_wiki     = false
   has_projects = false
 
-  # Squash-only keeps each merged PR to one commit on main.
+  # Squash-only keeps the auto-merged bot PRs to one commit each on main.
   allow_merge_commit     = false
   allow_squash_merge     = true
   allow_rebase_merge     = false
@@ -38,6 +49,158 @@ resource "github_repository" "this" {
   archive_on_destroy = true
 }
 
-# No secrets, no generated workflow and no PR agent yet. The agent refuses to merge
-# without a green check, so it needs a PR_CHECK_WORKFLOW that already lives in the repo;
-# wiring one before the repo has CI would install an agent that can never merge anything.
+# --- DeepSeek credentials -----------------------------------------------------------
+# Two stores, deliberately. Workflow runs triggered by a Dependabot PR read from the
+# Dependabot secret store, not the Actions one — the same key has to live in both or
+# the agent gets an empty DEEPSEEK_APIKEY on exactly the PRs it is meant to handle.
+
+resource "github_actions_secret" "deepseek" {
+  repository  = github_repository.this.name
+  secret_name = "DEEPSEEK_APIKEY"
+  value       = var.deepseek_api_key
+}
+
+resource "github_dependabot_secret" "deepseek" {
+  repository  = github_repository.this.name
+  secret_name = "DEEPSEEK_APIKEY"
+  value       = var.deepseek_api_key
+}
+
+resource "github_actions_variable" "deepseek_model" {
+  repository    = github_repository.this.name
+  variable_name = "DEEPSEEK_MODEL"
+  value         = var.deepseek_model
+}
+
+# The repo's own CI. release.yml runs on pull_request and also has a workflow_dispatch
+# trigger, which is what the agent needs to start it on a PR that has no check runs.
+resource "github_actions_variable" "pr_check_workflow" {
+  repository    = github_repository.this.name
+  variable_name = "PR_CHECK_WORKFLOW"
+  value         = "release.yml"
+}
+
+# --- SonarCloud ---------------------------------------------------------------------
+# release.yml's analysis step waits on the quality gate, so a failing gate fails the check
+# the agent refuses to merge without. The agent also reads the gate from the API to learn
+# which rule failed, because sonar-scanner exits 3 without naming one.
+#
+# `count` guards the value rather than the resource: an apply with SONAR_TOKEN unset in the
+# environment would otherwise overwrite the stored secret with an empty string and disable
+# the gate.
+resource "github_actions_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository  = github_repository.this.name
+  secret_name = "SONAR_TOKEN"
+  value       = var.sonar_token
+}
+
+# The same key in the second store, for the same reason DEEPSEEK_APIKEY is in both: GitHub
+# withholds Actions secrets from Dependabot-triggered runs, so on exactly the PRs the agent
+# is meant to merge the guard would see an empty token and skip the analysis.
+resource "github_dependabot_secret" "sonar" {
+  count = var.sonar_token != "" ? 1 : 0
+
+  repository      = github_repository.this.name
+  secret_name     = "SONAR_TOKEN"
+  plaintext_value = var.sonar_token
+}
+
+resource "github_actions_variable" "sonar_project_key" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEY"
+  value         = var.sonar_project_key
+}
+
+resource "github_actions_variable" "sonar_organization" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_ORGANIZATION"
+  value         = var.sonar_organization
+}
+
+# --- npm ----------------------------------------------------------------------------
+# The Actions store only. Publishing happens on a `v*` tag, and no Dependabot-triggered
+# run ever reaches that step, so a copy in the Dependabot store would be a credential
+# with no reader. Guarded the same way SONAR_TOKEN is: an apply with NPM_TOKEN unset
+# would otherwise blank the stored secret and every release would fail on `npm publish`.
+resource "github_actions_secret" "npm" {
+  count = var.npm_token != "" ? 1 : 0
+
+  repository  = github_repository.this.name
+  secret_name = "NPM_TOKEN"
+  value       = var.npm_token
+}
+
+# --- The agent itself ---------------------------------------------------------------
+
+# --- The agent's git credential -----------------------------------------------------
+# The agent authenticates `gh` with this instead of GITHUB_TOKEN, so that a push it makes
+# — to a PR branch, to main, or the release tag — actually raises workflow runs. GitHub
+# starts none for a GITHUB_TOKEN push. Same credential homelab-infra already uses;
+# Terraform only copies it here, it is not a new secret to rotate.
+resource "github_actions_secret" "homelab_dispatch" {
+  repository  = github_repository.this.name
+  secret_name = "GH_ADMIN_TOKEN"
+  value       = var.github_token
+}
+
+# The policy the agent runs on, kept as prose instead of a heredoc inside the workflow:
+# a thousand lines of prompt buried in YAML is neither readable nor reviewable. The
+# workflow reads it from the checkout, so it has to be in the repo, not only here.
+resource "github_repository_file" "agent_prompt" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.agent_prompt
+  content             = file("${path.module}/agent-prompts/ai-maintenance-agent.md")
+  commit_message      = "chore: sync AI maintenance agent prompt from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+resource "github_repository_file" "agent_workflow" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.agent_workflow
+  content             = file("${path.module}/workflows/ai-maintenance-agent.yml")
+  commit_message      = "chore: sync AI maintenance agent workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+
+  depends_on = [github_repository_file.agent_prompt, github_actions_secret.homelab_dispatch]
+}
+
+resource "github_repository_file" "release_workflow" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.release_workflow
+  content             = file("${path.module}/workflows/release.yml")
+  commit_message      = "chore: sync release workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+resource "github_repository_file" "pages_workflow" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.pages_workflow
+  content             = file("${path.module}/workflows/pages.yml")
+  commit_message      = "chore: sync pages workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}
+
+resource "github_repository_file" "dependabot" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.dependabot_file
+  content             = file("${path.module}/dependabot.yml")
+  commit_message      = "chore: sync dependabot config from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
+}

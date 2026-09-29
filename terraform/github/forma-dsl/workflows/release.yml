@@ -1,0 +1,202 @@
+# Managed by homelab-infra — terraform/github/forma-dsl/workflows/release.yml
+# Edits made here in the target repo are overwritten by `just deploy github forma-dsl`.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+#
+# One of the repo's three workflows, and its PR check (PR_CHECK_WORKFLOW). It verifies on
+# every pull request and every push to main, and publishes to npm only for a `v*` tag. The
+# agent cuts that tag once per sweep, so a batch of ten merges produces one release rather
+# than ten. Keying the release on the tag is also what keeps the version commit from
+# starting another release: it lands on main, and main does not publish.
+name: Release
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # The agent starts this for a pull request whose head commit has no checks — a branch
+  # opened before the check existed never gets one retroactively.
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The runner label is pinned rather than `ubuntu-latest`: `ubuntu-latest` migrates to
+  # Ubuntu 26 on 19 October 2026, and a toolchain changing under a release is not
+  # something a pipeline should discover for itself.
+  verify:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is what the toolchain actually supports: Vite 7 and ESLint 10 both
+        # require 20.19, and ESLint additionally rules out 22.0–22.12.
+        node: ["20.19", "22.13", "24.x"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install from lockfile
+        run: npm ci
+
+      # Blocking: the agent merges with no human review, so nothing else catches drift.
+      # It clears these itself with `npm run lint -- --fix`.
+      - name: Run linter
+        run: npm run lint
+
+      - name: Check the published type declarations
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  quality:
+    name: Coverage, package contents and Sonar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    env:
+      # Job-level so the `if:` below can test them; a fork PR gets no secrets and skips.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+
+    steps:
+      - name: Checkout repository
+        # Full history: Sonar needs it for blame and new-code detection.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install from lockfile
+        run: npm ci
+
+      # The thresholds live in the `test:coverage` script, so no step here can drop them.
+      # Writes coverage/lcov.info, which Sonar uploads — must run before Sonar.
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      # The published tarball must carry the library and nothing else. A stray app/ or
+      # test/ here means `files` in packages/forma-dsl/package.json drifted.
+      - name: Inspect the publishable tarball
+        run: npm run check:package
+
+      # qualitygate.wait is what makes this block a merge. A missing project key skips
+      # rather than fails, so check the step ran. SONAR_TOKEN must be in the Dependabot
+      # store too, or it skips on exactly the PRs the gate exists for.
+      #
+      # Never on a tag. The scanner takes its branch name from the ref, so a tag run asks
+      # SonarCloud about a branch called `v1.2.3` that has never existed, and the gate
+      # lookup answers "Not authorized or project not found" — which reads as a bad token
+      # and is not. The tag points at a commit main analysed moments earlier, so there is
+      # nothing to re-analyse; without this the release job never runs.
+      - name: SonarCloud analysis
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != '' && github.ref_type != 'tag' }}
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=packages/forma-dsl/src,apps/editor/src,apps/docs/build.mjs
+            -Dsonar.tests=packages/forma-dsl/test,apps/editor/test
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
+
+  release:
+    name: Publish to npm
+    needs: [verify, quality]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+      # npm provenance: the attestation is signed with this run's OIDC identity, which is
+      # what ties the published tarball to this repository and this commit.
+      id-token: write
+
+    steps:
+      # Checked out at the tag, which is the commit the version number describes.
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # The tag is the source of the version, not the manifest: they are written in the
+      # same commit, and reading the tag means a mismatch cannot ship silently. The
+      # manifest is the library's, not the workspace root's — the root is private and
+      # carries no version at all.
+      - name: Check the tag against the manifest
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(jq -r .version packages/forma-dsl/package.json)"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v${tag} does not match packages/forma-dsl ${pkg}"
+            exit 1
+          fi
+          echo "version=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npm run build
+
+      # Publishing is the one place where skipping the gate to save ninety seconds is
+      # least defensible, and the tag is not necessarily the commit main last verified.
+      - name: Check
+        run: npm run check
+
+      - name: Publish
+        run: npm publish -w forma-dsl --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: forma-dsl ${{ github.ref_name }}
+          generate_release_notes: true
+
+      - name: Summarise
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "## Published \`forma-dsl@${VERSION}\`"
+            echo
+            echo "- [npm](https://www.npmjs.com/package/forma-dsl/v/${VERSION})"
+            echo "- \`npm install forma-dsl@${VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
