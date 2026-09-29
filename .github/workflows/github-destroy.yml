@@ -37,7 +37,6 @@ jobs:
       GH_OWNER: ${{ secrets.GH_OWNER }}
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2

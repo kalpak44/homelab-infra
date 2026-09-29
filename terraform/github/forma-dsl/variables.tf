@@ -40,10 +40,3 @@ variable "sonar_token" {
   sensitive   = true
   default     = ""
 }
-
-variable "npm_token" {
-  description = "npm automation token release.yml publishes the library with"
-  type        = string
-  sensitive   = true
-  default     = ""
-}

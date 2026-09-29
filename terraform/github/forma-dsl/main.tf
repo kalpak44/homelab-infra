@@ -120,17 +120,10 @@ resource "github_actions_variable" "sonar_organization" {
 }
 
 # --- npm ----------------------------------------------------------------------------
-# The Actions store only. Publishing happens on a `v*` tag, and no Dependabot-triggered
-# run ever reaches that step, so a copy in the Dependabot store would be a credential
-# with no reader. Guarded the same way SONAR_TOKEN is: an apply with NPM_TOKEN unset
-# would otherwise blank the stored secret and every release would fail on `npm publish`.
-resource "github_actions_secret" "npm" {
-  count = var.npm_token != "" ? 1 : 0
-
-  repository  = github_repository.this.name
-  secret_name = "NPM_TOKEN"
-  value       = var.npm_token
-}
+# No secret. npm authenticates release.yml by its OIDC identity — the repository and the
+# workflow filename are registered as a trusted publisher on the package itself, so there
+# is no credential here to rotate or leak. Do not reintroduce NPM_TOKEN: a granular token
+# cannot satisfy the account's publish 2FA, so one was measured to fail from CI outright.
 
 # --- The agent itself ---------------------------------------------------------------
 
