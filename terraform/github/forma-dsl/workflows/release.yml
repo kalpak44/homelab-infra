@@ -124,8 +124,8 @@ jobs:
           args: >
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
-            -Dsonar.sources=packages/forma-dsl/src,apps/editor/src,apps/docs/build.mjs
-            -Dsonar.tests=packages/forma-dsl/test,apps/editor/test
+            -Dsonar.sources=packages/forma-dsl/src,apps/landing/src,apps/editor/src,apps/docs/build.mjs
+            -Dsonar.tests=packages/forma-dsl/test,apps/landing/test,apps/editor/test
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
 

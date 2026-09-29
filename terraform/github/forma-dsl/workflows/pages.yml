@@ -5,10 +5,10 @@
 # scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
 # `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
 #
-# The site is the editor at the root and the reference docs under /docs/. Both come out of
-# `npm run build`, so what is published is exactly what the Release check already builds on
-# every pull request — including the docs link checker, which fails the build rather than
-# shipping a dead cross-reference.
+# The site is one artifact out of `npm run build`: the landing page at the root, the editor
+# under /app/ and the reference docs under /docs/. What is published is exactly what the
+# Release check already builds on every pull request — including the docs link checker,
+# which fails the build rather than shipping a dead cross-reference.
 name: Pages
 
 on:
@@ -105,6 +105,7 @@ jobs:
             echo
             echo "| | |"
             echo "| --- | --- |"
-            echo "| Editor | [$base/]($base/) |"
+            echo "| Landing page | [$base/]($base/) |"
+            echo "| Editor | [$base/app/]($base/app/) |"
             echo "| Reference docs | [$base/docs/]($base/docs/) |"
           } >> "$GITHUB_STEP_SUMMARY"
