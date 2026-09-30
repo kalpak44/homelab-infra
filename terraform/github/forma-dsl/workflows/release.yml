@@ -17,7 +17,9 @@ on:
     branches: [main]
   push:
     branches: [main]
-    tags: ["v*"]
+    # One tag per published package, `<name>@<version>`, so each gets its own entry on the
+    # releases page. Adding a package means adding its pattern here.
+    tags: ["forma-dsl@*", "forma-dsl-mcp@*"]
   # The agent starts this for a pull request whose head commit has no checks — a branch
   # opened before the check existed never gets one retroactively.
   workflow_dispatch: {}
@@ -132,18 +134,11 @@ jobs:
             -Dsonar.qualitygate.wait=true
 
   release:
-    name: Publish to npm
+    name: Publish ${{ github.ref_name }}
     needs: [verify, quality]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-
-    env:
-      # Every published manifest, in the order they are published. A package that depends
-      # on another one here has to go second, or the version it names is not on the
-      # registry when someone installs it. The workspace root is absent: it is private and
-      # carries no version at all.
-      PACKAGE_MANIFESTS: packages/forma-dsl/package.json packages/forma-dsl-mcp/package.json
 
     permissions:
       contents: write
@@ -153,7 +148,7 @@ jobs:
       id-token: write
 
     steps:
-      # Checked out at the tag, which is the commit the version numbers describe.
+      # Checked out at the tag, which is the commit the version number describes.
       - uses: actions/checkout@v7
 
       # Node 24 is what carries npm 11.5.1, the floor for trusted publishing; an older
@@ -168,42 +163,42 @@ jobs:
 
       - run: npm ci
 
-      # Each package is published at the version in its own manifest, and a release
-      # normally aligns them, so the tag names both. A tag matching none of them was cut
-      # by hand against no release at all, and publishing from it would ship numbers
-      # nobody chose.
-      - name: Check the tag against the manifests
+      # The tag names the package and the version, and the manifest has to agree: they are
+      # written in the same commit, so a mismatch is a tag cut against something other than
+      # what is in the tree, and publishing from it would ship a number nobody chose.
+      - name: Resolve the package this tag releases
+        id: package
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
-          matched=""
-          for manifest in $PACKAGE_MANIFESTS; do
-            if [ "$(jq -r .version "$manifest")" = "$tag" ]; then matched="yes"; fi
-          done
-          if [ -z "$matched" ]; then
-            echo "::error::tag v${tag} matches no published manifest"
+          name="${GITHUB_REF_NAME%@*}"
+          version="${GITHUB_REF_NAME##*@}"
+
+          manifest="packages/${name}/package.json"
+          if [ ! -f "$manifest" ] || [ "$(jq -r .name "$manifest")" != "$name" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} names no package in this repository"
             exit 1
           fi
 
-      # npm attaches a trusted publisher only to a package that already exists, so the
-      # first version of each one goes up by hand and everything after it through OIDC.
-      # Checked before anything is published, and before the build: a package missing its
-      # registration otherwise fails the loop after an earlier one has already shipped,
-      # which leaves half a release on the registry under a tag that promised both.
-      - name: Check every package can be published from here
-        run: |
-          set -euo pipefail
-          missing=""
-          for manifest in $PACKAGE_MANIFESTS; do
-            name="$(jq -r .name "$manifest")"
-            if ! npm view "$name" version >/dev/null 2>&1; then
-              missing="${missing} ${name}"
-            fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::never published:${missing} — publish the first version by hand, then register this workflow as its trusted publisher"
+          declared="$(jq -r .version "$manifest")"
+          if [ "$declared" != "$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match ${manifest} ${declared}"
             exit 1
           fi
+
+          # npm attaches a trusted publisher only to a package that already exists, so the
+          # first version of each one goes up by hand and everything after it through OIDC.
+          # Checked before the build, so the failure names the missing registration rather
+          # than surfacing as an authentication error ten minutes later.
+          if ! npm view "$name" version >/dev/null 2>&1; then
+            echo "::error::${name} has never been published — publish the first version by hand, then register this workflow as its trusted publisher"
+            exit 1
+          fi
+
+          {
+            echo "name=${name}"
+            echo "version=${version}"
+            echo "manifest=${manifest}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: npm run build
@@ -213,44 +208,62 @@ jobs:
       - name: Check
         run: npm run check
 
-      # No NODE_AUTH_TOKEN and no `--provenance`: npm trusts this workflow by name, so
-      # the credential is the run's OIDC identity and the attestation is automatic.
-      # Renaming this file breaks publishing until the trusted publisher is recreated —
-      # npm matches it exactly and its configurations cannot be edited in place, and each
-      # package carries its own registration.
-      #
-      # A version already on the registry is skipped rather than failing the release: the
-      # packages are aligned by the release that cuts them but may still be published at
-      # different versions, so a tag can legitimately carry one new package and one that
-      # has not moved.
-      - name: Publish
+      # Each package releases on its own tag, so two of them cut together publish in
+      # parallel. A package that depends on another one from this repository would then be
+      # installable for a minute or two before the version it names exists, which npm
+      # reports as a missing version rather than as a race. Waiting here costs nothing when
+      # the dependency is already up, which is the usual case.
+      - name: Wait for the versions this package depends on
+        env:
+          MANIFEST: ${{ steps.package.outputs.manifest }}
         run: |
           set -euo pipefail
-          {
-            echo "## Published"
-            echo
-            echo "| Package | Version | |"
-            echo "| --- | --- | --- |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          for dependency in packages/*/package.json; do
+            other="$(jq -r .name "$dependency")"
+            if [ "$other" = "${{ steps.package.outputs.name }}" ]; then continue; fi
 
-          for manifest in $PACKAGE_MANIFESTS; do
-            name="$(jq -r .name "$manifest")"
-            version="$(jq -r .version "$manifest")"
-            link="[${version}](https://www.npmjs.com/package/${name}/v/${version})"
+            wanted="$(jq -r --arg n "$other" '.dependencies[$n] // empty' "$MANIFEST" | tr -d '^~')"
+            if [ -z "$wanted" ]; then continue; fi
 
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
-              echo "::notice::${name}@${version} is already on the registry"
-              echo "| \`${name}\` | ${link} | unchanged |" >> "$GITHUB_STEP_SUMMARY"
-              continue
-            fi
-
-            npm publish -w "$name" --access public
-            echo "| \`${name}\` | ${link} | published |" >> "$GITHUB_STEP_SUMMARY"
+            echo "waiting for ${other}@${wanted}"
+            for attempt in $(seq 1 30); do
+              if npm view "${other}@${wanted}" version >/dev/null 2>&1; then
+                echo "${other}@${wanted} is on the registry"
+                break
+              fi
+              if [ "$attempt" = 30 ]; then
+                echo "::error::${other}@${wanted} never appeared on the registry"
+                exit 1
+              fi
+              sleep 10
+            done
           done
 
+      # No NODE_AUTH_TOKEN and no `--provenance`: npm trusts this workflow by name, so the
+      # credential is the run's OIDC identity and the attestation is automatic. Renaming
+      # this file breaks publishing until the trusted publisher is recreated — npm matches
+      # it exactly, its configurations cannot be edited in place, and each package carries
+      # its own registration.
+      - name: Publish
+        run: npm publish -w "${{ steps.package.outputs.name }}" --access public
+
+      # One release per package, titled for the package rather than for the repository, so
+      # the releases page says which of them a version belongs to.
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: ${{ steps.package.outputs.name }} ${{ steps.package.outputs.version }}
           generate_release_notes: true
+
+      - name: Summarise
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          {
+            echo "## Published \`${NAME}@${VERSION}\`"
+            echo
+            echo "- [npm](https://www.npmjs.com/package/${NAME}/v/${VERSION})"
+            echo "- \`npm install ${NAME}@${VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

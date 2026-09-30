@@ -380,10 +380,26 @@ jobs:
             patch) next="${major}.${minor}.$((patch + 1))" ;;
           esac
 
-          if git rev-parse "v${next}" >/dev/null 2>&1; then
-            echo "::error::tag v${next} already exists"
-            exit 1
+          # A repository publishing one package tags the version alone; one publishing
+          # several tags each package by name, because a release page entry has to say
+          # which package a version belongs to. Derived from the list rather than
+          # configured, so this file stays the same in every repository that uses it.
+          published=$(printf '%s\n' $PACKAGE_MANIFESTS | wc -l)
+          if [ "$published" -eq 1 ]; then
+            tags="v${next}"
+          else
+            tags=""
+            for manifest in $PACKAGE_MANIFESTS; do
+              tags="${tags} $(jq -r .name "$manifest")@${next}"
+            done
           fi
+
+          for tag in $tags; do
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              echo "::error::tag ${tag} already exists"
+              exit 1
+            fi
+          done
 
           names=$(for manifest in $PACKAGE_MANIFESTS; do jq -r .name "$manifest"; done)
 
@@ -408,7 +424,9 @@ jobs:
           git commit -m "chore: release v${next}"
           # Annotated: `git push --follow-tags` silently ignores a lightweight tag, and the
           # release workflow would then never run.
-          git tag -a "v${next}" -m "v${next}"
+          for tag in $tags; do
+            git tag -a "$tag" -m "$tag"
+          done
           git push origin "HEAD:$DEFAULT_BRANCH" --follow-tags
 
           {
@@ -420,6 +438,7 @@ jobs:
             echo "| **Next** | \`${next}\` |"
             echo "| **Bump** | ${bump} |"
             echo "| **Reason** | ${reason} |"
+            echo "| **Tags** | $(printf '`%s` ' $tags) |"
           } >> "$GITHUB_STEP_SUMMARY"
 
 
