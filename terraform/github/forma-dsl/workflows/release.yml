@@ -41,9 +41,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The floor is what the toolchain actually supports: Vite 7 and ESLint 10 both
-        # require 20.19, and ESLint additionally rules out 22.0–22.12.
-        node: ["20.19", "22.13", "24.x"]
+        # The floor is the oldest runtime a consumer may still be on: Node 20 reached end
+        # of life in April 2026, and ESLint rules out 22.0–22.12. It is also what the
+        # published `engines` declare — the library ships source, so the runtime that
+        # consumes it is the consumer's.
+        node: ["22.13", "24.x"]
 
     steps:
       - uses: actions/checkout@v7
@@ -124,8 +126,8 @@ jobs:
           args: >
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
-            -Dsonar.sources=packages/forma-dsl/src,apps/landing/src,apps/editor/src,apps/docs/build.mjs
-            -Dsonar.tests=packages/forma-dsl/test,apps/landing/test,apps/editor/test
+            -Dsonar.sources=packages/forma-dsl/src,packages/forma-dsl-mcp/src,apps/landing/src,apps/editor/src,apps/docs/build.mjs
+            -Dsonar.tests=packages/forma-dsl/test,packages/forma-dsl-mcp/test,apps/landing/test,apps/editor/test
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
 
@@ -136,6 +138,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
+    env:
+      # Every published manifest, in the order they are published. A package that depends
+      # on another one here has to go second, or the version it names is not on the
+      # registry when someone installs it. The workspace root is absent: it is private and
+      # carries no version at all.
+      PACKAGE_MANIFESTS: packages/forma-dsl/package.json packages/forma-dsl-mcp/package.json
+
     permissions:
       contents: write
       # npm authenticates this job by its OIDC identity — no token. npm signs the
@@ -144,7 +153,7 @@ jobs:
       id-token: write
 
     steps:
-      # Checked out at the tag, which is the commit the version number describes.
+      # Checked out at the tag, which is the commit the version numbers describe.
       - uses: actions/checkout@v7
 
       # Node 24 is what carries npm 11.5.1, the floor for trusted publishing; an older
@@ -159,21 +168,22 @@ jobs:
 
       - run: npm ci
 
-      # The tag is the source of the version, not the manifest: they are written in the
-      # same commit, and reading the tag means a mismatch cannot ship silently. The
-      # manifest is the library's, not the workspace root's — the root is private and
-      # carries no version at all.
-      - name: Check the tag against the manifest
-        id: version
+      # Each package is published at the version in its own manifest, and a release
+      # normally aligns them, so the tag names both. A tag matching none of them was cut
+      # by hand against no release at all, and publishing from it would ship numbers
+      # nobody chose.
+      - name: Check the tag against the manifests
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
-          pkg="$(jq -r .version packages/forma-dsl/package.json)"
-          if [ "$tag" != "$pkg" ]; then
-            echo "::error::tag v${tag} does not match packages/forma-dsl ${pkg}"
+          matched=""
+          for manifest in $PACKAGE_MANIFESTS; do
+            if [ "$(jq -r .version "$manifest")" = "$tag" ]; then matched="yes"; fi
+          done
+          if [ -z "$matched" ]; then
+            echo "::error::tag v${tag} matches no published manifest"
             exit 1
           fi
-          echo "version=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: npm run build
@@ -186,24 +196,41 @@ jobs:
       # No NODE_AUTH_TOKEN and no `--provenance`: npm trusts this workflow by name, so
       # the credential is the run's OIDC identity and the attestation is automatic.
       # Renaming this file breaks publishing until the trusted publisher is recreated —
-      # npm matches it exactly and its configurations cannot be edited in place.
+      # npm matches it exactly and its configurations cannot be edited in place, and each
+      # package carries its own registration.
+      #
+      # A version already on the registry is skipped rather than failing the release: the
+      # packages are aligned by the release that cuts them but may still be published at
+      # different versions, so a tag can legitimately carry one new package and one that
+      # has not moved.
       - name: Publish
-        run: npm publish -w forma-dsl --access public
+        run: |
+          set -euo pipefail
+          {
+            echo "## Published"
+            echo
+            echo "| Package | Version | |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for manifest in $PACKAGE_MANIFESTS; do
+            name="$(jq -r .name "$manifest")"
+            version="$(jq -r .version "$manifest")"
+            link="[${version}](https://www.npmjs.com/package/${name}/v/${version})"
+
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "::notice::${name}@${version} is already on the registry"
+              echo "| \`${name}\` | ${link} | unchanged |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            npm publish -w "$name" --access public
+            echo "| \`${name}\` | ${link} | published |" >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: forma-dsl ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           generate_release_notes: true
-
-      - name: Summarise
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          {
-            echo "## Published \`forma-dsl@${VERSION}\`"
-            echo
-            echo "- [npm](https://www.npmjs.com/package/forma-dsl/v/${VERSION})"
-            echo "- \`npm install forma-dsl@${VERSION}\`"
-          } >> "$GITHUB_STEP_SUMMARY"

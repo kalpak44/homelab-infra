@@ -211,10 +211,10 @@ jobs:
       SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
 
-      # The manifest holding the version a release bumps. An env var rather than a literal:
-      # in a workspace the published package is not the repository root, and the root
-      # manifest is private and carries no version at all.
-      PACKAGE_MANIFEST: packages/forma-dsl/package.json
+      # The manifests holding the versions a release bumps, space separated. A list rather
+      # than one path: a workspace publishes more than one package, and the root manifest
+      # is private and carries no version at all.
+      PACKAGE_MANIFESTS: packages/forma-dsl/package.json packages/forma-dsl-mcp/package.json
 
       # Where the agent records the release it wants cut. A file, not stdout: the step
       # after this one is bash, and it must not have to parse prose. A literal path, not
@@ -360,7 +360,16 @@ jobs:
           git checkout "$DEFAULT_BRANCH"
           git reset --hard "origin/$DEFAULT_BRANCH"
 
-          current=$(jq -r .version "$PACKAGE_MANIFEST")
+          # Every published manifest moves to the same number, even when only one of them
+          # changed. A package that depends on another one here has to name a version that
+          # exists, and one number across the repository is what keeps a single tag able to
+          # name the release. The highest current version wins, so aligning them never
+          # moves a package backwards.
+          current=0.0.0
+          for manifest in $PACKAGE_MANIFESTS; do
+            version=$(jq -r .version "$manifest")
+            current=$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)
+          done
           IFS='.' read -r major minor patch <<< "$current"
 
           # SemVer §4: below 1.0.0 a breaking change bumps the minor, so `major` lands on
@@ -376,11 +385,26 @@ jobs:
             exit 1
           fi
 
-          jq --arg v "$next" '.version = $v' "$PACKAGE_MANIFEST" > "$PACKAGE_MANIFEST.tmp"
-          mv "$PACKAGE_MANIFEST.tmp" "$PACKAGE_MANIFEST"
+          names=$(for manifest in $PACKAGE_MANIFESTS; do jq -r .name "$manifest"; done)
+
+          for manifest in $PACKAGE_MANIFESTS; do
+            jq --arg v "$next" '.version = $v' "$manifest" > "$manifest.tmp"
+            mv "$manifest.tmp" "$manifest"
+
+            # A dependency on another package released from here is re-pointed at the
+            # number about to ship. Left alone it names the previous release, so the
+            # published package would resolve an older copy of its own repository.
+            for name in $names; do
+              jq --arg n "$name" --arg v "^$next" '
+                reduce ("dependencies", "devDependencies", "peerDependencies") as $section (.;
+                  if (.[$section] // {} | has($n)) then .[$section][$n] = $v else . end)
+              ' "$manifest" > "$manifest.tmp"
+              mv "$manifest.tmp" "$manifest"
+            done
+          done
           npm install --package-lock-only --ignore-scripts >/dev/null 2>&1 || true
 
-          git add "$PACKAGE_MANIFEST" package-lock.json
+          git add $PACKAGE_MANIFESTS package-lock.json
           git commit -m "chore: release v${next}"
           # Annotated: `git push --follow-tags` silently ignores a lightweight tag, and the
           # release workflow would then never run.
