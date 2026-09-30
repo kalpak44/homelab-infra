@@ -91,9 +91,10 @@ Read AGENT_MODE:
           QUALITY GATE for the ref you worked on, and stop. Do not also sweep.
   sweep   nothing failed; this is the scheduled or manual pass. Do PART B.
 
-READ THE SONAR QUALITY GATE runs on EVERY sweep, including one where you find no
-eligible pull request at all. Finding none is not a reason to finish: an unread
-quality gate is the thing that rots quietly.
+READ THE SONAR QUALITY GATE and CLEAR THE SONAR FINDINGS ON THE DEFAULT BRANCH
+both run on EVERY sweep, including one where you find no eligible pull request
+at all. Finding none is not a reason to finish: an unread quality gate is the
+thing that rots quietly, and the findings it does not fail on rot beside it.
 
 ======================================================================
 PART A — REPAIR THE PIPELINE THAT FAILED
@@ -908,7 +909,54 @@ Avoid noisy progress comments.
 Prefer one useful final comment.
 
 ----------------------------------------------------------------------
-24. DECIDE THE RELEASE, ONCE, AT THE END
+24. CLEAR THE SONAR FINDINGS ON THE DEFAULT BRANCH
+----------------------------------------------------------------------
+
+Do this once, after every pull request in this run has been handled, and only in
+sweep mode. The gate fails on some findings and not others, so the rest
+accumulate quietly until a rule update turns a pile of them into a blocked
+merge — which then lands on whoever opened the next pull request, not on
+whatever introduced them.
+
+You already read them in READ THE SONAR QUALITY GATE. Work from that list: every
+unresolved issue on branch=$DEFAULT_BRANCH, whatever its severity, whether or
+not the gate is currently failing on it.
+
+Fix them on the default branch directly. This is the second and last exception
+to the rule against committing there, and it carries the same discipline as
+repairing a pipeline that failed on it:
+
+  - the repository's own build, lint, format and test commands must pass
+    locally BEFORE you commit
+  - ONE commit for the whole cleanup
+  - after pushing, wait for the pipeline it starts and confirm it went green
+
+Skip this section entirely if you have already committed to the default branch
+in this run.
+
+IN SCOPE is the mechanical rewrite that leaves behaviour identical: the API the
+rule prefers for what the code already does, a redundant call collapsed, a
+clearer spelling of the same expression.
+
+NOT IN SCOPE is any finding whose fix would change what the code does. The
+common one is an `await` inside a loop: a loop that awaits in sequence is very
+often doing so on purpose — the order matters, or the thing being called must
+not be hit concurrently — so turning it into a parallel batch to silence the
+rule is a behaviour change wearing a cleanup's clothes. Read what the loop is
+for, and leave it alone when sequential execution is load-bearing.
+
+The absolute limit is unchanged: fix the code, never the gate. Marking an issue
+won't-fix, adding an analysis exclusion, or disabling a rule inline is not a fix
+here any more than anywhere else.
+
+Review the whole diff before you commit it, as closely as you review a pull
+request's. Nobody asked for this change, so it has to be worth the risk it
+carries if it is wrong.
+
+Report every finding you left, naming the rule, the file and the reason.
+
+----------------------------------------------------------------------
+25. DECIDE THE RELEASE, ONCE, AT THE END
 ----------------------------------------------------------------------
 
 Do this once, after every PR in this run has been handled — never per PR. A
@@ -917,9 +965,13 @@ sweep that merges ten PRs cuts one release, not ten.
 In repair mode A7 has already told you what to write here. Write that, and do
 not also decide a bump from pull requests you did not handle.
 
-If you merged nothing, write to the file named by BUMP_FILE:
+If you merged nothing and committed no cleanup, write to the file named by
+BUMP_FILE:
 
   {"bump": "none", "reason": "nothing merged"}
+
+A cleanup commit on its own is a release, and a patch: it changes the code this
+project ships without changing anything a consumer calls.
 
 Otherwise decide how far the version should move, considering everything you
 merged together, and write:
@@ -956,10 +1008,12 @@ These rules override everything else.
 - NEVER re-run a failed run more than once.
 - Repair at most ONE failed run per invocation, and make at most ONE commit to
   the default branch per invocation.
-- NEVER commit or push directly to the default/base branch, with ONE exception,
-  which requires the repository's own validation to have passed locally first:
-  repairing a pipeline that failed on that branch (A6). Nothing else may reach
-  that branch directly.
+- NEVER commit or push directly to the default/base branch, with TWO exceptions,
+  both of which require the repository's own validation to have passed locally
+  first: repairing a pipeline that failed on that branch (A6), and clearing the
+  Sonar findings at the end of a sweep. Nothing else may reach that branch
+  directly, and the one-commit-per-invocation cap covers both — they are in
+  different modes, so a single run can only ever do one of them.
 - NEVER write package.json's version, and NEVER create or push a tag; write the
   file named by BUMP_FILE and let the step after you compute the number.
 - Every compatibility fix for a PR goes to that PR's head branch. Only that one
@@ -1023,5 +1077,9 @@ Examples:
   #123 — example-lib 2.4.1 → 2.5.0 — merged — no fixes — validation and final CI passed
   #124 — foo 7.2 → 8.0 — merged — fixes committed — migrated removed API; tests and final CI passed
   #125 — bar 3.1 → 4.0 — left open — no fixes — migration requires an architectural decision
+
+Then one line for the Sonar cleanup:
+
+  sonar — <n> findings fixed — <n> left — <rule and reason for each left, or "none">
 
 Then one last line naming the bump you wrote to BUMP_FILE, and why.
