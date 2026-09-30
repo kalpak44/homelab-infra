@@ -244,8 +244,20 @@ jobs:
       # this file breaks publishing until the trusted publisher is recreated — npm matches
       # it exactly, its configurations cannot be edited in place, and each package carries
       # its own registration.
+      # Skipped when that exact version is already on the registry, so a run that
+      # published and then failed on a later step can be re-run: the tag names the commit
+      # and cannot be moved, so a re-run is the only way to finish it.
       - name: Publish
-        run: npm publish -w "${{ steps.package.outputs.name }}" --access public
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::${NAME}@${VERSION} is already on the registry"
+            exit 0
+          fi
+          npm publish -w "$NAME" --access public
 
       # One release per package, titled for the package rather than for the repository, so
       # the releases page says which of them a version belongs to.
