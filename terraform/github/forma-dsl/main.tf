@@ -19,19 +19,23 @@ resource "github_repository" "this" {
   name       = local.repository
   visibility = "public"
 
-  description = "A declarative DSL for 3D modeling and scene composition, reusable components, and live previews. Built with Java and JavaScript."
+  description = "A declarative DSL for parametric CAD and 3D modeling, with an MCP server, browser editor, and live WebGL previews. JavaScript monorepo published to npm."
   topics = [
     "dsl",
     "declarative",
+    "cad",
     "3d-modeling",
-    "scene-description",
     "computer-graphics",
     "constructive-solid-geometry",
     "parametric-modeling",
-    "java",
-    "javascript",
     "parser",
     "language-design",
+    "javascript",
+    "typescript",
+    "webassembly",
+    "mcp",
+    "threejs",
+    "monorepo",
   ]
 
   has_issues   = true
