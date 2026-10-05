@@ -45,8 +45,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   # Pinned so the report cannot change without a commit to attribute it to.
-  SYFT_VERSION: v1.52.0
-  GRYPE_VERSION: v0.119.0
+  SYFT_VERSION: v1.54.0
+  GRYPE_VERSION: v0.120.0
 
 jobs:
   verify:
@@ -325,8 +325,8 @@ jobs:
       # checksums are rewritten together by the weekly sweep that moves these pins.
       - name: Install syft and grype
         env:
-          SYFT_INSTALLER_SHA256: ea054f8b6754db17d34129482ecda1ab733cadab57c1c9202bbe98eb5fe18d24
-          GRYPE_INSTALLER_SHA256: 8646f06a90b10ca64992c1809b4aa00c44e30b4f551f63c309b0b0ab66873556
+          SYFT_INSTALLER_SHA256: 787fe2aa12311f7dd8e1d9337dfc6e25f091396c958937293a2d3c0eca2ff8ce
+          GRYPE_INSTALLER_SHA256: 4bc8e844d1ca0b74082cb51e1587d58c35150756954660db3d3078e57c81cbfd
         run: |
           set -euo pipefail
 
