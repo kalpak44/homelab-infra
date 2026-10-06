@@ -1,0 +1,10 @@
+---
+- name: Create ubuntu user with password login
+  ansible.builtin.user:
+    name: ubuntu
+    password: "{{ 'ubuntu' | password_hash('sha512') }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+    create_home: true
+    update_password: always

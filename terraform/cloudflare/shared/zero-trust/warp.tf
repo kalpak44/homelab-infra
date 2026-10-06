@@ -6,6 +6,12 @@
 # This is a *private network route*, not an ingress rule, so it does not touch
 # cloudflare_zero_trust_tunnel_cloudflared_config and cannot disturb the public
 # hostnames or the http_status:404 catch-all.
+#
+# mihal-lxc's own route, tunnel and service token live in
+# cloudflare/shared/mihal-lxc-warp/ instead of here — only the split-tunnel
+# carve-out below is unavoidably shared, because the default device profile
+# (cloudflare_zero_trust_split_tunnel.default) is one account-wide setting no
+# matter which tunnel advertises a route into it.
 
 locals {
   warp_account_id = data.cloudflare_zone.this.account_id
@@ -15,15 +21,27 @@ locals {
   # anything else on the LAN.
   warp_target_cidr = "192.168.1.5/32"
 
-  # 192.168.0.0/16 minus 192.168.1.5/32. Verified to cover 65535 of the 65536
-  # addresses, with 192.168.1.4 and 192.168.1.6 still excluded. Recompute if
-  # warp_target_cidr changes:
-  #   python3 -c "import ipaddress as i; print(list(i.ip_network('192.168.0.0/16').address_exclude(i.ip_network('192.168.1.5/32'))))"
+  # The mihal-lxc target, routed by its own dedicated tunnel in
+  # cloudflare/shared/mihal-lxc-warp/ — carved out here anyway, since this
+  # split-tunnel profile is the one place that is genuinely a single
+  # account-wide resource.
+  warp_target_cidr_mihal = "192.168.1.9/32"
+
+  # 192.168.0.0/16 minus 192.168.1.5/32 and 192.168.1.9/32. Verified to cover
+  # 65534 of the 65536 addresses, with every other 192.168.1.0/24 address still
+  # excluded. Recompute if either warp_target_cidr* changes:
+  #   python3 -c "
+  #   import ipaddress as i
+  #   nets = [i.ip_network('192.168.0.0/16')]
+  #   for ex in [i.ip_network('192.168.1.5/32'), i.ip_network('192.168.1.9/32')]:
+  #       nets = [r for n in nets for r in n.address_exclude(ex)]
+  #   print(sorted(nets, key=lambda n: (n.network_address, n.prefixlen)))"
   warp_lan_carveout = [
     "192.168.0.0/24", "192.168.1.0/30", "192.168.1.4/32", "192.168.1.6/31",
-    "192.168.1.8/29", "192.168.1.16/28", "192.168.1.32/27", "192.168.1.64/26",
-    "192.168.1.128/25", "192.168.2.0/23", "192.168.4.0/22", "192.168.8.0/21",
-    "192.168.16.0/20", "192.168.32.0/19", "192.168.64.0/18", "192.168.128.0/17",
+    "192.168.1.8/32", "192.168.1.10/31", "192.168.1.12/30", "192.168.1.16/28",
+    "192.168.1.32/27", "192.168.1.64/26", "192.168.1.128/25", "192.168.2.0/23",
+    "192.168.4.0/22", "192.168.8.0/21", "192.168.16.0/20", "192.168.32.0/19",
+    "192.168.64.0/18", "192.168.128.0/17",
   ]
 
   # Cloudflare's stock exclude list, reproduced verbatim except that
@@ -54,7 +72,7 @@ locals {
     ],
     [for c in local.warp_lan_carveout : {
       address     = c
-      description = "LAN except ${local.warp_target_cidr}"
+      description = "LAN except ${local.warp_target_cidr}, ${local.warp_target_cidr_mihal}"
     }]
   )
 }

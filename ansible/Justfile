@@ -71,8 +71,16 @@ configure resource: setup
         echo "warning: SSH_PRIVATE_KEY did not parse; falling back to password auth" >&2
       fi
     fi
+    # mihal-lxc's cloudflared points at its own dedicated Tunnel, not the shared
+    # homelab one, so its token is read live from that dir's Terraform state
+    # rather than stored as a second GitHub secret.
+    cloudflare_tunnel_token_mihal=""
+    if [[ "{{resource}}" == "mihal-lxc" ]]; then
+      cloudflare_tunnel_token_mihal="$(cd ../terraform && just output cloudflare shared/mihal-lxc-warp tunnel_token)"
+    fi
     ansible-playbook "$playbook" ${key_args[@]+"${key_args[@]}"} \
       -e "host_password=${HOST_PASSWORD:-}" \
+      -e "cloudflare_tunnel_token_mihal=${cloudflare_tunnel_token_mihal}" \
       -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
       -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
       -e "adguard_username=${ADGUARD_USERNAME:-}" \
@@ -140,5 +148,6 @@ list:
     @printf "  %-24s %s\n" "nfs-vm"           "NFS server - persistent volumes for k3s"
     @printf "  %-24s %s\n" "portainer-vm"     "Portainer - Docker container management UI"
     @printf "  %-24s %s\n" "cloudflared-lxc"  "Cloudflare Tunnel daemon - WAN-less public ingress"
+    @printf "  %-24s %s\n" "mihal-lxc"        "Cloudflare Tunnel daemon - isolated WARP-only SSH, no LAN access"
     @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
     @printf "  %-24s %s\n" "k3s-cluster/flux" "Flux CD - GitOps bootstrap on the k3s cluster"

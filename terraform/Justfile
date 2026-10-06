@@ -233,6 +233,7 @@ list:
     @printf "    %-40s %s\n" "dns/private/acestream"                   "acestream.internal → 192.168.1.7 (AceStream engine + acexy + Threadfin, Portainer stack)"
     @echo "  shared (non-DNS Cloudflare resources)"
     @printf "    %-40s %s\n" "shared/cloudflare-email"                 "contact@pavel-usanli.online → Gmail forwarding"
+    @printf "    %-40s %s\n" "shared/mihal-lxc-warp"                   "Dedicated Cloudflare Tunnel + Gateway policy — WARP-only SSH to mihal-lxc (192.168.1.9)"
     @printf "    %-40s %s\n" "shared/zero-trust"                       "Cloudflare Zero Trust tunnel + public DNS (pavel-usanli.online, proklinator.online)"
     @echo
     @echo "Proxmox - LXCs + VMs (just deploy proxmox <resource>):"
@@ -243,6 +244,7 @@ list:
     @printf "  %-14s %s\n" "rabbitmq-lxc"   "LXC 205 · 192.168.1.8   · RabbitMQ"
     @printf "  %-14s %s\n" "cloudflared-lxc" "LXC 210 · 192.168.1.10  · Cloudflare Tunnel connector"
     @printf "  %-14s %s\n" "nocobase-lxc"   "LXC 207 · 192.168.1.5   · NocoBase (20G root + 50G data, LAN-isolated)"
+    @printf "  %-14s %s\n" "mihal-lxc"      "LXC 208 · 192.168.1.9   · 512MB RAM, 20G disk"
     @printf "  %-14s %s\n" "nfs-vm"         "VM  301 · 192.168.1.108 · NFS server (k3s PVs)"
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"

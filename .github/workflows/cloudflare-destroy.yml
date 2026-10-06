@@ -22,6 +22,7 @@ on:
           - dns/private/traefik
           - dns/private/vault
           - shared/cloudflare-email
+          - shared/mihal-lxc-warp
           - shared/zero-trust
 
 jobs:
