@@ -509,12 +509,12 @@ jobs:
           # The two dependencies track moving tags on purpose. A pin here rots
           # silently and needs its own bump; a moving tag fails loudly in this gate.
           #
-          # quay.io/minio/minio now 401s on every tag, anonymous or not — MinIO gated
-          # it behind login. quay.io/minio/aistor/minio is the same server under its
-          # post-rebrand name and is still pullable anonymously.
+          # quay.io/minio/minio now 401s on every tag, anonymous or not, and its
+          # pullable successor quay.io/minio/aistor/minio denies every S3 call without
+          # a paid license. s3mock is a free, unlicensed S3-API test double instead.
           # ---------------------------------------------------------------------
           PG_IMAGE="${SMOKE_PG_IMAGE:-public.ecr.aws/docker/library/postgres:18-alpine}"
-          S3_IMAGE="${SMOKE_S3_IMAGE:-quay.io/minio/aistor/minio:latest}"
+          S3_IMAGE="${SMOKE_S3_IMAGE:-docker.io/adobe/s3mock:latest}"
 
           NET="smoke-net-$$"; PGC="smoke-pg-$$"; S3C="smoke-s3-$$"
           PGPASS=smokepass; AKID=smokekey; SECRET=smokesecret123
@@ -525,7 +525,7 @@ jobs:
           }
           trap integration_cleanup EXIT
 
-          # MinIO has no KMS here, so SSE is off for the test. The upload path is the
+          # s3mock has no KMS, so SSE is off for the test. The upload path is the
           # same; only the header differs.
           backup_run() {
             docker run --rm --network "$NET" \
@@ -535,7 +535,7 @@ jobs:
               -e S3_BUCKET=smoke -e S3_PREFIX=pg \
               -e AWS_DEFAULT_REGION=us-east-1 \
               -e AWS_ACCESS_KEY_ID="$AKID" -e AWS_SECRET_ACCESS_KEY="$SECRET" \
-              -e AWS_ENDPOINT_URL="http://${S3C}:9000" \
+              -e AWS_ENDPOINT_URL="http://${S3C}:9090" \
               -e S3_SSE= -e RETENTION_COUNT="$1" \
               "$IMG"
           }
@@ -543,7 +543,7 @@ jobs:
           aws_in_image() {
             docker run --rm --network "$NET" --entrypoint sh "$IMG" -c \
               "AWS_ACCESS_KEY_ID=$AKID AWS_SECRET_ACCESS_KEY=$SECRET AWS_DEFAULT_REGION=us-east-1 \
-               aws --endpoint-url http://${S3C}:9000 $1"
+               aws --endpoint-url http://${S3C}:9090 $1"
           }
 
           # A moving tag still needs pulling, and public.ecr.aws throttles anonymous
@@ -565,9 +565,7 @@ jobs:
 
             docker run -d --name "$PGC" --network "$NET" \
               -e POSTGRES_PASSWORD="$PGPASS" -e POSTGRES_DB=smokedb "$PG_IMAGE" >/dev/null
-            docker run -d --name "$S3C" --network "$NET" \
-              -e MINIO_ROOT_USER="$AKID" -e MINIO_ROOT_PASSWORD="$SECRET" \
-              "$S3_IMAGE" server /data >/dev/null
+            docker run -d --name "$S3C" --network "$NET" "$S3_IMAGE" >/dev/null
 
             i=0
             while ! docker exec "$PGC" pg_isready -U postgres -d smokedb >/dev/null 2>&1; do
@@ -600,7 +598,7 @@ jobs:
               -e S3_BUCKET=smoke \
               -e AWS_DEFAULT_REGION=us-east-1 \
               -e AWS_ACCESS_KEY_ID="$AKID" -e AWS_SECRET_ACCESS_KEY="$SECRET" \
-              -e AWS_ENDPOINT_URL="http://${S3C}:9000" \
+              -e AWS_ENDPOINT_URL="http://${S3C}:9090" \
               -e RESTORE_S3_KEY="$key" \
               "$IMG" >/dev/null || { echo "restore failed"; return 1; }
 
