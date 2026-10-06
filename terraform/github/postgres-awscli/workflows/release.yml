@@ -508,9 +508,13 @@ jobs:
           #
           # The two dependencies track moving tags on purpose. A pin here rots
           # silently and needs its own bump; a moving tag fails loudly in this gate.
+          #
+          # quay.io/minio/minio now 401s on every tag, anonymous or not — MinIO gated
+          # it behind login. quay.io/minio/aistor/minio is the same server under its
+          # post-rebrand name and is still pullable anonymously.
           # ---------------------------------------------------------------------
           PG_IMAGE="${SMOKE_PG_IMAGE:-public.ecr.aws/docker/library/postgres:18-alpine}"
-          S3_IMAGE="${SMOKE_S3_IMAGE:-quay.io/minio/minio:latest}"
+          S3_IMAGE="${SMOKE_S3_IMAGE:-quay.io/minio/aistor/minio:latest}"
 
           NET="smoke-net-$$"; PGC="smoke-pg-$$"; S3C="smoke-s3-$$"
           PGPASS=smokepass; AKID=smokekey; SECRET=smokesecret123
