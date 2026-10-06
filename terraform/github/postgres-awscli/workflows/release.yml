@@ -542,8 +542,22 @@ jobs:
                aws --endpoint-url http://${S3C}:9000 $1"
           }
 
+          # A moving tag still needs pulling, and public.ecr.aws throttles anonymous
+          # pulls from the shared Actions IP pool — backing off here is what tells
+          # that apart from the image actually being broken.
+          pull_with_retry() {
+            local img="$1" i=0
+            until docker pull -q "$img" >/dev/null 2>&1; do
+              i=$((i + 1)); [ "$i" -ge 5 ] && return 1
+              sleep $((i * 15))
+            done
+          }
+
           integration() {
             docker network create "$NET" >/dev/null
+
+            pull_with_retry "$PG_IMAGE" || { echo "could not pull $PG_IMAGE"; return 1; }
+            pull_with_retry "$S3_IMAGE" || { echo "could not pull $S3_IMAGE"; return 1; }
 
             docker run -d --name "$PGC" --network "$NET" \
               -e POSTGRES_PASSWORD="$PGPASS" -e POSTGRES_DB=smokedb "$PG_IMAGE" >/dev/null
