@@ -420,7 +420,25 @@ jobs:
           done
           npm install --package-lock-only --ignore-scripts >/dev/null 2>&1 || true
 
-          git add $PACKAGE_MANIFESTS package-lock.json
+          # This repo's CHANGELOG.md is a flat, undated `## [X.Y.Z]` list the agent can
+          # safely prepend to. mac-calendar-mcp and forma-dsl deliberately do NOT get this
+          # step: the former has no CHANGELOG.md, and the latter curates dated entries
+          # under an `## Unreleased` section with Added/Fixed/Breaking subsections that a
+          # one-line mechanical prepend would corrupt rather than extend. Do not copy this
+          # block into those repos' workflow without solving that first.
+          awk -v v="$next" -v r="$reason" '
+            !done && /^## \[/ {
+              print "## [" v "]"
+              print ""
+              print "- " r
+              print ""
+              done=1
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.md.tmp
+          mv CHANGELOG.md.tmp CHANGELOG.md
+
+          git add $PACKAGE_MANIFESTS package-lock.json CHANGELOG.md
           git commit -m "chore: release v${next}"
           # Annotated: `git push --follow-tags` silently ignores a lightweight tag, and the
           # release workflow would then never run.
