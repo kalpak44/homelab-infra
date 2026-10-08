@@ -111,12 +111,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Pinned, unlike every other job here: this is the only one that compiles
-          # against the runner's own X11 headers and toolchain. Unpin once a build on
-          # the newer image has been seen to produce a working binding.
+          # Pinned, unlike every other job here: these two compile against the runner's
+          # own X11 headers and toolchain. Unpin once a build on the newer image has been
+          # seen to produce a working binding.
           - os: ubuntu-24.04
             target: linux-x64
             asset_name: code-viewer-bot-linux-x64.vsix
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            asset_name: code-viewer-bot-linux-arm64.vsix
           - os: macos-latest
             target: darwin-arm64
             asset_name: code-viewer-bot-darwin-arm64.vsix
@@ -126,6 +129,9 @@ jobs:
           - os: windows-latest
             target: win32-x64
             asset_name: code-viewer-bot-win32-x64.vsix
+          - os: windows-11-arm
+            target: win32-arm64
+            asset_name: code-viewer-bot-win32-arm64.vsix
 
     steps:
       - uses: actions/checkout@v7
@@ -216,7 +222,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for target in linux-x64 darwin-arm64 darwin-x64 win32-x64; do
+          for target in linux-x64 linux-arm64 darwin-arm64 darwin-x64 win32-x64 win32-arm64; do
             if [ ! -f "dist/code-viewer-bot-${target}.vsix" ]; then
               echo "::error::missing artifact for ${target}"
               missing=1
