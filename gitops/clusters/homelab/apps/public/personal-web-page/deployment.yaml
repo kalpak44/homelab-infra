@@ -26,7 +26,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: personal-web-page
-          image: ghcr.io/kalpak44/kalpak44:db7c66a
+          image: ghcr.io/kalpak44/kalpak44:13979c4
           ports:
             - containerPort: 80
           resources:
