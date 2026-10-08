@@ -204,7 +204,7 @@ jobs:
           fi
 
       - name: Download VSIX artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: code-viewer-bot-*.vsix
           path: dist
@@ -225,7 +225,7 @@ jobs:
           [ "$missing" -eq 0 ]
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: code-viewer-bot ${{ github.ref_name }}
@@ -248,7 +248,7 @@ jobs:
         run: npm install -g @vscode/vsce
 
       - name: Download VSIX artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: code-viewer-bot-*.vsix
           path: dist
