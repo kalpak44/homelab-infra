@@ -165,8 +165,8 @@ jobs:
         run: npm rebuild robotjs
 
       # A swallowed rebuild shipped a VSIX with no native binding — broken for the user,
-      # green in the pipeline. The check is that the binary exists, not that it loads:
-      # robotjs opens an X display on import and there is none on a runner.
+      # green in the pipeline. Cheap and early: a missing binary fails here instead of
+      # inside the slower smoke test below.
       - name: Verify the native binding is present
         shell: bash
         run: |
@@ -177,6 +177,28 @@ jobs:
 
       - name: Package VSIX
         run: vsce package --target ${{ matrix.target }} --out ${{ matrix.asset_name }}
+
+      # .vscodeignore's hand-maintained allowlist can drop a file robotjs needs besides
+      # its own .node binary (node-gyp-build, its prebuilds) with the check above still
+      # green — exactly what shipped broken on every platform before this step existed.
+      # A plain `require` only: a mouse/keyboard/screen call opens a display this runner
+      # lacks.
+      - name: Smoke test the packaged VSIX (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/vsix-smoke
+          unzip -q "${{ matrix.asset_name }}" -d /tmp/vsix-smoke
+          node -e "require('/tmp/vsix-smoke/extension/node_modules/robotjs'); console.log('robotjs loaded from the packaged VSIX')"
+
+      - name: Smoke test the packaged VSIX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dest = "$env:RUNNER_TEMP\vsix-smoke"
+          Expand-Archive -Path "${{ matrix.asset_name }}" -DestinationPath $dest -Force
+          node -e "require('$dest/extension/node_modules/robotjs'); console.log('robotjs loaded from the packaged VSIX')"
 
       - name: Upload VSIX as workflow artifact
         uses: actions/upload-artifact@v7
