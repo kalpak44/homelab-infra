@@ -192,11 +192,14 @@ jobs:
           unzip -q "${{ matrix.asset_name }}" -d /tmp/vsix-smoke
           node -e "require('/tmp/vsix-smoke/extension/node_modules/robotjs'); console.log('robotjs loaded from the packaged VSIX')"
 
+      # $env:RUNNER_TEMP carries Windows backslashes, and embedded in a single-quoted JS
+      # string one of them — \v — is a vertical-tab escape, not a path separator. Forward
+      # slashes avoid that; Windows path APIs accept either.
       - name: Smoke test the packaged VSIX (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $dest = "$env:RUNNER_TEMP\vsix-smoke"
+          $dest = (Join-Path $env:RUNNER_TEMP 'vsix-smoke') -replace '\\', '/'
           Expand-Archive -Path "${{ matrix.asset_name }}" -DestinationPath $dest -Force
           node -e "require('$dest/extension/node_modules/robotjs'); console.log('robotjs loaded from the packaged VSIX')"
 
