@@ -18,6 +18,10 @@
 #   4. Jellyfin
 #      Indexes and streams downloaded media to TVs, browsers, phones, and apps.
 #
+#   5. Jackett
+#      Translates searches into tracker-specific queries and exposes them as a
+#      single Torznab feed.
+#
 # Data flow
 # ---------
 #
@@ -29,6 +33,9 @@
 #   Jellyfin mounts the same directory read-only as its media library.
 #
 #   TorrServer uses its own configuration, logs, and torrent metadata directories.
+#
+#   Jackett drops the .torrent files it fetches into the same directory, so a
+#   qBittorrent watch folder can pick them up.
 #
 # Portainer deployment
 # --------------------
@@ -52,18 +59,20 @@
 #   mkdir -p /mnt/data/filebrowser
 #   mkdir -p /mnt/data/jellyfin/config
 #   mkdir -p /mnt/data/jellyfin/cache
+#   mkdir -p /mnt/data/jackett/config
 #
 # Ensure UID 1000 and GID 1000 can read and write the relevant directories:
 #
 #   chown -R 1000:1000 /mnt/data/qbittorrent
 #   chown -R 1000:1000 /mnt/data/downloads
 #   chown -R 1000:1000 /mnt/data/jellyfin
+#   chown -R 1000:1000 /mnt/data/jackett
 #
 # Security notes
 # --------------
 #
 # - TorrServer HTTP authentication is disabled by TS_HTTPAUTH=0.
-# - qBittorrent, File Browser, Jellyfin, and TorrServer should not be exposed
+# - qBittorrent, File Browser, Jellyfin, Jackett, and TorrServer should not be exposed
 #   directly to the public internet without authentication, TLS, and firewalling.
 # - Consider placing browser-based services behind a reverse proxy such as
 #   Traefik, Caddy, or Nginx Proxy Manager.
@@ -269,3 +278,43 @@ services:
       # The read-only flag protects downloaded files from accidental modification
       # or deletion by Jellyfin.
       - /mnt/data/downloads:/media:ro
+
+  # ============================================================================
+  # Jackett
+  # ============================================================================
+  #
+  # Jackett turns a single search into tracker-specific queries and serves the
+  # results as one Torznab feed, which qBittorrent and the *arr applications can
+  # consume without implementing each tracker themselves.
+  #
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    container_name: jackett
+    restart: unless-stopped
+
+    environment:
+      # Run container processes using this host user and group.
+      # Adjust these values to match the owner of the mounted directories.
+      PUID: "1000"
+      PGID: "1000"
+
+      # Time zone used for logs and scheduled activity.
+      TZ: "Europe/Sofia"
+
+      # Update the bundled Jackett binary on container start.
+      AUTO_UPDATE: "true"
+
+    ports:
+      # Jackett web interface and Torznab endpoints:
+      #   http://<docker-host-ip>:9117
+      - "9117:9117"
+
+    volumes:
+      # Persistent indexer definitions, API key, and application settings.
+      - /mnt/data/jackett/config:/config
+
+      # Blackhole directory for .torrent files Jackett downloads.
+      #
+      # This is the shared download directory, so a qBittorrent watch folder can
+      # pick the files up without a second mount.
+      - /mnt/data/downloads:/downloads
