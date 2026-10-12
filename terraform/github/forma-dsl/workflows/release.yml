@@ -19,7 +19,7 @@ on:
     branches: [main]
     # One tag per published package, `<name>@<version>`, so each gets its own entry on the
     # releases page. Adding a package means adding its pattern here.
-    tags: ["forma-dsl@*", "forma-dsl-mcp@*"]
+    tags: ["forma-dsl@*", "forma-dsl-cli@*", "forma-dsl-mcp@*"]
   # The agent starts this for a pull request whose head commit has no checks — a branch
   # opened before the check existed never gets one retroactively.
   workflow_dispatch: {}
@@ -110,6 +110,24 @@ jobs:
       - name: Inspect the publishable tarball
         run: npm run check:package
 
+      # S9382 — "promises should not be awaited sequentially in a loop" — is turned off for
+      # four files, and only those four. It arrived in SonarJS 4.2.2 and flagged five loops
+      # that are sequential on purpose, each of which Promise.all would quietly break:
+      #
+      #   packages/forma-dsl/src/lang/evaluate.js  the signal and the maxNodes budget are
+      #     checked on the way into every block, so entering them concurrently would start
+      #     the whole document before either bound could stop it. That bound is the only
+      #     thing standing between a runaway document and the process.
+      #   packages/forma-dsl/src/index.js  the parts are solved one at a time so a caller
+      #     that aborted during the first does not pay for the rest, which is what lets the
+      #     editor drop a render a later keystroke superseded.
+      #   apps/landing/src/demo.js  it is an animation. Each step re-solves and then waits.
+      #   apps/landing/src/console.js  the same: each await is the pause between two
+      #     keystrokes of the terminal typing itself out.
+      #
+      # Scoped per file rather than disabled in the profile, so a genuinely serial loop
+      # written anywhere else still gets reported.
+      #
       # qualitygate.wait is what makes this block a merge. A missing project key skips
       # rather than fails, so check the step ran. SONAR_TOKEN must be in the Dependabot
       # store too, or it skips on exactly the PRs the gate exists for.
@@ -128,10 +146,19 @@ jobs:
           args: >
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
-            -Dsonar.sources=packages/forma-dsl/src,packages/forma-dsl-mcp/src,apps/landing/src,apps/editor/src,apps/docs/build.mjs
-            -Dsonar.tests=packages/forma-dsl/test,packages/forma-dsl-mcp/test,apps/landing/test,apps/editor/test
+            -Dsonar.sources=packages/forma-dsl/src,packages/forma-dsl-cli/src,packages/forma-dsl-mcp/src,apps/landing/src,apps/editor/src,apps/docs/build.mjs
+            -Dsonar.tests=packages/forma-dsl/test,packages/forma-dsl-cli/test,packages/forma-dsl-mcp/test,apps/landing/test,apps/editor/test
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
+            -Dsonar.issue.ignore.multicriteria=await1,await2,await3,await4
+            -Dsonar.issue.ignore.multicriteria.await1.ruleKey=javascript:S9382
+            -Dsonar.issue.ignore.multicriteria.await1.resourceKey=packages/forma-dsl/src/index.js
+            -Dsonar.issue.ignore.multicriteria.await2.ruleKey=javascript:S9382
+            -Dsonar.issue.ignore.multicriteria.await2.resourceKey=packages/forma-dsl/src/lang/evaluate.js
+            -Dsonar.issue.ignore.multicriteria.await3.ruleKey=javascript:S9382
+            -Dsonar.issue.ignore.multicriteria.await3.resourceKey=apps/landing/src/demo.js
+            -Dsonar.issue.ignore.multicriteria.await4.ruleKey=javascript:S9382
+            -Dsonar.issue.ignore.multicriteria.await4.resourceKey=apps/landing/src/console.js
 
   release:
     name: Publish ${{ github.ref_name }}
@@ -185,12 +212,25 @@ jobs:
             exit 1
           fi
 
-          # npm attaches a trusted publisher only to a package that already exists, so the
-          # first version of each one goes up by hand and everything after it through OIDC.
-          # Checked before the build, so the failure names the missing registration rather
-          # than surfacing as an authentication error ten minutes later.
+          # npm attaches a trusted publisher only to a package that already exists, and a
+          # package cannot exist until something publishes it — so the first publish of each
+          # one is by hand and everything after it goes through OIDC. Checked before the
+          # build, so the failure names the missing registration rather than surfacing as an
+          # authentication error ten minutes later.
+          #
+          # The placeholder matters. A configuration that has not completed a successful
+          # publish within two days expires, and the Publish step below SKIPS a version that
+          # is already on the registry — so bootstrapping with the real version means the
+          # tag's run publishes nothing, the registration is never validated, and it expires
+          # before the next release can use it. Bootstrap with a version CI will never cut.
           if ! npm view "$name" version >/dev/null 2>&1; then
-            echo "::error::${name} has never been published — publish the first version by hand, then register this workflow as its trusted publisher"
+            {
+              echo "::error::${name} has never been published, and OIDC cannot create a package."
+              echo "::error::1. npm publish -w ${name} --access public, from a manifest reading version 0.0.0"
+              echo "::error::2. add this repository and release.yml as its trusted publisher on npmjs.com"
+              echo "::error::3. restore the real version and cut ${name}@<version> WITHIN TWO DAYS — that publish validates the registration"
+              echo "::error::4. npm deprecate ${name}@0.0.0 'placeholder'"
+            } >&2
             exit 1
           fi
 
@@ -247,6 +287,10 @@ jobs:
       # Skipped when that exact version is already on the registry, so a run that
       # published and then failed on a later step can be re-run: the tag names the commit
       # and cannot be moved, so a re-run is the only way to finish it.
+      #
+      # A skip is warned about rather than passed over silently, because it is also what a
+      # bootstrap tag cut against a hand-published version does — and in that case nothing
+      # went out over OIDC, so the two-day registration window is still running.
       - name: Publish
         env:
           NAME: ${{ steps.package.outputs.name }}
@@ -254,7 +298,7 @@ jobs:
         run: |
           set -euo pipefail
           if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
-            echo "::notice::${NAME}@${VERSION} is already on the registry"
+            echo "::warning::${NAME}@${VERSION} is already on the registry — nothing was published over OIDC by this run"
             exit 0
           fi
           npm publish -w "$NAME" --access public

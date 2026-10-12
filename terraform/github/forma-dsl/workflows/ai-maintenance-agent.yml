@@ -214,7 +214,7 @@ jobs:
       # The manifests holding the versions a release bumps, space separated. A list rather
       # than one path: a workspace publishes more than one package, and the root manifest
       # is private and carries no version at all.
-      PACKAGE_MANIFESTS: packages/forma-dsl/package.json packages/forma-dsl-mcp/package.json
+      PACKAGE_MANIFESTS: packages/forma-dsl/package.json packages/forma-dsl-cli/package.json packages/forma-dsl-mcp/package.json
 
       # Where the agent records the release it wants cut. A file, not stdout: the step
       # after this one is bash, and it must not have to parse prose. A literal path, not

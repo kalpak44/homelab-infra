@@ -30,7 +30,7 @@ updates:
     # The agent has no per-run limit of its own, so this is sized to not withhold
     # proposals. It throttles how many sit open at once, not how many exist.
     open-pull-requests-limit: 10
-    # The updater invokes npm with a 3-day minimum release age whether or not this is
+    # The updater invokes npm with a 3-day minimum release age whether this is
     # set. Without it the checker still picks a younger version, which npm then refuses
     # to write, and the run fails with "No files were updated!".
     cooldown:
@@ -40,10 +40,16 @@ updates:
     allow:
       - dependency-type: all
     # `forma-dsl` is excluded: the release that cuts a version writes that dependency into
-    # the MCP server's manifest itself, so a proposal here would either duplicate it or
-    # undo it.
+    # every manifest here that names it - the MCP server's and the CLI's - so a proposal
+    # here would either duplicate it or undo it.
     ignore:
       - dependency-name: forma-dsl
+    # One group per project that has dependencies to group. `forma-dsl-cli` has none - it
+    # is the library, which is ignored above, and Node's own modules - so it has no entry
+    # here and needs none; the root entry below already covers every workspace, because npm
+    # resolves them into a single lockfile. Give it a group when it gains a dependency, or
+    # that first one arrives matching nothing and is reported alone and unexplained.
+    #
     # One group per project, so a PR title names what broke when one fails. Minor and
     # patch bumps arrive grouped; majors are deliberately NOT in any group, so they come
     # one PR each — which keeps a break attributable and is the signal release.yml bumps
