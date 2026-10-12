@@ -171,8 +171,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/kalpak44/kubectl-awscli
-  SYFT_VERSION: v1.54.0
-  GRYPE_VERSION: v0.120.0
+  SYFT_VERSION: v1.54.1
+  GRYPE_VERSION: v0.120.1
   # Each remediation attempt is a full build + smoke + scan. Four is enough to walk
   # from any supported Alpine tag to the newest one; the cap is reported when hit.
   REMEDIATION_MAX_ATTEMPTS: "4"
