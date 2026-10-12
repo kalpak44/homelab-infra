@@ -40,12 +40,12 @@ updates:
     allow:
       - dependency-type: all
     # `forma-dsl` is excluded: the release that cuts a version writes that dependency into
-    # every manifest here that names it - the MCP server's and the CLI's - so a proposal
+    # every manifest here that names it — the MCP server's and the CLI's — so a proposal
     # here would either duplicate it or undo it.
     ignore:
       - dependency-name: forma-dsl
-    # One group per project that has dependencies to group. `forma-dsl-cli` has none - it
-    # is the library, which is ignored above, and Node's own modules - so it has no entry
+    # One group per project that has dependencies to group. `forma-dsl-cli` has none — it
+    # is the library, which is ignored above, and Node's own modules — so it has no entry
     # here and needs none; the root entry below already covers every workspace, because npm
     # resolves them into a single lockfile. Give it a group when it gains a dependency, or
     # that first one arrives matching nothing and is reported alone and unexplained.
