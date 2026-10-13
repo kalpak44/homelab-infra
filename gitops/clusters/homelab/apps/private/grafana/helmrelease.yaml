@@ -75,6 +75,222 @@ spec:
       dashboards:
         enabled: true
 
+    # Alert rules live here rather than in the UI, for the same reason the dashboard does.
+    # Summaries avoid Go template syntax: the chart runs these values through tpl, which
+    # would try to resolve a label reference at render time and fail the release.
+    alerting:
+      rules.yaml:
+        apiVersion: 1
+        groups:
+        - orgId: 1
+          name: homelab
+          folder: Homelab
+          interval: 1m
+          rules:
+          - uid: homelab-target-down
+            title: Scrape target down
+            condition: B
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: Prometheus cannot reach this scrape target. Every panel and alert built on it is blind
+                until it comes back; the firing instance names the job.
+            noDataState: NoData
+            execErrState: Error
+            data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: prometheus
+              model:
+                refId: A
+                editorMode: code
+                expr: up
+                instant: true
+                range: false
+                intervalMs: 1000
+                maxDataPoints: 43200
+            - refId: B
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: __expr__
+              model:
+                refId: B
+                type: threshold
+                datasource:
+                  type: __expr__
+                  uid: __expr__
+                expression: A
+                conditions:
+                - type: query
+                  evaluator:
+                    type: lt
+                    params:
+                    - 1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                    - A
+                  reducer:
+                    type: last
+                    params: []
+          - uid: crowdsec-bouncer-idle
+            title: CrowdSec bouncer stopped polling
+            condition: B
+            for: 15m
+            labels:
+              severity: critical
+            annotations:
+              summary: Traefik has stopped fetching the decision stream, so new bans are not being enforced
+                even though CrowdSec keeps deciding them.
+            noDataState: NoData
+            execErrState: Error
+            data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: prometheus
+              model:
+                refId: A
+                editorMode: code
+                expr: sum(rate(cs_lapi_bouncer_requests_total[10m]))
+                instant: true
+                range: false
+                intervalMs: 1000
+                maxDataPoints: 43200
+            - refId: B
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: __expr__
+              model:
+                refId: B
+                type: threshold
+                datasource:
+                  type: __expr__
+                  uid: __expr__
+                expression: A
+                conditions:
+                - type: query
+                  evaluator:
+                    type: lt
+                    params:
+                    - 0.001
+                  operator:
+                    type: and
+                  query:
+                    params:
+                    - A
+                  reducer:
+                    type: last
+                    params: []
+          - uid: crowdsec-machine-stale
+            title: CrowdSec machine stopped reporting
+            condition: B
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: A CrowdSec machine has not sent a heartbeat for 15 minutes. A machine deleted with cscli
+                also lands here, because its gauge survives until the LAPI restarts.
+            noDataState: NoData
+            execErrState: Error
+            data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: prometheus
+              model:
+                refId: A
+                editorMode: code
+                expr: max by (machine) (time() - cs_machines_last_heartbeat_timestamp)
+                instant: true
+                range: false
+                intervalMs: 1000
+                maxDataPoints: 43200
+            - refId: B
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: __expr__
+              model:
+                refId: B
+                type: threshold
+                datasource:
+                  type: __expr__
+                  uid: __expr__
+                expression: A
+                conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                    - 900
+                  operator:
+                    type: and
+                  query:
+                    params:
+                    - A
+                  reducer:
+                    type: last
+                    params: []
+          - uid: prometheus-tsdb-space
+            title: Prometheus TSDB volume filling up
+            condition: B
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: Less than 15% free on the volume holding the time series. Retention caps are in ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml.
+            noDataState: NoData
+            execErrState: Error
+            data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: prometheus
+              model:
+                refId: A
+                editorMode: code
+                expr: node_filesystem_avail_bytes{mountpoint="/var/lib/prometheus"} / node_filesystem_size_bytes{mountpoint="/var/lib/prometheus"}
+                instant: true
+                range: false
+                intervalMs: 1000
+                maxDataPoints: 43200
+            - refId: B
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: __expr__
+              model:
+                refId: B
+                type: threshold
+                datasource:
+                  type: __expr__
+                  uid: __expr__
+                expression: A
+                conditions:
+                - type: query
+                  evaluator:
+                    type: lt
+                    params:
+                    - 0.15
+                  operator:
+                    type: and
+                  query:
+                    params:
+                    - A
+                  reducer:
+                    type: last
+                    params: []
+
     grafana.ini:
       server:
         root_url: https://grafana.internal.pavel-usanli.online
