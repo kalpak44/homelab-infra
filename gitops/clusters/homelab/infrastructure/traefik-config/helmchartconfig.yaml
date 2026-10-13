@@ -129,6 +129,12 @@ spec:
               RequestPath: keep
               RequestScheme: keep
               DownstreamStatus: keep
+              # CrowdSec's traefik parser reads these three unconditionally. Dropping
+              # them still parses the line, but costs three expression warnings per
+              # request, which buries real errors in the agent log.
+              ClientAddr: keep
+              RequestProtocol: keep
+              Duration: keep
           headers:
             defaultMode: drop
             names:
