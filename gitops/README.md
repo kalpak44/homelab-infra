@@ -29,6 +29,7 @@ gitops/clusters/homelab/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
         ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
+        └── grafana/                         # Grafana dashboards (Prometheus datasource)
 ```
 
 ## Required secrets in Vault
@@ -66,6 +67,19 @@ vault kv put secret/crowdsec-secrets \
   webui-machine-id="<value>" \
   webui-password="<value>" \
   enrollment-key="<value>"
+```
+
+### `secret/grafana-secrets`
+
+| Property | Description |
+|---|---|
+| `admin-user` | Grafana admin login |
+| `admin-password` | Grafana admin password |
+
+```bash
+vault kv put secret/grafana-secrets \
+  admin-user="admin" \
+  admin-password="$(openssl rand -base64 24)"
 ```
 
 ### `secret/mite-assistant-mcp-secrets`

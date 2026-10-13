@@ -1,0 +1,62 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana
+  namespace: private
+spec:
+  interval: 30s
+  chart:
+    spec:
+      chart: grafana
+      version: "10.5.x"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+  values:
+    admin:
+      existingSecret: grafana-admin
+      userKey: admin-user
+      passwordKey: admin-password
+
+    # Grafana keeps its users and dashboards in SQLite, which tolerates one writer.
+    # A rolling update whose old pod still holds the database can corrupt it.
+    deploymentStrategy:
+      type: Recreate
+
+    persistence:
+      enabled: true
+      # Named rather than inherited: two StorageClasses are marked default, so an
+      # omitted name resolves to whichever one the API server picks that day.
+      storageClassName: nfs
+      size: 5Gi
+
+    # Provisioned from here rather than through the UI, so the datasource survives
+    # a lost volume. Prometheus runs outside the cluster on its own LXC.
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            uid: prometheus
+            type: prometheus
+            access: proxy
+            url: https://prometheus.internal.pavel-usanli.online:9090
+            isDefault: true
+
+    grafana.ini:
+      server:
+        root_url: https://grafana.internal.pavel-usanli.online
+      users:
+        allow_sign_up: false
+      analytics:
+        reporting_enabled: false
+        check_for_updates: false
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi

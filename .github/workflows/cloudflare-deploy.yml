@@ -11,6 +11,7 @@ on:
           - dns/private/acestream
           - dns/private/adguard
           - dns/private/crowdsec-web-ui
+          - dns/private/grafana
           - dns/private/headlamp
           - dns/private/nfs
           - dns/private/portainer
