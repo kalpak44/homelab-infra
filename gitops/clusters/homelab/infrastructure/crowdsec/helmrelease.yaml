@@ -373,11 +373,14 @@ spec:
         - name: SCENARIOS
           value: "LePresidente/adguardhome-bf crowdsecurity/http-probing crowdsecurity/http-bad-user-agent crowdsecurity/http-backdoors-attempts crowdsecurity/http-sensitive-files crowdsecurity/ssh-bf crowdsecurity/http-path-traversal-probing crowdsecurity/http-sqli-probing crowdsecurity/http-xss-probing crowdsecurity/http-crawl-non_statics crowdsecurity/http-generic-bf crowdsecurity/http-admin-interface-probing crowdsecurity/http-open-proxy"
 
+      # Deliberately unpersisted. The chart seeds a config volume with `mv -n`, so hub
+      # files survive while their pattern data under /var/lib/crowdsec does not - and
+      # `cscli install` then skips the already-present scenario and never refetches it.
+      # Eight scenarios loaded with no patterns and silently matched nothing. It also
+      # gave both agents one shared machine identity on a ReadWriteOnce claim.
       persistentVolume:
         config:
-          enabled: true
-          storageClassName: nfs
-          size: 100Mi
+          enabled: false
 
       resources:
         limits:
