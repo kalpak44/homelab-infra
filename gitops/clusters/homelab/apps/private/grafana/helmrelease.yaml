@@ -29,6 +29,12 @@ spec:
     deploymentStrategy:
       type: Recreate
 
+    # Only chowns the data dir at start-up, but the chart's default tag is from 2019 and
+    # scans dirty. Trivy reports it clean because busybox carries no package database.
+    initChownData:
+      image:
+        tag: "1.38.0"
+
     persistence:
       enabled: true
       # Named rather than inherited: two StorageClasses are marked default, so an
@@ -77,6 +83,10 @@ spec:
     # dashboards/ reaches Grafana without being clicked into the UI or downloaded at
     # start-up from grafana.com.
     sidecar:
+      # Pinned for the same reason as the Grafana image: the chart's own default is
+      # years stale and carries Criticals this dashboard loader has no need of.
+      image:
+        tag: "2.14.1"
       dashboards:
         enabled: true
 
