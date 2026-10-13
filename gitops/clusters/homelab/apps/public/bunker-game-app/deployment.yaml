@@ -20,6 +20,12 @@ spec:
         app: bunker-game-app
     spec:
       automountServiceAccountToken: false
+      # A pod-level context, not only the per-container ones below: the config scanner
+      # treats an empty pod securityContext as running with defaults regardless of what
+      # the containers set.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: bunker
           image: ghcr.io/kalpak44/bunker-party:7ee01cf

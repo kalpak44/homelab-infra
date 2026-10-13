@@ -24,6 +24,12 @@ spec:
       automountServiceAccountToken: false
       # Long enough for the preStop drain plus any in-flight request to finish.
       terminationGracePeriodSeconds: 30
+      # A pod-level context, not only the per-container ones below: the config scanner
+      # treats an empty pod securityContext as running with defaults regardless of what
+      # the containers set.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: personal-web-page
           image: ghcr.io/kalpak44/kalpak44:7604656

@@ -22,6 +22,12 @@ spec:
         app: noco-google-connector-web-page
     spec:
       automountServiceAccountToken: false
+      # A pod-level context, not only the per-container ones below: the config scanner
+      # treats an empty pod securityContext as running with defaults regardless of what
+      # the containers set.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: noco-google-connector-web-page
           # Unquoted on purpose. gitops/Justfile finds this line with

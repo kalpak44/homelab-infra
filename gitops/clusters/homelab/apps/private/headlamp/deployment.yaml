@@ -19,6 +19,12 @@ spec:
       serviceAccountName: headlamp
       # The plugin is distributed as an image whose only content is the built
       # plugin bundle - it is copied into a shared emptyDir, not run.
+      # A pod-level context, not only the per-container ones below: the config scanner
+      # treats an empty pod securityContext as running with defaults regardless of what
+      # the containers set.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: trivy-plugin
           image: ghcr.io/kubebeam/trivy-headlamp-plugin:v0.3.2
