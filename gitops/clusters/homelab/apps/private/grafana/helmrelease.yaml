@@ -14,6 +14,11 @@ spec:
         name: grafana
         namespace: flux-system
   values:
+    # The chart is frozen at appVersion 12.3.1 and no longer published, so the image tag
+    # is pinned here instead: without it Grafana cannot be patched at all.
+    image:
+      tag: "13.2.4"
+
     admin:
       existingSecret: grafana-admin
       userKey: admin-user
