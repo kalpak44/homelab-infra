@@ -99,3 +99,39 @@ resource "cloudflare_ruleset" "proklinator_scanners" {
     )
   }
 }
+
+# Rate limiting is its own phase entrypoint, so it cannot live in the ruleset above.
+# This is the zone's only rate limiting rule — Free allows exactly one — and it is
+# spent on the one route that reaches Stripe with a live key.
+resource "cloudflare_ruleset" "proklinator_ratelimit" {
+  zone_id = data.cloudflare_zone.proklinator.id
+  # Cloudflare names a phase entrypoint "default" and rewrites anything else.
+  name  = "default"
+  kind  = "zone"
+  phase = "http_ratelimit"
+
+  rules {
+    ref         = "ratelimit_checkout_session"
+    action      = "block"
+    description = "Throttle Stripe Checkout Session creation per client IP"
+    enabled     = true
+
+    # Matched on path alone. Free restricts which fields a rate limiting expression may
+    # read, and host and method are not among them — no loss here, because this path
+    # exists on no other hostname in the zone and a GET to it only ever 404s.
+    expression = "starts_with(http.request.uri.path, \"/api/checkout\")"
+
+    ratelimit {
+      # cf.colo.id is mandatory on every rate limiting rule and must not appear in the
+      # expression; Cloudflare counts per data centre on its own.
+      characteristics = ["cf.colo.id", "ip.src"]
+
+      # Free permits one period and one timeout, both 10s. Five checkout attempts in
+      # ten seconds is no longer a buyer, and the ten-second block is enough to stop a
+      # burst opening Stripe sessions faster than crowdsec's bucket can overflow.
+      period              = 10
+      requests_per_period = 5
+      mitigation_timeout  = 10
+    }
+  }
+}
