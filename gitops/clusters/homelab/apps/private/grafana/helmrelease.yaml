@@ -60,7 +60,7 @@ spec:
             type: yesoreyeram-infinity-datasource
             access: proxy
             jsonData:
-              auth_method: apiKeyAuth
+              auth_method: apiKey
               apiKeyKey: X-Api-Key
               apiKeyType: header
               allowedHosts:
