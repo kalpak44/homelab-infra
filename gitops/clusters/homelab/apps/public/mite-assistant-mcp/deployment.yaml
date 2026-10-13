@@ -30,6 +30,18 @@ spec:
         - name: mite-assistant-mcp
           image: ghcr.io/kalpak44/mite-assistant-mcp:2ed20e0
           imagePullPolicy: IfNotPresent
+          # The image's USER is the named `node`, which the kubelet cannot verify as
+          # non-root, so the uid it resolves to has to be stated here.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 3000
           resources:

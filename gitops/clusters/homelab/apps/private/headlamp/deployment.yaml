@@ -26,6 +26,18 @@ spec:
             - /bin/sh
             - -c
             - mkdir -p /build/plugins && cp -r /plugins/* /build/plugins/
+          # Matches the image's own USER. The bundle lands in an emptyDir that the main
+          # container then reads.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: headlamp-plugins
               mountPath: /build/plugins
@@ -48,6 +60,19 @@ spec:
             - name: headlamp-plugins
               mountPath: /build/plugins
               readOnly: true
+          # runAsUser is required, not decorative: the image's USER is the named
+          # `headlamp`, which the kubelet cannot verify as non-root — it refuses the
+          # container outright. 100:101 is what that name resolves to in the image.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 4466
           readinessProbe:

@@ -24,6 +24,16 @@ spec:
         - name: bunker
           image: ghcr.io/kalpak44/bunker-party:7ee01cf
           imagePullPolicy: Always
+          # No runAsNonRoot: the image declares no USER, so the kubelet would refuse the
+          # container. Sablier scales this from zero, so that failure would surface on a
+          # visitor's first request rather than at apply time.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 8000
           readinessProbe:
