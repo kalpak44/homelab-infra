@@ -22,6 +22,13 @@ spec:
 
     config:
       config.yaml.local: |
+        # AppSec writes one alert per blocked request, so the 5000-item default is
+        # reached in about three days and everything older is flushed - which silently
+        # truncates the Grafana history to the same three days.
+        db_config:
+          flush:
+            max_items: 50000
+            max_age: 30d
         api:
           server:
             trusted_ips:
@@ -70,6 +77,90 @@ spec:
                 - "2c0f:f248::/32"
 
       scenarios:
+        # The MCP server answers 401 only when the bearer header is missing, malformed,
+        # or rejected by Mite - including a request replaying another client's session
+        # id. Repeats from one IP are key stuffing, not a misconfigured client.
+        mcp-auth-failure.yaml: |
+          type: leaky
+          name: custom/mcp-auth-failure
+          description: "Repeated bearer rejections on the MCP endpoint"
+          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'mite-assistant.pavel-usanli.online' && evt.Meta.http_status == '401'"
+          groupby: evt.Meta.source_ip
+          capacity: 4
+          leakspeed: "2m"
+          blackhole: 1h
+          labels:
+            service: http
+            type: mcp-auth-failure
+            remediation: true
+
+        # The MCP host serves exactly /health and /mcp; everything else is a 404. A 404
+        # on /mcp itself means an unknown session, which the rule above already covers,
+        # so excluding it keeps this one to pure surface discovery.
+        mcp-surface-probing.yaml: |
+          type: leaky
+          name: custom/mcp-surface-probing
+          description: "Requests for paths the MCP server does not serve"
+          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'mite-assistant.pavel-usanli.online' && evt.Meta.http_status == '404' && evt.Meta.http_path not in ['/mcp', '/health']"
+          groupby: evt.Meta.source_ip
+          capacity: 2
+          leakspeed: "1m"
+          blackhole: 6h
+          labels:
+            service: http
+            type: mcp-surface-probe
+            remediation: true
+
+        # The API defines three routes and a catch-all 404. Nothing a browser loads from
+        # the site sits under /api, so a 404 there is never an ordinary missing asset.
+        proklinator-api-probing.yaml: |
+          type: leaky
+          name: custom/proklinator-api-probing
+          description: "404 under /api, where only three routes exist"
+          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path startsWith '/api' && evt.Meta.http_status == '404'"
+          groupby: evt.Meta.source_ip
+          capacity: 2
+          leakspeed: "1m"
+          blackhole: 6h
+          labels:
+            service: http
+            type: api-surface-probe
+            remediation: true
+
+        # Every POST here opens a live Stripe Checkout Session against the production
+        # key. A buyer retries a handful of times; ten in under two minutes is a bot
+        # spending our Stripe rate limit.
+        checkout-session-abuse.yaml: |
+          type: leaky
+          name: custom/checkout-session-abuse
+          description: "Flood of Stripe Checkout Session creations"
+          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path == '/api/checkout/session' && evt.Meta.http_verb == 'POST'"
+          groupby: evt.Meta.source_ip
+          capacity: 9
+          leakspeed: "10s"
+          blackhole: 1h
+          labels:
+            service: http
+            type: checkout-abuse
+            remediation: true
+
+        # A 400 here means the cart named a curse or option the backend catalog does not
+        # hold. The site only ever submits ids it was served, so this is price or id
+        # tampering rather than a client bug.
+        checkout-payload-rejected.yaml: |
+          type: leaky
+          name: custom/checkout-payload-rejected
+          description: "Repeated carts naming ids outside the catalog"
+          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path == '/api/checkout/session' && evt.Meta.http_status == '400'"
+          groupby: evt.Meta.source_ip
+          capacity: 2
+          leakspeed: "5m"
+          blackhole: 6h
+          labels:
+            service: http
+            type: checkout-tampering
+            remediation: true
+
         http-error-burst.yaml: |
           type: leaky
           name: custom/http-error-burst
@@ -156,12 +247,31 @@ spec:
             duration: 24h
         on_success: break
         ---
-        name: php_probing_ban
+        name: app_surface_ban
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() in ["custom/mcp-auth-failure", "custom/mcp-surface-probing", "custom/proklinator-api-probing", "custom/checkout-payload-rejected"]
+        decisions:
+          - type: ban
+            duration: 24h
+        on_success: break
+        ---
+        name: checkout_abuse_ban
+        # Shorter than the other app bans: this one fires on successful requests, so a
+        # shared egress IP behind a burst of real buyers is the one plausible way to
+        # reach it without being a bot.
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() == "custom/checkout-session-abuse"
+        decisions:
+          - type: ban
+            duration: 4h
+        on_success: break
+        ---
+        name: custom_appsec_ban
         # No Alert.Remediation check: AppSec builds its alerts without ever
         # setting that field, so "Alert.Remediation == true" never matches a
         # waf-kind alert and the ban would silently never be created.
         filters:
-          - Alert.GetScenario() == "custom/block-php"
+          - Alert.GetScenario() startsWith "custom/block-"
         decisions:
           - type: ban
             duration: 24h
@@ -208,11 +318,12 @@ spec:
               - /bin/sh
               - -c
               - |
+                # Dropped and recreated rather than only added to: `add` cannot retract
+                # an entry, so a list that is only ever appended to keeps every address
+                # this block has named since the volume was created.
+                cscli allowlists delete trusted_ips 2>/dev/null || true
                 cscli allowlists create trusted_ips --description "Trusted client IPs" 2>/dev/null || true
                 cscli allowlists add trusted_ips 46.10.211.21 -d "Trusted client IP" 2>/dev/null || true
-                cscli allowlists add trusted_ips 62.176.70.79 -d "Trusted client IP" 2>/dev/null || true
-                cscli allowlists add trusted_ips 46.10.148.46 -d "Trusted client IP" 2>/dev/null || true
-                cscli allowlists add trusted_ips 77.85.26.124 -d "Trusted client IP" 2>/dev/null || true
                 # Agents register under their pod name and `cscli lapi register` has no
                 # --force, so a record that outlives the pod makes the replacement's init
                 # container fail for ever. Clear the dead ones before they reconnect.
@@ -251,6 +362,10 @@ spec:
         - namespace: kube-system
           podName: "traefik-*"
           program: traefik
+          # The kubelet rotates a container log by renaming it and creating a new file
+          # at the same path. The inotify watch stays on the old inode, so the agent
+          # goes deaf at the first rotation and every log-fed scenario stops firing.
+          poll_without_inotify: true
 
       env:
         - name: COLLECTIONS
@@ -293,7 +408,8 @@ spec:
           # exclusive - setting both is a hard config error.
           appsec_configs:
             - crowdsecurity/virtual-patching
-            - custom/php-probing
+            - custom/app-surface
+            - custom/crs-observe
           labels:
             type: appsec
 
@@ -317,27 +433,68 @@ spec:
             spoofable: 0
             label: "PHP file probing"
 
+        block-cms-admin.yaml: |
+          name: custom/block-cms-admin
+          description: "Request for a CMS admin path none of these apps serve"
+          rules:
+            - zones:
+                - URI
+              transform:
+                - lowercase
+              match:
+                type: regex
+                value: "^/(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail)([?/]|$)"
+          labels:
+            type: scan
+            service: http
+            behavior: "http:scan"
+            confidence: 3
+            spoofable: 0
+            label: "CMS admin path probing"
+
+        block-secret-files.yaml: |
+          name: custom/block-secret-files
+          description: "Request for a credential, state or VCS file"
+          rules:
+            - zones:
+                - URI
+              transform:
+                - lowercase
+              match:
+                type: regex
+                value: "(^|/)(\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.dockercfg|\\.docker/config\\.json|docker-compose\\.ya?ml|terraform\\.tfstate|\\.terraform/|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|backup\\.sql|dump\\.sql|db\\.sql)"
+          labels:
+            type: exploit
+            service: http
+            behavior: "http:exploit"
+            confidence: 3
+            spoofable: 0
+            label: "Secret file probing"
+
       configs:
-        php-probing.yaml: |
-          name: custom/php-probing
+        app-surface.yaml: |
+          name: custom/app-surface
           default_remediation: ban
+          # Unscoped on purpose. Every hostname that reaches Traefik is one of ours and
+          # none of them runs PHP or a CMS; Cloudflare-for-SaaS customer domains are
+          # sent straight at nocobase-lxc by terraform/cloudflare/shared/zero-trust and
+          # never pass through here. Routing a customer through Traefik means putting a
+          # host filter back, because their site may legitimately serve these paths.
           inband_rules:
             - custom/block-php
-          # Scoped to hosts that never legitimately serve PHP. Hooks from every
-          # loaded appsec config are appended into one global set, so this must
-          # remove the single named rule - filtering in on_match and allowing
-          # the request would also release virtual-patching matches elsewhere.
-          # IsInBand guard: pre_eval also runs in the out-of-band phase, where
-          # RemoveInBandRuleByName is a no-op that logs a warning per request.
-          pre_eval:
-            - filter: >-
-                IsInBand && req.Host not in [
-                "bunker.pavel-usanli.online",
-                "planner.pavel-usanli.online",
-                "pavel-usanli.online",
-                "www.pavel-usanli.online"]
-              apply:
-                - RemoveInBandRuleByName("custom/block-php")
+            - custom/block-cms-admin
+            - custom/block-secret-files
+
+        crs-observe.yaml: |
+          name: custom/crs-observe
+          # The CRS was already being downloaded by APPSEC_RULES and never evaluated,
+          # because no loaded config named it. Out-of-band runs it after the response is
+          # released, and no profile matches its alerts, so it reports without blocking.
+          # Promoting it means moving it to inband_rules *and* adding a profile - it is
+          # the one ruleset here written against generic traffic rather than our apps,
+          # so measure its false positives before either.
+          outofband_rules:
+            - crowdsecurity/crs
 
       env:
         - name: COLLECTIONS
