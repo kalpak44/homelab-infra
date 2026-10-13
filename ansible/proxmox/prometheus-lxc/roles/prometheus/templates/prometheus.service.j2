@@ -1,0 +1,24 @@
+[Unit]
+Description=Prometheus
+After=network.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/prometheus \
+  --config.file={{ prometheus_config_dir }}/prometheus.yml \
+  --storage.tsdb.path={{ prometheus_data_dir }} \
+  --storage.tsdb.retention.time={{ prometheus_retention_time }} \
+  --storage.tsdb.retention.size={{ prometheus_retention_size }} \
+{% if prometheus_tls_enabled %}
+  --web.external-url=https://{{ prometheus_tls_domain }}:{{ prometheus_port }}/ \
+  --web.config.file={{ prometheus_config_dir }}/web.yml \
+{% endif %}
+  --web.listen-address=0.0.0.0:{{ prometheus_port }}
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

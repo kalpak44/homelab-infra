@@ -1,0 +1,25 @@
+global:
+  scrape_interval: {{ prometheus_scrape_interval }}
+  evaluation_interval: {{ prometheus_scrape_interval }}
+
+scrape_configs:
+  - job_name: prometheus
+    scheme: {{ 'https' if prometheus_tls_enabled else 'http' }}
+{% if prometheus_tls_enabled %}
+    # The self-scrape dials loopback, which no certificate for the public name
+    # can match. Verification here would only check Prometheus against itself.
+    tls_config:
+      insecure_skip_verify: true
+{% endif %}
+    static_configs:
+      - targets: ["localhost:{{ prometheus_port }}"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["localhost:{{ node_exporter_port }}"]
+{% for job in prometheus_extra_scrape_jobs %}
+
+  - job_name: {{ job.name }}
+    static_configs:
+      - targets: {{ job.targets | to_json }}
+{% endfor %}

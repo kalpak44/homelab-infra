@@ -1,0 +1,16 @@
+[Unit]
+Description=Prometheus node exporter
+After=network.target
+
+[Service]
+Type=simple
+User=node_exporter
+Group=node_exporter
+# Bound to loopback: the only scraper is the Prometheus server on this host, and
+# the exporter has no authentication of its own.
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=127.0.0.1:{{ node_exporter_port }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

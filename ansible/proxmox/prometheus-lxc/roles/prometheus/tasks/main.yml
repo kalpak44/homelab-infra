@@ -1,0 +1,256 @@
+---
+# --- Users and directories ------------------------------------------------
+# Both daemons run as their own unprivileged system user; neither needs a login
+# shell or a home.
+
+- name: Create the prometheus system user
+  ansible.builtin.user:
+    name: prometheus
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create the node_exporter system user
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create the config directory
+  ansible.builtin.file:
+    path: "{{ prometheus_config_dir }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0750"
+
+# The data volume is mounted by Proxmox and arrives owned by root, so Prometheus
+# cannot write its TSDB until this runs.
+- name: Hand the data volume to prometheus
+  ansible.builtin.file:
+    path: "{{ prometheus_data_dir }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0750"
+
+# --- Binaries -------------------------------------------------------------
+# Ubuntu noble's prometheus package is a 2.x that never moves, so upstream's
+# tarball is the only route to a current server. The version check keeps a re-run
+# from re-downloading what is already installed.
+
+- name: Read the installed Prometheus version
+  ansible.builtin.command:
+    cmd: /usr/local/bin/prometheus --version
+  register: prometheus_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and unpack Prometheus
+  ansible.builtin.unarchive:
+    src: >-
+      https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+    dest: /opt
+    remote_src: true
+    owner: root
+    group: root
+  when: prometheus_version not in (prometheus_installed.stdout | default('')) + (prometheus_installed.stderr | default(''))
+  register: prometheus_unpacked
+
+- name: Install the Prometheus binaries
+  ansible.builtin.copy:
+    src: "/opt/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [prometheus, promtool]
+  when: prometheus_unpacked.changed
+  notify: Restart Prometheus
+
+- name: Remove the unpacked Prometheus archive
+  ansible.builtin.file:
+    path: "/opt/prometheus-{{ prometheus_version }}.linux-amd64"
+    state: absent
+
+- name: Read the installed node_exporter version
+  ansible.builtin.command:
+    cmd: /usr/local/bin/node_exporter --version
+  register: node_exporter_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and unpack node_exporter
+  ansible.builtin.unarchive:
+    src: >-
+      https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    dest: /opt
+    remote_src: true
+    owner: root
+    group: root
+  when: node_exporter_version not in (node_exporter_installed.stdout | default('')) + (node_exporter_installed.stderr | default(''))
+  register: node_exporter_unpacked
+
+- name: Install the node_exporter binary
+  ansible.builtin.copy:
+    src: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  when: node_exporter_unpacked.changed
+  notify: Restart node_exporter
+
+- name: Remove the unpacked node_exporter archive
+  ansible.builtin.file:
+    path: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64"
+    state: absent
+
+# --- TLS ------------------------------------------------------------------
+# DNS-01 rather than HTTP-01: prometheus.internal resolves only on the LAN, so no
+# ACME server can reach this host to answer an HTTP challenge.
+
+- name: Install certbot and the Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+    update_cache: true
+  when: prometheus_tls_enabled
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  when: prometheus_tls_enabled
+  no_log: true
+
+- name: Create the TLS directory
+  ansible.builtin.file:
+    path: "{{ prometheus_cert_path | dirname }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0750"
+  when: prometheus_tls_enabled
+
+- name: Issue the Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ letsencrypt_email }}
+      -d {{ prometheus_tls_domain }}
+    creates: "/etc/letsencrypt/live/{{ prometheus_tls_domain }}/fullchain.pem"
+  when: prometheus_tls_enabled and letsencrypt_email != ""
+
+- name: Copy the TLS certificate for Prometheus
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ prometheus_tls_domain }}/fullchain.pem"
+    dest: "{{ prometheus_cert_path }}"
+    remote_src: true
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  when: prometheus_tls_enabled
+  notify: Restart Prometheus
+
+- name: Copy the TLS private key for Prometheus
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ prometheus_tls_domain }}/privkey.pem"
+    dest: "{{ prometheus_key_path }}"
+    remote_src: true
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  when: prometheus_tls_enabled
+  notify: Restart Prometheus
+
+# certbot renews on its own timer, and Prometheus reads its certificate only at
+# startup — without this hook it serves the expired one until someone notices.
+- name: Deploy the certbot renewal hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-prometheus.sh
+    content: |
+      #!/bin/bash
+      cp /etc/letsencrypt/live/{{ prometheus_tls_domain }}/fullchain.pem {{ prometheus_cert_path }}
+      cp /etc/letsencrypt/live/{{ prometheus_tls_domain }}/privkey.pem {{ prometheus_key_path }}
+      chown prometheus:prometheus {{ prometheus_cert_path }} {{ prometheus_key_path }}
+      chmod 640 {{ prometheus_cert_path }} {{ prometheus_key_path }}
+      systemctl restart prometheus
+    mode: "0755"
+  when: prometheus_tls_enabled
+
+# --- Configuration --------------------------------------------------------
+
+# promtool rejects the file before it replaces the live one; Prometheus exits on
+# a config it cannot parse, so an unvalidated template is a restart into a
+# crash loop.
+- name: Deploy the Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ prometheus_config_dir }}/prometheus.yml"
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+    validate: /usr/local/bin/promtool check config %s
+  notify: Restart Prometheus
+
+- name: Deploy the Prometheus web configuration
+  ansible.builtin.template:
+    src: web.yml.j2
+    dest: "{{ prometheus_config_dir }}/web.yml"
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  when: prometheus_tls_enabled
+  notify: Restart Prometheus
+
+- name: Deploy the Prometheus systemd unit
+  ansible.builtin.template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    mode: "0644"
+  notify: Restart Prometheus
+
+- name: Deploy the node_exporter systemd unit
+  ansible.builtin.template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+  notify: Restart node_exporter
+
+- name: Flush handlers to apply the configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure node_exporter is running
+  ansible.builtin.systemd:
+    name: node_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Ensure Prometheus is running
+  ansible.builtin.systemd:
+    name: prometheus
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for the Prometheus API to answer
+  ansible.builtin.uri:
+    url: "{{ 'https' if prometheus_tls_enabled else 'http' }}://localhost:{{ prometheus_port }}/-/ready"
+    validate_certs: false
+  register: prometheus_ready
+  until: prometheus_ready.status == 200
+  retries: 12
+  delay: 5

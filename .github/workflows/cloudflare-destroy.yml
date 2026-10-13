@@ -16,6 +16,7 @@ on:
           - dns/private/portainer
           - dns/private/postgres
           - dns/private/private-home-page
+          - dns/private/prometheus
           - dns/private/proxmox
           - dns/private/rabbitmq
           - dns/private/redis

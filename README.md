@@ -139,6 +139,7 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | RabbitMQ                   | LXC        | 192.168.1.8   | `proxmox/rabbitmq-lxc`                 | `proxmox/rabbitmq-lxc`                      |
 | NocoBase                   | LXC        | 192.168.1.5   | `proxmox/nocobase-lxc`                 | -                                           |
 | Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
+| Prometheus                 | LXC        | 192.168.1.11  | `proxmox/prometheus-lxc`               | `proxmox/prometheus-lxc`                    |
 | NFS server (k3s PVs)       | VM         | 192.168.1.108 | `proxmox/nfs-vm`                       | `proxmox/nfs-vm`                            |
 | k3s control plane          | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                  | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
 | k3s worker                 | VM         | 192.168.1.111 | `proxmox/k3s-cluster`                  | (same)                                      |
@@ -168,6 +169,13 @@ Installed from `packages.redis.io`, not Ubuntu universe, which never moves off 7
 redis-lxc` upgrades to the newest upstream release on every run.
 
 **RabbitMQ** – AMQP on `192.168.1.8:5672`. Management UI at `https://rabbitmq.internal.pavel-usanli.online`.
+
+**Prometheus** – UI and API at `https://prometheus.internal.pavel-usanli.online:9090`, served with a Let's Encrypt
+certificate issued by certbot over DNS-01. The TSDB lives on a dedicated 20G volume at `/var/lib/prometheus`, capped at
+30 days or 15GB, whichever comes first. It scrapes itself and a loopback-bound `node_exporter`; add a target by
+appending to `prometheus_extra_scrape_jobs` in
+`ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. Both binaries come from upstream tarballs — Ubuntu
+noble's `prometheus` package is a 2.x that never moves — so bumping a version is editing that same file.
 
 **NocoBase** – LAN-isolated: the Proxmox firewall drops all outbound traffic to `192.168.0.0/16` on the
 container's veth, except PostgreSQL (`192.168.1.4:5432`) and Redis (`192.168.1.6:6379`). Internet access and
