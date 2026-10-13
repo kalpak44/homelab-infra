@@ -5,3 +5,12 @@ resources:
   - externalsecret.yaml
   - helmrelease.yaml
   - ingressroute.yaml
+
+configMapGenerator:
+  - name: grafana-dashboard-crowdsec
+    namespace: private
+    files:
+      - dashboards/crowdsec.json
+    options:
+      labels:
+        grafana_dashboard: "1"

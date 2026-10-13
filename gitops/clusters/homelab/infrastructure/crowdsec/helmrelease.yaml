@@ -195,16 +195,6 @@ spec:
             secretKeyRef:
               name: crowdsec-secrets
               key: bouncer-api-key
-        - name: WEBUI_MACHINE_ID
-          valueFrom:
-            secretKeyRef:
-              name: crowdsec-secrets
-              key: webui-machine-id
-        - name: WEBUI_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: crowdsec-secrets
-              key: webui-password
         - name: ENROLLMENT_KEY
           valueFrom:
             secretKeyRef:
@@ -229,15 +219,12 @@ spec:
                 cscli machines prune --duration 1h --force 2>/dev/null || true
                 cscli bouncers delete traefik 2>/dev/null || true
                 cscli bouncers add traefik --key "${BOUNCER_KEY_traefik}"
-                # --force is required for idempotency: without it, a machine
-                # that already exists makes this exit 1 every time, so the loop
-                # burns all 60 iterations (120s) on every LAPI start. postStart
-                # blocks the container from reaching Running, so that delay is
-                # pure LAPI downtime and is what crash-loops the appsec pods.
+                # Enrolling before the local database answers fails silently, so wait
+                # for it. postStart blocks the container from reaching Running, so
+                # every wasted iteration here is pure LAPI downtime, which is what
+                # crash-loops the appsec pods.
                 for i in $(seq 1 60); do
-                  cscli machines add "${WEBUI_MACHINE_ID}" \
-                    --password "${WEBUI_PASSWORD}" \
-                    --force -f /dev/null 2>/dev/null && break
+                  cscli machines list >/dev/null 2>&1 && break
                   sleep 2
                 done
                 cscli console enroll "${ENROLLMENT_KEY}" || true

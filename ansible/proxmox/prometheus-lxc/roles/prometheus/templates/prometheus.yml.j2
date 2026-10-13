@@ -20,6 +20,12 @@ scrape_configs:
 {% for job in prometheus_extra_scrape_jobs %}
 
   - job_name: {{ job.name }}
+{% if job.scheme is defined %}
+    scheme: {{ job.scheme }}
+{% endif %}
+{% if job.metrics_path is defined %}
+    metrics_path: {{ job.metrics_path }}
+{% endif %}
     static_configs:
       - targets: {{ job.targets | to_json }}
 {% endfor %}

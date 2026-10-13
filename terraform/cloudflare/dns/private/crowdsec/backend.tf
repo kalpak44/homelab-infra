@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    key    = "homelab/cloudflare/dns/private/crowdsec-web-ui.tfstate"
+    key    = "homelab/cloudflare/dns/private/crowdsec.tfstate"
     region = "auto"
 
     skip_credentials_validation = true

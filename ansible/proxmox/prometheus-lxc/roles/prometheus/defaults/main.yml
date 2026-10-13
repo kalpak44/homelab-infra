@@ -21,6 +21,12 @@ prometheus_tls_domain: "prometheus.internal.pavel-usanli.online"
 prometheus_cert_path: "/etc/prometheus/tls/cert.pem"
 prometheus_key_path: "/etc/prometheus/tls/key.pem"
 
-# One entry per extra target: {name: <job>, targets: ["host:port"]}. The server
-# and its own node_exporter are scraped unconditionally.
-prometheus_extra_scrape_jobs: []
+# One entry per extra target: {name: <job>, targets: ["host:port"]}, with optional
+# scheme and metrics_path. The server and its own node_exporter are scraped
+# unconditionally.
+prometheus_extra_scrape_jobs:
+  # Reached through the cluster's ingress rather than the pod, because this host sits
+  # outside k3s. The route serves /metrics only.
+  - name: crowdsec
+    scheme: https
+    targets: ["crowdsec.internal.pavel-usanli.online"]

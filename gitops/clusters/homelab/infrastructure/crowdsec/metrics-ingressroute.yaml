@@ -1,0 +1,19 @@
+# Prometheus runs outside the cluster, so the engine's metrics port needs a route in.
+# Matched on /metrics alone: the LAPI also answers its own API on this service, and
+# nothing outside the cluster has any business reaching that.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: crowdsec-metrics
+  namespace: crowdsec
+spec:
+  entryPoints:
+    - private-web-secure
+  routes:
+    - match: Host(`crowdsec.internal.pavel-usanli.online`) && Path(`/metrics`)
+      kind: Rule
+      services:
+        - name: crowdsec-service
+          port: 6060
+  tls:
+    certResolver: cloudflare

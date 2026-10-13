@@ -28,8 +28,7 @@ gitops/clusters/homelab/
     └── private/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
-        ├── crowdsec-web-ui/                 # CrowdSec web UI (private access)
-        └── grafana/                         # Grafana dashboards (Prometheus datasource)
+        └── grafana/                         # Grafana dashboards (Prometheus datasource, CrowdSec board)
 ```
 
 ## Required secrets in Vault
@@ -42,19 +41,11 @@ External Secrets Operator syncs them into k8s secrets automatically.
 | Property | Description |
 |---|---|
 | `bouncer-api-key` | Pre-shared key CrowdSec uses to authenticate the Traefik bouncer |
-| `webui-machine-id` | Machine ID (username) for the CrowdSec web UI |
-| `webui-password` | Password for the CrowdSec web UI |
 | `enrollment-key` | Enrollment key from [app.crowdsec.net](https://app.crowdsec.net) → Security Engines → Enroll |
 
 ```bash
 # bouncer-api-key - random 32-byte hex string
 openssl rand -hex 32
-
-# webui-machine-id - pick any short alphanumeric name, e.g.:
-echo "homelab"
-
-# webui-password - random password
-openssl rand -base64 24
 
 # enrollment-key - copy from app.crowdsec.net → Security Engines → + Add → Enroll command
 # looks like: cscli console enroll <key>  ← the <key> part
@@ -64,8 +55,6 @@ Write to Vault:
 ```bash
 vault kv put secret/crowdsec-secrets \
   bouncer-api-key="<value>" \
-  webui-machine-id="<value>" \
-  webui-password="<value>" \
   enrollment-key="<value>"
 ```
 
@@ -105,6 +94,18 @@ Used by Traefik for Cloudflare DNS-01 Let's Encrypt challenges. Created by the k
 | `api-token` | Cloudflare API token with `Zone:DNS:Edit` permission |
 
 Generate at [dash.cloudflare.com](https://dash.cloudflare.com) → My Profile → API Tokens → Create Token → **Edit zone DNS** template.
+
+## CrowdSec metrics
+
+CrowdSec is watched from Grafana, not from a UI of its own. The engine already serves its
+own `/metrics`, so the only in-cluster piece is `infrastructure/crowdsec/metrics-ingressroute.yaml`,
+which publishes that one path at `crowdsec.internal.pavel-usanli.online` — the LAPI's API on the
+same service stays unreachable from outside.
+
+Prometheus runs on its own LXC and polls it; the scrape job lives in
+`ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. The board is
+`apps/private/grafana/dashboards/crowdsec.json`, loaded by Grafana's sidecar from a labelled
+ConfigMap, at `grafana.internal.pavel-usanli.online/d/crowdsec`.
 
 ## How it works
 

@@ -6,4 +6,5 @@ resources:
   - externalsecret.yaml
   - helmrelease.yaml
   - middleware.yaml
+  - metrics-ingressroute.yaml
   - appsec-service.yaml

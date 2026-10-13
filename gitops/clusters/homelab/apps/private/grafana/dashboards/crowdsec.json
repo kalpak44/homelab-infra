@@ -1,0 +1,592 @@
+{
+  "uid": "crowdsec",
+  "title": "CrowdSec",
+  "description": "CrowdSec LAPI metrics, scraped from the engine's own /metrics endpoint.",
+  "tags": [
+    "crowdsec",
+    "security"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active decisions",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(cs_active_decisions)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "description": "Bans currently in force across every origin."
+    },
+    {
+      "id": 2,
+      "title": "Alerts",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(cs_alerts)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "description": "Alerts held by the LAPI, excluding those pulled from CAPI."
+    },
+    {
+      "id": 3,
+      "title": "Bouncer requests/s",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cs_lapi_bouncer_requests_total[5m]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "description": "Traefik polling the decision stream. A flat zero means the bouncer stopped asking."
+    },
+    {
+      "id": 4,
+      "title": "LAPI reachable",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "up{job=\"crowdsec\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "description": "Prometheus scrape health. Everything else on this dashboard is stale when this is 0."
+    },
+    {
+      "id": 5,
+      "title": "Engine version",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "cs_info",
+          "refId": "A",
+          "legendFormat": "{{version}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "name",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Active decisions by origin",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (origin) (cs_active_decisions)",
+          "refId": "A",
+          "legendFormat": "{{origin}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "crowdsec = decided here, CAPI = community blocklist, lists = subscribed blocklists."
+    },
+    {
+      "id": 11,
+      "title": "Top block reasons",
+      "type": "barchart",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (reason) (cs_active_decisions))",
+          "refId": "A",
+          "legendFormat": "{{reason}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Which scenario or blocklist put the most addresses on the ban list."
+    },
+    {
+      "id": 20,
+      "title": "Alerts by scenario",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (reason) (cs_alerts))",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "A scenario climbing here is one that keeps firing."
+    },
+    {
+      "id": 21,
+      "title": "LAPI requests by route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (route) (rate(cs_lapi_route_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 30,
+      "title": "Bouncer requests by bouncer",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (bouncer) (rate(cs_lapi_bouncer_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{bouncer}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 31,
+      "title": "Machine requests by machine",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (machine) (rate(cs_lapi_machine_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{machine}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Agents and the AppSec pods. A machine that drops to zero has stopped reporting."
+    },
+    {
+      "id": 32,
+      "title": "LAPI p95 response time",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(cs_lapi_request_duration_seconds_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 40,
+      "title": "Seconds since last heartbeat",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "time() - cs_machines_last_heartbeat_timestamp",
+          "refId": "A",
+          "legendFormat": "{{machine}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "A line climbing without resetting is a machine that stopped checking in."
+    }
+  ]
+}
