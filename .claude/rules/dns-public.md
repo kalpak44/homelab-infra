@@ -105,6 +105,20 @@ them is therefore a WAF custom rule (`edge-ports.tf`, `not (cf.edge.server_port 
 firewall — filtering 8080 on the box drops nothing, because nothing ever arrives there. The rule needs
 **Zone:WAF:Edit** on `CLOUDFLARE_API_TOKEN`; without it the apply fails with a bare `Authentication error`.
 
+**One custom ruleset per zone, and a `skip` in it is a trapdoor.** Cloudflare allows a single `http_request_firewall_custom`
+entrypoint per zone and writing it replaces the whole rule list, so `edge-ports.tf` holds every custom rule for
+`pavel-usanli.online` and `waf-proklinator.tf` every rule for `proklinator.online` — a rule added in the dashboard is
+deleted by the next apply. A `skip` carrying `ruleset = "current"` ends evaluation for every request it matches: one
+matching `http.user_agent wildcard "*"` sat in the first of these and left every rule below it dead, including a
+`js_challenge` that would have taken `mite-assistant.pavel-usanli.online` off the air, since MCP clients execute no
+JavaScript. Keep that hostname out of challenge and bot-score rules.
+
+Scanner rules belong at the edge rather than only in CrowdSec when they need to differ per hostname: a CrowdSec decision
+bans an IP across the whole entrypoint, while a Cloudflare rule can be strict on a checkout and permissive on an API.
+Both zones are on the Free plan, which caps custom rules at five and offers no `matches` operator — match with
+`contains` on a `lower()`ed field, not a pattern. Test a port rule on a hostname with no redirect: `http_request_dynamic_redirect`
+runs first, so the apex answers `301` and never reaches the firewall phase.
+
 ## Kubernetes manifest
 
 - **Namespace:** `public`
