@@ -1,7 +1,7 @@
 {
   "uid": "crowdsec",
   "title": "CrowdSec",
-  "description": "CrowdSec LAPI metrics, scraped from the engine's own /metrics endpoint.",
+  "description": "CrowdSec: scraped LAPI metrics, plus the live decision list from the LAPI itself.",
   "tags": [
     "crowdsec",
     "security"
@@ -259,6 +259,111 @@
       }
     },
     {
+      "id": 50,
+      "title": "Bans decided here (newest first)",
+      "type": "table",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "crowdsec-lapi"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 12
+      },
+      "description": "Live from the LAPI, filtered to origin=crowdsec: what this engine decided itself, not the 78k addresses inherited from subscribed blocklists. These are the bans in force right now \u2014 the API carries no creation time, so the id, which counts up, is what orders them.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "crowdsec-lapi"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "http://crowdsec-service.crowdsec.svc.cluster.local:8080/v1/decisions?origins=crowdsec",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "id",
+              "text": "ID",
+              "type": "number"
+            },
+            {
+              "selector": "value",
+              "text": "Address",
+              "type": "string"
+            },
+            {
+              "selector": "scenario",
+              "text": "Scenario",
+              "type": "string"
+            },
+            {
+              "selector": "type",
+              "text": "Action",
+              "type": "string"
+            },
+            {
+              "selector": "duration",
+              "text": "Remaining",
+              "type": "string"
+            },
+            {
+              "selector": "scope",
+              "text": "Scope",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "ID",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "enablePagination": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "ID",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
       "id": 10,
       "title": "Active decisions by origin",
       "type": "timeseries",
@@ -268,7 +373,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -309,7 +414,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 4,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -350,7 +455,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -391,7 +496,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -432,7 +537,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 32,
         "w": 8,
         "h": 8
       },
@@ -473,7 +578,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 20,
+        "y": 32,
         "w": 8,
         "h": 8
       },
@@ -515,7 +620,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 20,
+        "y": 32,
         "w": 8,
         "h": 8
       },
@@ -556,7 +661,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 40,
         "w": 24,
         "h": 7
       },

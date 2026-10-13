@@ -31,6 +31,17 @@ spec:
       storageClassName: nfs
       size: 5Gi
 
+    # Reads the decision list straight from the LAPI, which no Prometheus metric
+    # carries: the series are counts by scenario, never the addresses behind them.
+    plugins:
+      - yesoreyeram-infinity-datasource
+
+    envValueFrom:
+      CROWDSEC_BOUNCER_KEY:
+        secretKeyRef:
+          name: crowdsec-bouncer-key
+          key: bouncer-api-key
+
     # Provisioned from here rather than through the UI, so the datasource survives
     # a lost volume. Prometheus runs outside the cluster on its own LXC.
     datasources:
@@ -43,6 +54,19 @@ spec:
             access: proxy
             url: https://prometheus.internal.pavel-usanli.online:9090
             isDefault: true
+          # In-cluster address, so the LAPI's API stays off the ingress entirely.
+          - name: CrowdSec LAPI
+            uid: crowdsec-lapi
+            type: yesoreyeram-infinity-datasource
+            access: proxy
+            jsonData:
+              auth_method: apiKeyAuth
+              apiKeyKey: X-Api-Key
+              apiKeyType: header
+              allowedHosts:
+                - http://crowdsec-service.crowdsec.svc.cluster.local:8080
+            secureJsonData:
+              apiKeyValue: ${CROWDSEC_BOUNCER_KEY}
 
     # Loads any ConfigMap in this namespace labelled grafana_dashboard, which is how
     # dashboards/ reaches Grafana without being clicked into the UI or downloaded at

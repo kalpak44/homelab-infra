@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - helmrepository.yaml
   - externalsecret.yaml
+  - externalsecret-crowdsec.yaml
   - helmrelease.yaml
   - ingressroute.yaml
 
