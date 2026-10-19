@@ -35,7 +35,7 @@ spec:
           # Tag bumped by `just bump-images` — dispatched by the source repo's publish
           # workflow, and swept nightly as a backstop. Keep the `image: <repo>:<tag>`
           # shape on one line; the recipe rewrites it with sed.
-          image: ghcr.io/kalpak44/proklinator-app:d5d6d1c
+          image: ghcr.io/kalpak44/proklinator-app:c0ef715
           # No capability drop or runAsNonRoot here: the container binds port 80, which
           # needs NET_BIND_SERVICE and a root uid. Moving it to 8080 is what unlocks both.
           securityContext:
