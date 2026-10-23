@@ -34,7 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mite-assistant-mcp
-          image: ghcr.io/kalpak44/mite-assistant-mcp:fe34f31
+          image: ghcr.io/kalpak44/mite-assistant-mcp:ac0f0f4
           imagePullPolicy: IfNotPresent
           # The image's USER is the named `node`, which the kubelet cannot verify as
           # non-root, so the uid it resolves to has to be stated here.
