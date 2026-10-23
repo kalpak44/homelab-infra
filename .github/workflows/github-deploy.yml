@@ -12,6 +12,7 @@ on:
           - code-viewer-bot
           - deepaudit
           - forma-dsl
+          - jacred-tv-client
           - kalpak44
           - kubectl-awscli
           - mac-calendar-mcp
