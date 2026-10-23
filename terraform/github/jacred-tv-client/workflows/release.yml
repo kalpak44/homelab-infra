@@ -1,0 +1,177 @@
+# Managed by homelab-infra — terraform/github/jacred-tv-client/workflows/release.yml
+# Edits made here in the target repo are overwritten by `just deploy github jacred-tv-client`.
+#
+# The action versions here are bumped by hand. Dependabot cannot watch this file: it only
+# scans `.github/workflows/`, and in homelab-infra this is an ordinary file under
+# `terraform/`, so `github-actions` is deliberately absent from dependabot.yml.
+#
+# One of the repo's two workflows, and its PR check (PR_CHECK_WORKFLOW). It verifies on
+# every pull request and every push to main, and releases only for a `v*` tag. The agent
+# cuts that tag once per sweep, so a batch of ten merges produces one release rather than
+# ten. Keying the release on the tag is also what keeps the version commit from starting
+# another release: it lands on main, and main does not release.
+name: Release
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # The agent starts this for a pull request whose head commit has no checks — a branch
+  # opened before the check existed never gets one retroactively.
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        # The Android plugin refuses to start on an older JDK, and the module compiles
+        # with source/target 17. The runner image already carries the Android SDK.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # The wrapper jar is committed, so confirm it is an official Gradle release before
+      # this job executes it.
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Blocking, and the whole gate: the agent merges with no human review, and lint is
+      # configured with abortOnError so it fails the build rather than filing a report
+      # nobody opens. The app resolves no third-party artifacts, so there is nothing to
+      # install first.
+      - name: Assemble debug and release
+        run: ./gradlew --no-daemon assembleDebug assembleRelease
+
+      # Not a release artifact — this is the build a reviewer can sideload onto the Mi Box
+      # to check a pull request on a real screen before merging it.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacred-tv-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      # Checked out at the tag, which is the commit the version number describes.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/wrapper-validation@v4
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The tag is the source of the version, not app/build.gradle: they are written in
+      # the same commit, and reading the tag means a mismatch cannot ship silently.
+      - name: Check the tag matches app/build.gradle
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(grep -oE 'versionName +"[0-9]+\.[0-9]+\.[0-9]+"' app/build.gradle \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          if [ "$tag" != "$declared" ]; then
+            echo "::error::tag v${tag} does not match versionName ${declared}"
+            exit 1
+          fi
+
+      # The debug keystore is generated with well-known credentials, so this signs the
+      # release build without the repository holding any signing material. The APK
+      # installs straight from the release page onto the Mi Box, but it is NOT safe to
+      # hand to anyone else: the key is public, so anyone can forge an update to it.
+      # Swapping to a real key means adding a keystore secret and writing
+      # keystore.properties here instead.
+      - name: Ensure a debug keystore exists
+        run: |
+          set -euo pipefail
+          keystore="$HOME/.android/debug.keystore"
+          if [ ! -f "$keystore" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -v -keystore "$keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      - name: Assemble the signed release APK
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon assembleRelease \
+            -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
+
+      # A gate that cannot fail is not a gate. Injected signing silently falls back to an
+      # unsigned output if the properties do not apply, and an unsigned APK on a release
+      # page looks identical until someone tries to install it.
+      - name: Verify the APK is signed
+        id: apk
+        run: |
+          set -euo pipefail
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::no APK was produced"
+            exit 1
+          fi
+          case "$apk" in
+            *unsigned*)
+              echo "::error::release build produced an unsigned APK: ${apk}"
+              exit 1
+              ;;
+          esac
+
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "${build_tools}/apksigner" verify --print-certs "$apk"
+
+          named="jacred-tv-${GITHUB_REF_NAME}.apk"
+          mv "$apk" "$named"
+          echo "path=${named}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: jacred-tv-client ${{ github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.apk.outputs.path }}
+          body: |
+            Signed with the public Android debug key so it installs directly:
+
+            ```sh
+            adb install -r ${{ steps.apk.outputs.path }}
+            ```
+
+            Not safe to distribute beyond your own network — anyone can forge an
+            update against this key.

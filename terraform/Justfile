@@ -257,7 +257,7 @@ list:
     @printf "  %-30s %s\n" "code-viewer-bot"                "kalpak44/code-viewer-bot · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered VSIX release + Marketplace) + dependabot"
     @printf "  %-30s %s\n" "deepaudit"                      "kalpak44/deepaudit · repo settings + DEEPSEEK_API_KEY/DEEPSEEK_MODEL only · the repo owns its own .github/"
     @printf "  %-30s %s\n" "forma-dsl"                      "kalpak44/forma-dsl · same + lint/typecheck/coverage/Sonar gate + release.yml (PR check, tag-triggered npm publish via OIDC) + pages.yml + dependabot"
-    @printf "  %-30s %s\n" "jacred-tv-client"               "kalpak44/jacred-tv-client · repo settings only · Android TV client for jac.red, no workflow yet"
+    @printf "  %-30s %s\n" "jacred-tv-client"               "kalpak44/jacred-tv-client · same + build/lint gate + release.yml (PR check, tag-triggered debug-signed APK release) + dependabot"
     @printf "  %-30s %s\n" "kalpak44"                       "kalpak44/kalpak44 · auto-merge + DEEPSEEK_APIKEY + AI maintenance agent workflow"
     @printf "  %-30s %s\n" "kubectl-awscli"                 "kalpak44/kubectl-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "mac-calendar-mcp"               "kalpak44/mac-calendar-mcp · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered release) + dependabot"
