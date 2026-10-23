@@ -415,7 +415,28 @@ jobs:
             exit 1
           fi
 
-          git add "$VERSION_FILE"
+          # CHANGELOG.md is a flat, undated `## [X.Y.Z]` list precisely so this insert is
+          # safe: it goes above the first such heading. A file reorganised into dated
+          # sections, or one with no entry yet, silently gets no entry at all — the match
+          # never fires and the file is copied through unchanged.
+          awk -v v="$next" -v r="$reason" '
+            !done && /^## \[/ {
+              print "## [" v "]"
+              print ""
+              print "- " r
+              print ""
+              done=1
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.md.tmp
+          mv CHANGELOG.md.tmp CHANGELOG.md
+
+          if ! grep -q "^## \[${next}\]" CHANGELOG.md; then
+            echo "::error::no CHANGELOG entry was written for ${next}"
+            exit 1
+          fi
+
+          git add "$VERSION_FILE" CHANGELOG.md
           git commit -m "chore: release v${next}"
           # Annotated: `git push --follow-tags` silently ignores a lightweight tag, and the
           # release workflow would then never run.
