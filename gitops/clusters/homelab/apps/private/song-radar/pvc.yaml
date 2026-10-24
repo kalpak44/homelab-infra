@@ -1,0 +1,17 @@
+# The music library's storage. Nothing writes to it yet — it is provisioned now so the
+# first feature that needs it does not also need a storage change.
+#
+# `nfs` is named rather than left to the default: the cluster has two StorageClasses both
+# flagged default, so an unnamed claim binds to whichever the API server picks.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: song-radar-data
+  namespace: private
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 30Gi

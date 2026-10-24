@@ -27,7 +27,8 @@ apps := "personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak
 mite-assistant-mcp|kalpak44/mite-assistant-mcp|publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
 bunker-game-app|kalpak44/bunker-party|publish.yml|ghcr.io/kalpak44/bunker-party
 proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api
-noco-google-connector-web-page|kalpak44/noco-google-connector-web-page|publish.yml|ghcr.io/kalpak44/noco-google-connector-web-page"
+noco-google-connector-web-page|kalpak44/noco-google-connector-web-page|publish.yml|ghcr.io/kalpak44/noco-google-connector-web-page
+song-radar|kalpak44/song-radar|publish.yml|ghcr.io/kalpak44/song-radar"
 
 _help:
     @just --list

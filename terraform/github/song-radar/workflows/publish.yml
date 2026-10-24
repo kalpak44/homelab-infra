@@ -2,9 +2,9 @@
 # Edits made here in the target repo are overwritten by `just deploy github song-radar`.
 #
 # One pipeline for every trigger: format, build, test, coverage, SonarCloud, then the
-# image. The GHCR publish is the only conditional part — it runs when the ref being built
-# is main and never on a pull request, so a dependency bump is fully validated without
-# pushing an image.
+# image and the cluster rollout. Those last two are the only conditional parts — they run
+# when the ref being built is main and never on a pull request, so a dependency bump is
+# fully validated without pushing an image or touching the cluster.
 #
 # This is also the workflow the AI maintenance agent gates on
 # (PR_CHECK_WORKFLOW=publish.yml). It refuses to merge without a green check here, and it
@@ -25,7 +25,7 @@ on:
   pull_request:
   push:
     branches: [ "main" ]
-    # A sync of the generated agent files must not rebuild and republish the image.
+    # A sync of the generated agent files must not rebuild the image and roll the cluster.
     # On `push` only: a pull request whose check never runs is a pull request the agent
     # will not merge, because it requires a green one. publish.yml is deliberately absent
     # from the list, so a change to this file still builds and rescans.
@@ -36,8 +36,9 @@ on:
       - ".github/workflows/ai-maintenance-agent.yml"
   workflow_dispatch: {}
 
-# Superseding a pull request's run is free. A push to main ends in a published image, so
-# cancelling it halfway can leave `latest` pointing at a half-finished push.
+# Superseding a pull request's run is free. Superseding a push to main is not: that run
+# ends in a cluster rollout, and cancelling it halfway leaves the image published but the
+# manifest still pointing at the previous tag.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -255,7 +256,7 @@ jobs:
             echo "| ${crit} | ${high} | ${med} | ${low} | ${neg} | ${unk} | ${total} |"
             echo
             echo "${fixable} of ${total} have a fixed version published upstream. This job never"
-            echo "blocks the publish — it is a report."
+            echo "blocks the rollout — it is a report."
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -293,3 +294,35 @@ jobs:
             sbom.spdx.json
             grype.json
             grype.txt
+
+  deploy:
+    name: Deploy to cluster
+    # `scan` is listed for ordering only — a scanner outage must not strand an image
+    # that published cleanly.
+    needs: [build, scan]
+    # `tag` is set by a step that only runs when PUBLISH is true, so an empty tag means
+    # no image was pushed. Keying the deploy off the artifact rather than repeating the
+    # event/ref test means the two conditions cannot drift apart.
+    if: always() && needs.build.result == 'success' && needs.build.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The image is in GHCR — point the cluster at it. Both inputs are required: this
+      # workflow's own run is still in_progress here, so the deploy's "last successful
+      # publish" query would resolve to the previous commit and roll out a stale image.
+      #
+      # `app` is the name the deploy looks this repository up by. It must match the list
+      # that deploy keeps, or the dispatch fails with "no app named ... is tracked".
+      #
+      # A PAT, not GITHUB_TOKEN: the job's own token is scoped to this repository and
+      # cannot dispatch a workflow in another one.
+      - name: Trigger cluster deploy
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          gh workflow run gitops-bump-images.yml \
+            --repo kalpak44/homelab-infra \
+            -f app=song-radar \
+            -f sha="${GITHUB_SHA}"
+          echo "Dispatched \`gitops-bump-images\` for \`song-radar\` @ \`${TAG}\`." >> "$GITHUB_STEP_SUMMARY"

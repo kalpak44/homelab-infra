@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: song-radar
+  namespace: private
+spec:
+  replicas: 1
+  # A new image tag on every bump leaves the superseded ReplicaSet behind for ever, and
+  # the image scanner reports each one, burying live findings under dead revisions.
+  revisionHistoryLimit: 2
+  # The volume is ReadWriteMany, but two JVMs sharing one library directory is a design
+  # decision nothing has made yet. Recreate keeps exactly one pod across a rollout.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: song-radar
+  template:
+    metadata:
+      labels:
+        app: song-radar
+    spec:
+      automountServiceAccountToken: false
+      # A pod-level context, not only the per-container one below: the config scanner
+      # treats an empty pod securityContext as running with defaults regardless of what
+      # the containers set. fsGroup is what makes the NFS volume writable to uid 1000.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: song-radar
+          image: ghcr.io/kalpak44/song-radar:3af89dd
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # Every key in this Secret is named for the variable it sets, so there is no
+          # mapping here to drift from the ExternalSecret that produces it.
+          envFrom:
+            - secretRef:
+                name: song-radar-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+          # The application reads its database at startup and fails there if it cannot
+          # reach it, so a pod that answers on / has a working connection behind it.
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # readOnlyRootFilesystem is on, and the JVM still needs somewhere to write
+            # its temporary files.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+              ephemeral-storage: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+              ephemeral-storage: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: song-radar-data
+        - name: tmp
+          emptyDir: {}

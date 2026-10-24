@@ -250,6 +250,7 @@ list:
     @printf "    %-40s %s\n" "dns/private/grafana"                     "grafana.internal → 192.168.1.121 (Grafana, in-cluster)"
     @printf "    %-40s %s\n" "dns/private/crowdsec"                    "crowdsec.internal → 192.168.1.121 (CrowdSec metrics, scraped by Prometheus)"
     @printf "    %-40s %s\n" "dns/private/private-home-page"           "home.internal → 192.168.1.121 (internal home page)"
+    @printf "    %-40s %s\n" "dns/private/soundradar"                  "soundradar.internal → 192.168.1.121 (SongRadar, in-cluster)"
     @printf "    %-40s %s\n" "dns/private/prometheus"                  "prometheus.internal → 192.168.1.11 (Prometheus)"
     @printf "    %-40s %s\n" "dns/private/acestream"                   "acestream.internal → 192.168.1.7 (AceStream engine + acexy + Threadfin, Portainer stack)"
     @echo "  shared (non-DNS Cloudflare resources)"
