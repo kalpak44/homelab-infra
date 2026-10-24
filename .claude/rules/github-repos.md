@@ -380,8 +380,8 @@ uninstalled and reinstalled, so it needs a backup outside GitHub.
 | `TF_VAR_github_token`     | `GH_ADMIN_TOKEN`  | classic `repo` + `workflow`, or fine-grained with write on Administration / Contents / Secrets / Dependabot secrets / Variables / Workflows |
 | `TF_VAR_github_owner`     | `GH_OWNER`        | defaults to `kalpak44`                                         |
 | `TF_VAR_deepseek_api_key` | `DEEPSEEK_APIKEY` | already present in the shell locally and as a repo secret in CI |
-| `TF_VAR_sonar_token`      | `SONAR_TOKEN`     | `bunker-party` only, and optional: mirrors the key into the Dependabot store so publish.yml's quality gate runs on Dependabot PRs. Unset leaves the stored secret untouched |
-| `TF_VAR_android_keystore_base64` | `ANDROID_KEYSTORE_BASE64` | `jacred-tv-client` only: base64 of the Android release keystore, copied into the repo so `release.yml` can sign the APK |
+| `TF_VAR_sonar_token`      | `SONAR_TOKEN`     | `bunker-party` only, and optional: mirrors the key into the Dependabot store so publish.yml's quality gate runs on Dependabot PRs. Unset makes `just deploy` refuse, rather than delete the stored secret |
+| `TF_VAR_android_keystore_base64` | `ANDROID_KEYSTORE_BASE64` | `jacred-tv-client` only: base64 of the Android release keystore, copied into the repo so `release.yml` can sign the APK. Unset makes `just deploy` refuse, rather than delete the stored secret |
 
 Secret names cannot start with `GITHUB_` (reserved by GitHub) — hence `GH_ADMIN_TOKEN` / `GH_OWNER`.
 

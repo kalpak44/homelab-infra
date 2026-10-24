@@ -53,7 +53,7 @@ jobs:
         uses: gradle/actions/wrapper-validation@v6
 
       # From v6 the build cache is a separate component under Gradle's own terms of use
-      # rather than the action's MIT licence; it loads only while caching is enabled.
+      # rather than the action's MIT license; it loads only while caching is enabled.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
