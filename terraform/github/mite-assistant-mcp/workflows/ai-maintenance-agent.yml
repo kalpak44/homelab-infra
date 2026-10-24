@@ -28,6 +28,7 @@ on:
     workflows:
       - "Build, Publish, Deploy"
       - "Verify, Publish, Deploy"
+      - "Verify, Publish, Scan"
       - "Release"
       - "AI Issue Resolver Agent"
     types: [completed]

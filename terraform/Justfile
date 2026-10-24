@@ -284,4 +284,4 @@ list:
     @printf "  %-30s %s\n" "noco-google-connector-web-page" "kalpak44/noco-google-connector-web-page · same + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-30s %s\n" "postgres-awscli"                "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "proklinator-app"                "kalpak44/proklinator-app · PR sweep + issue resolver + publish.yml (2 Sonar gates, 2 images, deploy)"
-    @printf "  %-30s %s\n" "song-radar"                     "kalpak44/song-radar · repo settings only · no app yet, so no workflows and no agent"
+    @printf "  %-30s %s\n" "song-radar"                     "kalpak44/song-radar · same + fmt/test/coverage/Sonar gate + publish.yml (PR check, GHCR publish, syft/grype report) + dependabot"
