@@ -59,6 +59,24 @@ resource "github_actions_variable" "deepseek_model" {
   value         = var.deepseek_model
 }
 
+# --- Release signing ----------------------------------------------------------------
+# Android only replaces an installed app when the new APK carries the same signature, so
+# the key has to outlive any one CI run. release.yml used to generate one per run, which
+# meant no release could ever update another. The keystore password and alias are in
+# release.yml in the clear on purpose: the file is the credential, and a password stored
+# beside it in the same secret store protects nothing.
+#
+# `count` guards the value rather than the resource: an apply with the variable unset
+# would otherwise replace the stored keystore with an empty string, and the next release
+# would fail at a signing step nobody was looking at.
+resource "github_actions_secret" "android_keystore" {
+  count = var.android_keystore_base64 != "" ? 1 : 0
+
+  repository  = github_repository.this.name
+  secret_name = "ANDROID_KEYSTORE_BASE64"
+  value       = var.android_keystore_base64
+}
+
 # The repo's own CI. release.yml runs on pull_request and also has a workflow_dispatch
 # trigger, which is what the agent needs to start it on a PR that has no check runs.
 resource "github_actions_variable" "pr_check_workflow" {
@@ -120,6 +138,8 @@ resource "github_repository_file" "release_workflow" {
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
+
+  depends_on = [github_actions_secret.android_keystore]
 }
 
 resource "github_repository_file" "dependabot" {

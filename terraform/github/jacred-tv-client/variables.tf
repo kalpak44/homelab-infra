@@ -21,3 +21,10 @@ variable "deepseek_model" {
   type        = string
   default     = "deepseek-v4-flash"
 }
+
+variable "android_keystore_base64" {
+  description = "Base64 of the release keystore, published to the repo as the ANDROID_KEYSTORE_BASE64 secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

@@ -338,6 +338,16 @@ printed the contents table twice, because the CHANGELOG section they copy alread
 uncommitted working-tree changes, so checking out from `HEAD` silently discards the base bump the run just made and
 validated. The remediation steps snapshot the Dockerfile to `/tmp/sec/Dockerfile.incumbent` and restore from that.
 
+**`jacred-tv-client` signs every release with one key, and that is what makes its in-app updater work.**
+Android replaces an installed app only when the new APK carries the same signature, so a key generated
+inside the release run — which is what `release.yml` did until the app learned to update itself — meant no
+release could ever update another, and the failure landed on the device as `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+rather than anywhere CI could see it. The keystore therefore lives in `ANDROID_KEYSTORE_BASE64` here and is
+copied into the repo like every other secret. Its password and alias sit in `release.yml` in the clear: the
+keystore file is the credential, and a password stored in the same secret store as the file it protects
+leaks with it. Losing the keystore means `tv.jacred.client` can never be updated in place again, only
+uninstalled and reinstalled, so it needs a backup outside GitHub.
+
 ## Non-negotiables
 
 - **Adopt, never create.** Existing repos come in via an `import` block, not a fresh `github_repository`. The import
@@ -371,6 +381,7 @@ validated. The remediation steps snapshot the Dockerfile to `/tmp/sec/Dockerfile
 | `TF_VAR_github_owner`     | `GH_OWNER`        | defaults to `kalpak44`                                         |
 | `TF_VAR_deepseek_api_key` | `DEEPSEEK_APIKEY` | already present in the shell locally and as a repo secret in CI |
 | `TF_VAR_sonar_token`      | `SONAR_TOKEN`     | `bunker-party` only, and optional: mirrors the key into the Dependabot store so publish.yml's quality gate runs on Dependabot PRs. Unset leaves the stored secret untouched |
+| `TF_VAR_android_keystore_base64` | `ANDROID_KEYSTORE_BASE64` | `jacred-tv-client` only: base64 of the Android release keystore, copied into the repo so `release.yml` can sign the APK |
 
 Secret names cannot start with `GITHUB_` (reserved by GitHub) — hence `GH_ADMIN_TOKEN` / `GH_OWNER`.
 
