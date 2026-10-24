@@ -1,7 +1,7 @@
 # Homelab GitOps
 #
 # Usage:
-#   just bump-images        # point the public apps at the latest published image
+#   just bump-images        # point tracked apps at the latest published image
 #   just list               # show what is tracked
 #
 # Env vars:
@@ -22,13 +22,13 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-# gitops app dir | source repo | publish workflow | image(s), comma-separated, no tag
-apps := "personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak44
-mite-assistant-mcp|kalpak44/mite-assistant-mcp|publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
-bunker-game-app|kalpak44/bunker-party|publish.yml|ghcr.io/kalpak44/bunker-party
-proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api
-noco-google-connector-web-page|kalpak44/noco-google-connector-web-page|publish.yml|ghcr.io/kalpak44/noco-google-connector-web-page
-song-radar|kalpak44/song-radar|publish.yml|ghcr.io/kalpak44/song-radar"
+# app layer | gitops app dir | source repo | publish workflow | image(s), no tag
+apps := "public|personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak44
+public|mite-assistant-mcp|kalpak44/mite-assistant-mcp|publish.yml|ghcr.io/kalpak44/mite-assistant-mcp
+public|bunker-game-app|kalpak44/bunker-party|publish.yml|ghcr.io/kalpak44/bunker-party
+public|proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api
+public|noco-google-connector-web-page|kalpak44/noco-google-connector-web-page|publish.yml|ghcr.io/kalpak44/noco-google-connector-web-page
+private|song-radar|kalpak44/song-radar|publish.yml|ghcr.io/kalpak44/song-radar"
 
 _help:
     @just --list
@@ -58,13 +58,14 @@ bump-images only='' sha='':
 
     cd "$(git rev-parse --show-toplevel)"
     bumped=()
+    bumped_files=()
     matched=0
 
-    while IFS='|' read -r app repo workflow image; do
+    while IFS='|' read -r layer app repo workflow image; do
         [ -z "$app" ] && continue
         [ -n "$only" ] && [ "$app" != "$only" ] && continue
         matched=1
-        dir="gitops/clusters/homelab/apps/public/${app}"
+        dir="gitops/clusters/homelab/apps/${layer}/${app}"
 
         if [ -n "$given_sha" ]; then
             sha="$given_sha"
@@ -122,6 +123,7 @@ bump-images only='' sha='':
             sed -i.bak -E "s|^( *image: ${img}:).*$|\1${new}|" "$file" && rm -f "${file}.bak"
             echo "$app: $short $current -> $new"
             app_bumped=1
+            bumped_files+=("$file")
         done
 
         # Once per app, however many of its images moved — the commit message lists
@@ -143,7 +145,7 @@ bump-images only='' sha='':
 
     git config user.name  "homelab-infra"
     git config user.email "homelab-infra@users.noreply.github.com"
-    git add gitops/clusters/homelab/apps/public
+    git add "${bumped_files[@]}"
     git commit -m "bump $(IFS=', '; echo "${bumped[*]}") image tag(s)"
 
     # Rebase and retry rather than fail. The workflow's concurrency group serialises
@@ -177,9 +179,9 @@ list:
     set -euo pipefail
     cd "$(git rev-parse --show-toplevel)"
     echo "Image tags bumped by 'just bump-images':"
-    while IFS='|' read -r app repo workflow image; do
+    while IFS='|' read -r layer app repo workflow image; do
         [ -z "$app" ] && continue
-        dir="gitops/clusters/homelab/apps/public/${app}"
+        dir="gitops/clusters/homelab/apps/${layer}/${app}"
         IFS=',' read -ra images <<< "$image"
         for img in "${images[@]}"; do
             file=$(grep -rlE "^ *image: ${img}:" "$dir" | head -1 || true)

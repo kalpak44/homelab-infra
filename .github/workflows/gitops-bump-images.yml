@@ -1,6 +1,6 @@
 name: GitOps - Bump images
 
-# Points the public apps at the newest image their source repo has successfully
+# Points tracked apps at the newest image their source repo has successfully
 # published, then pushes. Flux picks the change up from Git and rolls the Deployment.
 #
 # Two ways in. The nightly sweep queries each source repo for its last successful

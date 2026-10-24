@@ -13,7 +13,7 @@ and `scanners-bump-pins.yml` weekly.
 | `github-deploy.yml`      | Terraform apply on a managed GitHub repo   | `just deploy github <repo>`          |
 | `github-destroy.yml`     | Terraform destroy on a managed GitHub repo | `just destroy github <repo>`         |
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
-| `gitops-bump-images.yml` | Point public apps at the newest published image | `just bump-images` (in `gitops/`) |
+| `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
 
 Every workflow has one job with three steps: `checkout`, `extractions/setup-just@v2`, and a single `just <recipe>` call.
