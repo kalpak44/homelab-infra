@@ -37,12 +37,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK
         # The Android plugin refuses to start on an older JDK, and the module compiles
         # with source/target 17. The runner image already carries the Android SDK.
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -50,10 +50,12 @@ jobs:
       # The wrapper jar is committed, so confirm it is an official Gradle release before
       # this job executes it.
       - name: Validate the Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
+        uses: gradle/actions/wrapper-validation@v6
 
+      # From v6 the build cache is a separate component under Gradle's own terms of use
+      # rather than the action's MIT licence; it loads only while caching is enabled.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # Blocking, and the whole gate: the agent merges with no human review, and lint is
       # configured with abortOnError so it fails the build rather than filing a report
@@ -65,7 +67,7 @@ jobs:
       # Not a release artifact — this is the build a reviewer can sideload onto the Mi Box
       # to check a pull request on a real screen before merging it.
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jacred-tv-debug
           path: app/build/outputs/apk/debug/*.apk
@@ -82,16 +84,16 @@ jobs:
 
     steps:
       # Checked out at the tag, which is the commit the version number describes.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/wrapper-validation@v6
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # The tag is the source of the version, not app/build.gradle: they are written in
       # the same commit, and reading the tag means a mismatch cannot ship silently.
@@ -158,7 +160,7 @@ jobs:
           echo "path=${named}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: jacred-tv-client ${{ github.ref_name }}

@@ -257,7 +257,7 @@ jobs:
         # The agent runs the repo's own build and lint before committing, and the
         # Android plugin refuses to start on an older JDK. The runner image already
         # carries the Android SDK, so this is the only toolchain step needed.
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
