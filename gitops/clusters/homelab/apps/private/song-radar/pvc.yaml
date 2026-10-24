@@ -1,5 +1,6 @@
-# The music library's storage. Nothing writes to it yet — it is provisioned now so the
-# first feature that needs it does not also need a storage change.
+# The music library's storage. The NFS provisioner treats the requested size as metadata
+# rather than an enforced quota, so the Deployment also passes 30 GB as SongRadar's
+# logical capacity for monitoring and application-level limits.
 #
 # `nfs` is named rather than left to the default: the cluster has two StorageClasses both
 # flagged default, so an unnamed claim binds to whichever the API server picks.

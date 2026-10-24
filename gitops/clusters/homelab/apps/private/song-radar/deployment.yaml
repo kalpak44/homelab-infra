@@ -46,6 +46,14 @@ spec:
           envFrom:
             - secretRef:
                 name: song-radar-secrets
+          env:
+            # The NFS subdirectory provisioner reports the capacity of the whole NFS
+            # filesystem, not the requested PVC size. Keep SongRadar's path and logical
+            # capacity explicit so its storage meter represents this 30 GiB volume.
+            - name: SONGRADAR_STORAGE_PATH
+              value: /data
+            - name: SONGRADAR_STORAGE_CAPACITY_GB
+              value: "30"
           ports:
             - name: http
               containerPort: 8080
