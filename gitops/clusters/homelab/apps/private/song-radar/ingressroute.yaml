@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - private-web-secure
   routes:
-    - match: Host(`soundradar.internal.pavel-usanli.online`)
+    - match: Host(`songradar.internal.pavel-usanli.online`)
       kind: Rule
       services:
         - name: song-radar

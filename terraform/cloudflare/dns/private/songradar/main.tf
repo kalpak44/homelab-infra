@@ -4,7 +4,7 @@ data "cloudflare_zone" "this" {
 
 resource "cloudflare_record" "soundradar" {
   zone_id = data.cloudflare_zone.this.id
-  name    = "soundradar.internal"
+  name    = "songradar.internal"
   content = "192.168.1.121"
   type    = "A"
   proxied = false

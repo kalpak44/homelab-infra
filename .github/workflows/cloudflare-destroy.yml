@@ -17,7 +17,7 @@ on:
           - dns/private/portainer
           - dns/private/postgres
           - dns/private/private-home-page
-          - dns/private/soundradar
+          - dns/private/songradar
           - dns/private/prometheus
           - dns/private/proxmox
           - dns/private/rabbitmq
