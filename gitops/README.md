@@ -85,6 +85,20 @@ vault kv put secret/mite-assistant-mcp-secrets \
   mite-url="https://<account>.mite.de"
 ```
 
+### `secret/songradar-secrets`
+
+| Property | Description |
+|---|---|
+| `database-host` | PostgreSQL hostname used by SongRadar |
+| `database-port` | PostgreSQL port |
+| `database-name` | SongRadar database name |
+| `database-username` | PostgreSQL username |
+| `database-password` | PostgreSQL password |
+| `audd-api-token` | Optional AudD token for automatic song recognition |
+
+The optional AudD token is exposed to the app as `SONGRADAR_AUDD_API_TOKEN` by its
+`ExternalSecret`.
+
 ### Manual k8s secret - `cloudflare-api-token` (namespace: `kube-system`)
 
 Used by Traefik for Cloudflare DNS-01 Let's Encrypt challenges. Created by the k3s Ansible playbook.
