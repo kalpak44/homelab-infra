@@ -4,6 +4,7 @@ locals {
   agent_workflow   = ".github/workflows/ai-maintenance-agent.yml"
   agent_prompt     = ".github/agent-prompts/ai-maintenance-agent.md"
   publish_workflow = ".github/workflows/publish.yml"
+  source_check     = ".github/workflows/source-check.yml"
   dependabot_file  = ".github/dependabot.yml"
 }
 
@@ -186,6 +187,20 @@ resource "github_repository_file" "publish_workflow" {
   # Without this, Terraform is free to push the workflow before the secret exists and the
   # first run silently skips the gate.
   depends_on = [github_actions_secret.sonar]
+}
+
+# The music sources are third-party APIs the build cannot exercise without reaching them,
+# so this runs on its own schedule instead. A failure wakes the agent, which is the point:
+# the sources rot, and the application just stops filing tracks when they do.
+resource "github_repository_file" "source_check" {
+  repository          = github_repository.this.name
+  branch              = local.default_branch
+  file                = local.source_check
+  content             = file("${path.module}/workflows/source-check.yml")
+  commit_message      = "chore: sync source check workflow from homelab-infra"
+  commit_author       = "homelab-infra"
+  commit_email        = "homelab-infra@users.noreply.github.com"
+  overwrite_on_create = true
 }
 
 # Dependabot is the agent's input side — no dependency PRs, nothing for

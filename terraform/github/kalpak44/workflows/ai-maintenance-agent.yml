@@ -31,6 +31,7 @@ on:
       - "Verify, Publish, Scan"
       - "Release"
       - "AI Issue Resolver Agent"
+      - "Source check"
     types: [completed]
 
 # Least privilege by default; the job that needs to write widens it itself. A grant made

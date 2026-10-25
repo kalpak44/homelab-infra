@@ -1,0 +1,67 @@
+# Managed by homelab-infra — terraform/github/song-radar/workflows/source-check.yml
+# Edits made here in the target repo are overwritten by `just deploy github song-radar`.
+#
+# Downloads a real track from every music source. Those are third-party APIs, two of them
+# undocumented, and they change without warning: nothing in the normal build can tell a
+# working source from one that has started answering differently, and the application
+# simply files no track when they all fail.
+#
+# Deliberately not part of the pull request gate. A catalogue being unreachable for an
+# hour is not a reason to block a merge, and a check that fails for reasons the branch
+# did not cause is a check people learn to ignore.
+#
+# The `name:` below is matched verbatim by the agent workflow's `workflow_run.workflows`
+# list, which takes no wildcard. Renaming this without adding the new name there leaves
+# the agent asleep through every failed run.
+#
+# The action versions here are bumped by hand, in this file. `github-actions` is absent
+# from dependabot.yml because a bump merged into a generated workflow is reverted by the
+# next apply, and Dependabot cannot watch the generating copy either — it only scans
+# `.github/workflows/`.
+name: Source check
+
+on:
+  schedule:
+    # 04:00 UTC, two hours before the agent's own sweep, so a source that broke overnight
+    # is already reported by the time it looks for work.
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}
+
+# One at a time. These runs reach real catalogues, and two concurrent runs would double
+# the requests for no extra signal.
+concurrency:
+  group: source-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    name: Download from every source
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # The group is held out of the normal build by a pom property; clearing it is what
+      # turns these on, and `-Dgroups` keeps the run to just them.
+      - name: Download a track from every source
+        run: ./mvnw -B test -Dexcluded.test.groups= -Dgroups=live -Djacoco.skip=true
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          echo "::error::A music source stopped serving downloads. These are scraped" \
+               "third-party APIs and are expected to rot. docs/music-sources.md says how" \
+               "each one works, what breaks first, and which reference implementations" \
+               "are worth reading."
