@@ -35,7 +35,7 @@ spec:
           # value is invisible to it — `just bump-images` prints "no image line,
           # skipping" and the app silently never deploys. Keep the
           # `image: <repo>:<tag>` shape on one line.
-          image: ghcr.io/kalpak44/noco-google-connector-web-page:023b0af
+          image: ghcr.io/kalpak44/noco-google-connector-web-page:bd6a8cb
           # No capability drop or runAsNonRoot here: the container binds port 80, which
           # needs NET_BIND_SERVICE and a root uid. Moving it to 8080 is what unlocks both.
           securityContext:
