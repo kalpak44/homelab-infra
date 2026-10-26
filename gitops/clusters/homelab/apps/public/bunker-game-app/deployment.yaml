@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: bunker
-          image: ghcr.io/kalpak44/bunker-party:7644320
+          image: ghcr.io/kalpak44/bunker-party:1a28276
           imagePullPolicy: Always
           # No runAsNonRoot: the image declares no USER, so the kubelet would refuse the
           # container. Sablier scales this from zero, so that failure would surface on a
