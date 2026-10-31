@@ -6,5 +6,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingressroute.yaml
+  - webdav-deployment.yaml
+  - webdav-service.yaml
+  - webdav-ingressroute.yaml
 
 namespace: private

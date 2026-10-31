@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: song-radar-webdav
+  namespace: private
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: song-radar-webdav
+  template:
+    metadata:
+      labels:
+        app: song-radar-webdav
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx-webdav
+          image: dgraziotin/nginx-webdav-nononsense:1.31.4
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Sofia
+          ports:
+            - name: http
+              containerPort: 80
+          startupProbe:
+            httpGet:
+              path: /webdav/
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /webdav/
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /webdav/
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            # nginx serves /data, so this nested mount preserves /webdav in every
+            # path returned to WebDAV clients while exposing the PVC root.
+            - name: data
+              mountPath: /data/webdav
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: song-radar-data

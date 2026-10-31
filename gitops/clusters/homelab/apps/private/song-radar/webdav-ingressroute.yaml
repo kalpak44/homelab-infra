@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: song-radar-webdav
+  namespace: private
+spec:
+  entryPoints:
+    - private-web-secure
+  routes:
+    - match: Host(`songradar.internal.pavel-usanli.online`) && PathPrefix(`/webdav/`)
+      kind: Rule
+      services:
+        - name: song-radar-webdav
+          port: 80
+  tls:
+    certResolver: cloudflare
