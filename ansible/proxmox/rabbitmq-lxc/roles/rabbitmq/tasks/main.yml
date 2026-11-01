@@ -17,26 +17,37 @@
   register: plugin_result
   changed_when: "'Plugin configuration unchanged' not in plugin_result.stdout"
 
+# Asked for, not inferred from an error string. Tolerating "already exists" meant matching
+# rabbitmqctl's wording, and `no_log` censors the result, so any other failure surfaced as
+# a red task with no reason attached.
+- name: Read existing users
+  command: rabbitmqctl list_users --quiet --formatter json
+  register: rabbitmq_users
+  changed_when: false
+
+# Skipped when no credentials were supplied, the same guard the postgres role uses. A
+# shell missing the secret would otherwise run `add_user "" ""` and fail the whole play.
 - name: Create admin user
   command: rabbitmqctl add_user {{ rabbitmq_user }} {{ rabbitmq_password }}
-  register: create_user
-  failed_when: create_user.rc != 0 and (create_user.stderr is not search('already[ _]exists'))
-  changed_when: create_user.rc == 0
+  when:
+    - rabbitmq_user != ""
+    - rabbitmq_user not in (rabbitmq_users.stdout | from_json | map(attribute='user') | list)
   no_log: true
 
 - name: Set admin user tags
   command: rabbitmqctl set_user_tags {{ rabbitmq_user }} administrator
+  when: rabbitmq_user != ""
   changed_when: true
 
 - name: Set admin user permissions
   command: rabbitmqctl set_permissions -p {{ rabbitmq_vhost }} {{ rabbitmq_user }} ".*" ".*" ".*"
+  when: rabbitmq_user != ""
   changed_when: true
 
+# The default guest account is reachable on localhost with a published password.
 - name: Delete guest user
   command: rabbitmqctl delete_user guest
-  register: delete_guest
-  failed_when: delete_guest.rc != 0 and (delete_guest.stderr is not search('no[ _]such[ _]user|Could not find user'))
-  changed_when: delete_guest.rc == 0
+  when: "'guest' in (rabbitmq_users.stdout | from_json | map(attribute='user') | list)"
 
 - name: Install certbot, Cloudflare plugin, and nginx
   apt:
@@ -94,3 +105,11 @@
     src: restart-nginx.sh.j2
     dest: /etc/letsencrypt/renewal-hooks/deploy/restart-nginx.sh
     mode: "0755"
+
+# Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
+# guarded on the file being there. Runs after the deploy hook, so a renewal reloads the
+# service.
+- name: Renew and verify the certificate
+  ansible.builtin.import_tasks: ../../../_shared/certbot-renew.yml
+  vars:
+    certbot_domain: "{{ rabbitmq_domain }}"

@@ -254,3 +254,11 @@
   until: prometheus_ready.status == 200
   retries: 12
   delay: 5
+
+# Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
+# guarded on the file being there. Runs after the deploy hook, so a renewal reloads the
+# service.
+- name: Renew and verify the certificate
+  ansible.builtin.import_tasks: ../../../_shared/certbot-renew.yml
+  vars:
+    certbot_domain: "{{ prometheus_tls_domain }}"

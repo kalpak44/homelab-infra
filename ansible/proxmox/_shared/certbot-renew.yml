@@ -1,0 +1,40 @@
+---
+# Renew the host's certificate if it is due, then prove what is on disk is actually valid.
+# Imported by every role that issues one, after the credentials file and the deploy hook
+# are both in place.
+#
+# This exists because `certbot certonly` is guarded on the certificate file existing, so
+# once a certificate is present no role task ever touches it again. A rotated Cloudflare
+# token left `rabbitmq.internal` expired for two months behind a daily timer that kept
+# reporting success; re-running the playbook rewrote the credentials and still renewed
+# nothing. Repairing that has to be a task here, or the repo cannot fix its own hosts.
+#
+# Requires: certbot_domain
+
+- name: Renew the certificate if it is due
+  ansible.builtin.command:
+    cmd: "certbot renew --cert-name {{ certbot_domain }} --non-interactive"
+  register: certbot_renew
+  changed_when: "'not yet due for renewal' not in certbot_renew.stdout"
+
+# `-checkend` exits non-zero when the certificate expires inside the window. Twenty days
+# rather than certbot's own thirty: a certificate between the two is simply not due yet,
+# and failing on it would make every run red for ten days out of ninety. Below twenty,
+# renewal has had time to run and has not worked.
+- name: Confirm the certificate is valid and not expiring
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -checkend 1728000 -noout
+      -in /etc/letsencrypt/live/{{ certbot_domain }}/fullchain.pem
+  register: certbot_checkend
+  changed_when: false
+  failed_when: false
+
+- name: Report the renewal is broken
+  ansible.builtin.fail:
+    msg: >-
+      {{ certbot_domain }} is expired or expires within 20 days and `certbot renew` did not
+      fix it. Run `certbot renew --dry-run` on this host: the usual cause is a rotated
+      Cloudflare token, which fails DNS-01 with `Invalid access token` while the timer
+      still reports success.
+  when: certbot_checkend.rc != 0
