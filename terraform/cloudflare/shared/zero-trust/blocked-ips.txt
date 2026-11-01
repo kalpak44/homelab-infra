@@ -12,3 +12,9 @@
 34.77.99.151
 # 2026-11-01 CVE-2025-29927, secret-file and framework probing across planner and www, 107 events in 104s
 34.55.131.206
+# 2026-11-01 WordPress REST/API probing in four bursts over six hours, returning after
+# earlier short bans expired, on proklinator
+45.148.10.18
+# 2026-11-01 .env probing across bunker and mite-assistant, returning 6.5 hours after
+# an earlier short ban expired
+193.47.62.29

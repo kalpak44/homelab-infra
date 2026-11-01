@@ -33,3 +33,9 @@
 34.62.82.207
 # 2026-11-01 .env, .git and admin probing, 55 events in 25s on www
 35.228.68.113
+# 2026-11-01 WordPress REST/API probing in four bursts between 09:48 and 16:09,
+# returning after earlier short bans expired, on proklinator
+45.148.10.18
+# 2026-11-01 .env probing on bunker at 12:04 and mite-assistant at 18:36, returning
+# after an earlier short ban expired
+193.47.62.29
