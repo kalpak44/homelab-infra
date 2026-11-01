@@ -20,6 +20,16 @@ spec:
   values:
     container_runtime: containerd
 
+    # Ahead of the chart: 0.24.2's appVersion is still v1.8.1, and a lagging binary logs a
+    # warning on every start because the hub ships parsers written against the newer one.
+    #
+    # This is also a one-way door. The database already holds v1.8.2's decisions index, and
+    # the schema migration runs on every start — so v1.8.1 would try to build its own index
+    # over 150k rows on NFS-backed SQLite and crash-loop on `database is locked`. Drop this
+    # only when the chart's own appVersion reaches it, never to roll back.
+    image:
+      tag: "v1.8.2"
+
     config:
       config.yaml.local: |
         # AppSec writes one alert per blocked request, so the 5000-item default is
