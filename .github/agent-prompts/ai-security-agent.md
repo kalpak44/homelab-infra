@@ -193,6 +193,13 @@ Compare three things and act on each:
   appVersion reaches the tag it names, delete the override. Left in, it stops being a
   bump and becomes a hold.
 
+**A version bump here is a one-way door, so never roll one back.** The schema migration
+runs on every start, and the database is SQLite on an NFS volume: once it carries the newer
+release's indexes, the older binary starts trying to build its own over a six-figure
+`decisions` table and crash-loops on `database is locked`. If a bump leaves pods unhealthy,
+the fix is forward — or a human. Reverting the tag turns one broken pod into a LAPI that
+cannot start at all.
+
 Check the versions from the published sources rather than from memory:
 
 ```
@@ -276,9 +283,21 @@ kubectl -n crowdsec rollout status deployment/crowdsec-lapi --timeout=5m
 kubectl -n crowdsec rollout status deployment/crowdsec-appsec --timeout=5m
 ```
 
+**Then check every pod in the namespace, not just the rollouts.** A rollout reports on the
+workload it names, so a pod left behind by a superseded ReplicaSet, or one that reached
+Running and then began restarting, passes all three commands above and is still broken.
+
+```
+kubectl get pods -n crowdsec -o wide
+```
+
+Every pod must be `Running` and fully Ready, with no `CrashLoopBackOff`, no `Init:`, no
+`Error`, and no restart count climbing while you watch. Anything else is a failed
+deployment even if the smoke tests pass — read that pod's logs, put what it said in the
+report, and roll back.
+
 A scenario change rolls the agent DaemonSet; the LAPI and AppSec pods should be untouched.
-If the agent pods do not reach Ready, your scenario did not parse — that is a failed
-deployment.
+If the agent pods do not reach Ready, your scenario did not parse.
 
 **Cloudflare**, only if you changed `local.blocked_ips`:
 
@@ -347,7 +366,8 @@ Cover, in this order:
 4. **What CrowdSec caught by itself** — scenarios that fired, with counts.
 5. **Versions** — the running CrowdSec, the chart, and whether either moved tonight.
 6. **Changes made** — every file, every entry, with the reason for each.
-7. **Deployment** — the reconciled revision, the rollouts, and the smoke-test results.
+7. **Deployment** — the reconciled revision, the pod states across the whole `crowdsec`
+   namespace, and the smoke-test results.
 8. **Gaps** — scenarios that fired zero times, patterns you saw but could not act on,
    anything RBAC refused you, and the Cloudflare rule budget if you hit it.
 
