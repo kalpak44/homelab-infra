@@ -2,7 +2,7 @@ resource "proxmox_virtual_environment_vm" "this" {
   node_name = var.node_name
   name      = var.vm_name
   vm_id     = var.vm_id
-  on_boot       = true
+  on_boot   = true
 
   clone {
     vm_id = var.template_vm_id
@@ -18,11 +18,21 @@ resource "proxmox_virtual_environment_vm" "this" {
     dedicated = var.memory_mb
   }
 
+  # discard = "on" so the guest's fstrim actually reaches the thin pool. With the
+  # provider default the blocks a guest frees stay allocated for ever: the k3s nodes
+  # reported 81% used while their thin volumes sat at 97%, and fstrim.timer inside them
+  # had been running against a disk that ignored it.
+  #
+  # Applying this to a running VM needs a power cycle through Proxmox — `qm reboot`, not a
+  # reboot from inside. A guest reboot keeps the same QEMU process, which holds the device
+  # flag it started with, so the setting reads as applied in `qm config` and is still
+  # `discard=ignore` in the process actually serving the disk.
   disk {
     datastore_id = var.datastore_id
     interface    = "scsi0"
     file_format  = "raw"
     size         = var.disk_size_gb
+    discard      = "on"
   }
 
   dynamic "disk" {
@@ -32,6 +42,7 @@ resource "proxmox_virtual_environment_vm" "this" {
       interface    = "scsi1"
       file_format  = "raw"
       size         = var.data_disk_size_gb
+      discard      = "on"
     }
   }
 

@@ -7,6 +7,8 @@
       - nfs-common
       - curl
       - git
+      # growpart, for taking a disk grown in Proxmox into the partition below.
+      - cloud-guest-utils
     state: present
     update_cache: true
 
@@ -25,3 +27,52 @@
     path: /etc/fstab
     regexp: '.*\bswap\b.*'
     state: absent
+# The kubelet flags go in k3s's own config file rather than the installer's
+# INSTALL_K3S_EXEC, because cluster-setup.yml skips the install whenever the pinned
+# version is unchanged — a threshold edited there would silently never reach a node.
+- name: Check which k3s unit this node runs
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ item }}.service"
+  register: k3s_units
+  loop: [k3s, k3s-agent]
+
+- name: Record the unit name for the restart handler
+  ansible.builtin.set_fact:
+    k3s_unit: >-
+      {{ (k3s_units.results | selectattr('stat.exists') | map(attribute='item') | list | first) | default('', true) }}
+
+- name: Ensure the k3s config directory exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy k3s kubelet configuration
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      kubelet-arg:
+        - "image-gc-high-threshold={{ k3s_image_gc_high_threshold }}"
+        - "image-gc-low-threshold={{ k3s_image_gc_low_threshold }}"
+  notify: Restart k3s
+
+# A disk grown in Proxmox is invisible to a running guest: cloud-init only extends the
+# partition at first boot, so without this the extra space is allocated and unusable.
+# Both commands are no-ops once the space has been taken.
+- name: Grow the root partition into the disk
+  ansible.builtin.command: growpart /dev/sda 1
+  register: growpart_result
+  changed_when: "'NOCHANGE' not in growpart_result.stdout"
+  failed_when:
+    - growpart_result.rc != 0
+    - "'NOCHANGE' not in growpart_result.stdout"
+
+- name: Grow the root filesystem into the partition
+  ansible.builtin.command: resize2fs /dev/sda1
+  register: resize_result
+  changed_when: "'Nothing to do' not in resize_result.stdout"

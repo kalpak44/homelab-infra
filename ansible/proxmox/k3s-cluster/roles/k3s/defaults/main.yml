@@ -1,1 +1,6 @@
 ---
+# Prune images once the node passes 70% and keep going until 50%, rather than kubelet's
+# 85/80. containerd keeps every image a deploy supersedes, so the floor only rises; the
+# defaults left both nodes parked just under 85% with 160-odd images cached.
+k3s_image_gc_high_threshold: 70
+k3s_image_gc_low_threshold: 50
