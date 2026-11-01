@@ -39,6 +39,13 @@ layers: the chart and image pins in `gitops/`, the version variables in the Ansi
 on every LXC and VM. Its policy is `.github/agent-prompts/ai-update-agent.md`, and it reads the cluster through the
 `update-agent` ServiceAccount in the same `agent-rbac.yaml` — the read-only ClusterRole is shared by both agents.
 
+**Majors are in scope and so are their migrations, which is why the snapshot is not optional.** `local-lvm` is
+LVM-thin, so every guest snapshots; the agent takes one over SSH to the Proxmox node with `pct`/`qm` before any major
+and rolls back to it on failure. A stateful bump cannot be undone by reverting the commit — CrowdSec proved that on
+2026-11-01, when its schema migration left the older binary unable to start at all — so for anything holding state the
+snapshot *is* the rollback. One major per run, and the snapshot is deleted once the upgrade verifies, because two
+snapshots on one guest grow the thin pool until the node wedges.
+
 The OS half is `just os-update`, which runs `ansible/maintenance/os-update.yml`. **That playbook's play order is the
 safety mechanism, not a style choice**: application hosts, then storage, then the k3s worker, then the server, then
 the tunnel, then AdGuard last, one host at a time, each gated on the previous coming back. AdGuard is last because it

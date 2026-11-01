@@ -18,10 +18,12 @@
     update_cache: true
   when: _repo.changed
 
+# `latest`, not `present`: with `present` the daemon is installed once and then never
+# moves, and this one terminates every tunnelled request.
 - name: Install cloudflared
   ansible.builtin.apt:
     name: cloudflared
-    state: present
+    state: latest
 
 - name: Write tunnel token env file
   ansible.builtin.copy:
