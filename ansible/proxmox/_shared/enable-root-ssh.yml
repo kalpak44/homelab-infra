@@ -14,7 +14,6 @@
   ansible.builtin.apt:
     name: openssh-server
     state: present
-    update_cache: true
 
 - name: Set root password
   ansible.builtin.user:

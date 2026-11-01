@@ -60,6 +60,21 @@
     path: "{{ adguard_install_dir }}/AdGuardHome"
   register: adguard_binary
 
+- name: Read the installed AdGuard Home version
+  ansible.builtin.command:
+    cmd: "{{ adguard_install_dir }}/AdGuardHome --version"
+  register: adguard_installed
+  changed_when: false
+  failed_when: false
+
+# Keyed on the running binary, not merely its presence: a presence check turns every
+# version bump into a silent no-op, leaving the pin and the service to drift apart.
+- name: Decide whether AdGuard Home needs installing
+  ansible.builtin.set_fact:
+    adguard_needs_install: >-
+      {{ not adguard_binary.stat.exists or
+         adguard_version not in (adguard_installed.stdout | default('')) }}
+
 - name: Create install directory
   ansible.builtin.file:
     path: "{{ adguard_install_dir }}"
@@ -72,14 +87,15 @@
     url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/v{{ adguard_version }}/AdGuardHome_linux_amd64.tar.gz"
     dest: /tmp/AdGuardHome.tar.gz
     mode: "0644"
-  when: not adguard_binary.stat.exists
+    force: true
+  when: adguard_needs_install
 
 - name: Extract AdGuard Home
   ansible.builtin.unarchive:
     src: /tmp/AdGuardHome.tar.gz
     dest: /tmp
     remote_src: true
-  when: not adguard_binary.stat.exists
+  when: adguard_needs_install
 
 - name: Move binary to install directory
   ansible.builtin.copy:
@@ -87,7 +103,8 @@
     dest: "{{ adguard_install_dir }}/AdGuardHome"
     remote_src: true
     mode: "0755"
-  when: not adguard_binary.stat.exists
+  when: adguard_needs_install
+  notify: Restart AdGuard Home
 
 - name: Deploy AdGuard Home configuration
   ansible.builtin.template:

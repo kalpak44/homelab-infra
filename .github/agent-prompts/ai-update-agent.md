@@ -38,8 +38,9 @@ sshpass -p "$HOST_PASSWORD" ssh -o StrictHostKeyChecking=accept-new \
   -o PreferredAuthentications=password root@<ip> "<command>"
 ```
 
-`nocobase` is the exception: its sshd is key-only on port 22022 and rejects what the runner
-has, so anything needing a shell there is a line in the report, not a command to retry.
+`nocobase` is the exception: its sshd is key-only on port 22022. `just configure` and
+`just os-update` load `SSH_PRIVATE_KEY` for it; a manual check must use `ssh -i` rather
+than the root password.
 
 ## 2. The order of work, and why it is this order
 
@@ -142,6 +143,10 @@ one the **proxy** is serving, on the port it actually listens on:
 | `vault.internal` | 8200 |
 | `prometheus.internal` | 9090 |
 
+`postgres.internal` and `pgadmin.internal` share one SAN certificate and the pgAdmin
+Apache vhost. Adding a hostname in only one place produces a certificate that clients
+reject for the missing name.
+
 Check what is being served, not what is on disk — a renewed certificate that the proxy
 never reloaded is still the old one to every client:
 
@@ -193,9 +198,9 @@ Two kinds of pin live under `gitops/clusters/homelab/`, and they move differentl
 |---|---|
 | `infrastructure/crowdsec` | `0.24.x` |
 | `infrastructure/metallb` | `0.16.*` |
-| `infrastructure/external-secrets` | `2.10.x` |
+| `infrastructure/external-secrets` | `2.14.x` |
 | `infrastructure/nfs-provisioner` | `4.*` |
-| `infrastructure/trivy-operator` | `0.36.x` |
+| `infrastructure/trivy-operator` | `0.38.x` |
 | `apps/private/grafana` | `10.5.x` |
 
 The wildcard already tracks patches on its own, so Flux has them without you. Your job is
@@ -268,6 +273,10 @@ manifest and push. Flux is the thing that applies your reverts, so this is the o
 component where breaking it also breaks your way back — check it before moving on, not at
 the end of the run.
 
+Flux v2.10 requires Kubernetes 1.35.2 or newer and changes RBAC/API handling. Move k3s
+across its minor first, and review the v2.10 upgrade notes before regenerating the
+controllers, so the running cluster is not asked to support an unsupported manifest.
+
 ## 6. Layer two — ansible
 
 These are version variables in role defaults. Bump the number, then apply that one service.
@@ -279,6 +288,10 @@ These are version variables in role defaults. Bump the number, then apply that o
 | `node_exporter_version` | same file | `prometheus/node_exporter` releases |
 | `vault_version` | `ansible/proxmox/vault-lxc/roles/vault/defaults/main.yml` | the HashiCorp apt repo |
 | `k3s_version` | `ansible/proxmox/k3s-cluster/group_vars/k3s.yml` | `https://update.k3s.io/v1-release/channels` |
+
+HashiCorp rotates its apt signing key. The Vault role must refresh the keyring before
+`apt update`; a `creates`-guarded keyring eventually leaves every run failing with
+`NO_PUBKEY`.
 
 **k3s is Kubernetes, so its minor is a major.** A patch inside the pinned minor is routine:
 take it, apply with `just configure k3s-cluster`, and the playbook upgrades both nodes in
@@ -298,7 +311,8 @@ updates itself, so its pin is the floor a fresh VM downloads rather than what is
 `pveam available | grep ubuntu-24.04` is what tells you whether the template moved.
 
 `cloudflared` on both tunnel hosts, and the NFS server packages, carry no pin at all —
-they move when their playbook or the OS sweep runs.
+they move when their playbook or the OS sweep runs. The roles restart `cloudflared` after
+an apt upgrade; without that the package moves while the old process keeps running.
 
 `postgresql_version` is a **major** pin, and moving it is a `pg_upgradecluster` on a live
 database rather than a playbook re-run. It is in scope; section 7 is how.
@@ -336,6 +350,7 @@ no majors this run: report that and move on.
 | redis | 204 | | k3s-2 | 111 |
 | rabbitmq | 205 | | nfs | 301 |
 | nocobase | 207 | | portainer | 302 |
+| mihal | 208 | | | |
 
 `pct` for the LXCs, `qm` for the VMs:
 

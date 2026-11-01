@@ -24,6 +24,7 @@
   ansible.builtin.apt:
     name: cloudflared
     state: latest
+  notify: Restart cloudflared
 
 - name: Write tunnel token env file
   ansible.builtin.copy:

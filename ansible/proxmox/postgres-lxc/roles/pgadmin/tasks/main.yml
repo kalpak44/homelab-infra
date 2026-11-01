@@ -60,14 +60,15 @@
   ansible.builtin.command:
     cmd: >
       certbot certonly
+      --cert-name {{ pgadmin_tls_domain }}
       --dns-cloudflare
       --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
       --dns-cloudflare-propagation-seconds 30
       --non-interactive
       --agree-tos
       --email {{ letsencrypt_email }}
-      -d {{ pgadmin_tls_domain }}
-    creates: "/etc/letsencrypt/live/{{ pgadmin_tls_domain }}/fullchain.pem"
+      --expand
+      {% for domain in pgadmin_tls_domains %}-d {{ domain }} {% endfor %}
   when: pgadmin_tls_enabled and letsencrypt_email != ""
 
 - name: Enable Apache2 SSL and rewrite modules

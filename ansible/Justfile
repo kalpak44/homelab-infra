@@ -141,7 +141,26 @@ os-update host='': setup
     if [[ -n "{{host}}" ]]; then
       limit_args=(--limit "{{host}}")
     fi
+    # nocobase accepts only the operator key, so the sweep needs the same credential path
+    # as `configure`; password-only inventory cannot reach it on 22022.
+    key_args=()
+    if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+      keyfile="$(mktemp)"
+      trap 'rm -f "$keyfile"' EXIT
+      if printf '%s' "$SSH_PRIVATE_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+        printf '%s\n' "$SSH_PRIVATE_KEY" > "$keyfile"
+      else
+        printf '%s' "$SSH_PRIVATE_KEY" | base64 -d > "$keyfile" 2>/dev/null || true
+      fi
+      chmod 600 "$keyfile"
+      if ssh-keygen -y -f "$keyfile" >/dev/null 2>&1; then
+        key_args=(--private-key "$keyfile")
+      else
+        echo "warning: SSH_PRIVATE_KEY did not parse; falling back to password auth" >&2
+      fi
+    fi
     ansible-playbook maintenance/os-update.yml ${limit_args[@]+"${limit_args[@]}"} \
+      ${key_args[@]+"${key_args[@]}"} \
       -e "host_password=${HOST_PASSWORD:-}"
 
 # List every configurable resource

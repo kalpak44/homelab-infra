@@ -1,5 +1,6 @@
 <VirtualHost *:443>
     ServerName {{ pgadmin_tls_domain }}
+    ServerAlias {{ pgadmin_tls_alias_domains | join(' ') }}
 
     SSLEngine on
     SSLCertificateFile    /etc/letsencrypt/live/{{ pgadmin_tls_domain }}/fullchain.pem

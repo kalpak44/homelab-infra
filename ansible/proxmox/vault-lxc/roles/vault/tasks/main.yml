@@ -3,14 +3,43 @@
   ansible.builtin.apt:
     name: [gpg, curl]
     state: present
-    update_cache: true
 
-- name: Add HashiCorp GPG key
-  ansible.builtin.shell:
-    cmd: >
-      curl -fsSL https://apt.releases.hashicorp.com/gpg |
-      gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-    creates: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+- name: Create a temporary HashiCorp key path
+  ansible.builtin.tempfile:
+    state: file
+    suffix: hashicorp.gpg
+  register: hashicorp_key_tmp
+  changed_when: false
+
+# HashiCorp rotates this key, and a `creates` guard on the keyring leaves every later
+# apt update failing on NO_PUBKEY. Compare the dearmored contents instead.
+- name: Download the current HashiCorp GPG key
+  ansible.builtin.get_url:
+    url: https://apt.releases.hashicorp.com/gpg
+    dest: "{{ hashicorp_key_tmp.path }}"
+    mode: "0644"
+    force: true
+  changed_when: false
+
+- name: Dearmor the HashiCorp GPG key
+  ansible.builtin.command:
+    cmd: "gpg --batch --yes --dearmor --output {{ hashicorp_key_tmp.path }}.keyring {{ hashicorp_key_tmp.path }}"
+  changed_when: false
+
+- name: Install the HashiCorp GPG keyring
+  ansible.builtin.copy:
+    src: "{{ hashicorp_key_tmp.path }}.keyring"
+    dest: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    remote_src: true
+    mode: "0644"
+
+- name: Remove the temporary HashiCorp key files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ hashicorp_key_tmp.path }}"
+    - "{{ hashicorp_key_tmp.path }}.keyring"
 
 - name: Add HashiCorp apt repository
   ansible.builtin.apt_repository:

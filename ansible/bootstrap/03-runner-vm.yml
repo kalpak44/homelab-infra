@@ -82,7 +82,7 @@
   gather_facts: true
   become: true
   vars:
-    terraform_version: 1.15.4
+    terraform_version: 1.17.1
     runner_version: "2.338.2"
     # Pinned to the cluster's minor: kubectl is supported one minor either side of
     # the API server, so tracking `stable` would eventually skew past that.

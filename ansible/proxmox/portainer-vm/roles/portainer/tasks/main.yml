@@ -157,6 +157,38 @@
   changed_when: false
   failed_when: false
 
+- name: Pull the current Portainer image
+  ansible.builtin.command:
+    cmd: docker pull portainer/portainer-ce:latest
+  register: portainer_pull
+  changed_when: "'Downloaded newer image' in portainer_pull.stdout"
+
+- name: Read the running Portainer image
+  ansible.builtin.command:
+    cmd: "docker inspect --format '{% raw %}{{.Image}}{% endraw %}' portainer"
+  register: portainer_running_image
+  changed_when: false
+  when: portainer_inspect.rc == 0
+
+- name: Read the pulled Portainer image
+  ansible.builtin.command:
+    cmd: "docker image inspect --format '{% raw %}{{.Id}}{% endraw %}' portainer/portainer-ce:latest"
+  register: portainer_target_image
+  changed_when: false
+
+# Recreating is the only way a running container changes image. The named volume keeps
+# Portainer's state, so this is a short restart rather than a reinstall.
+- name: Decide whether Portainer needs recreating
+  ansible.builtin.set_fact:
+    portainer_needs_recreate: >-
+      {{ portainer_inspect.rc != 0 or
+         (portainer_running_image.stdout | default('')) != portainer_target_image.stdout }}
+
+- name: Remove the old Portainer container
+  ansible.builtin.command:
+    cmd: docker rm -f portainer
+  when: portainer_inspect.rc == 0 and portainer_needs_recreate
+
 - name: Start Portainer container
   ansible.builtin.command:
     cmd: >
@@ -167,7 +199,7 @@
       -v {{ portainer_data_volume }}:/data
       -p 127.0.0.1:{{ portainer_internal_port }}:9000
       portainer/portainer-ce:latest
-  when: portainer_inspect.rc != 0
+  when: portainer_needs_recreate
 
 - name: Wait for Portainer API to be ready
   ansible.builtin.uri:
@@ -177,7 +209,7 @@
   until: portainer_status.status == 200
   retries: 18
   delay: 5
-  when: portainer_inspect.rc != 0
+  when: portainer_needs_recreate
 
 # Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
 # guarded on the file being there. Runs after the deploy hook, so a renewal reloads the

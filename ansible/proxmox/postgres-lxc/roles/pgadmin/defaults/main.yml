@@ -5,4 +5,7 @@ pgadmin_postgres_host: "192.168.1.4"
 pgadmin_postgres_port: 5432
 pgadmin_tls_enabled: true
 pgadmin_tls_domain: "pgadmin.internal.pavel-usanli.online"
+pgadmin_tls_alias_domains:
+  - "postgres.internal.pavel-usanli.online"
+pgadmin_tls_domains: "{{ [pgadmin_tls_domain] + pgadmin_tls_alias_domains }}"
 letsencrypt_email: ""
