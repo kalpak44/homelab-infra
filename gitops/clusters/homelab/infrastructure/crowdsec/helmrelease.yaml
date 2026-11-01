@@ -97,6 +97,11 @@ spec:
           type: trigger
           name: custom/manual-blocklist
           description: "Source address on the reviewed blocklist"
+          # File() only sees files declared in this block; it does not scan the data
+          # directory. Without this the filter errors and the list is never enforced.
+          data:
+            - dest_file: blocked-ips.txt
+              type: string
           filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in File('blocked-ips.txt')"
           groupby: evt.Meta.source_ip
           labels:
