@@ -53,6 +53,8 @@
     host_health_units:
       portainer: [docker]
       prometheus: [prometheus, node_exporter]
+      mihal: [cloudflared]
+      nocobase: [nginx]
       rabbitmq: [rabbitmq-server, nginx]
       redis: [redis-server, redis-commander]
       postgres: [postgresql@18-main, apache2]
