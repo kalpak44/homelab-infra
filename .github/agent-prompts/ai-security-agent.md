@@ -77,6 +77,39 @@ are worth reporting.
 kubectl logs -n crowdsec deploy/crowdsec-appsec --since="${WINDOW_HOURS}h"
 ```
 
+**What no rule saw.** This is the most valuable view and the easiest to skip, because
+nothing reports it on its own: a request that every scenario ignored produces no alert, so
+it is invisible in everything above. Three measurements, in order of cost.
+
+`cscli metrics show acquisition` and `cscli metrics show parsers` give the aggregate. A
+line counted as *unparsed* reached CrowdSec and matched no parser, which means no scenario
+could ever have seen it. Traefik's own application log lines land here and are expected;
+an access log line doing so is not, and means the field set in
+`gitops/clusters/homelab/infrastructure/traefik-config/helmchartconfig.yaml` no longer
+carries what `crowdsecurity/traefik-logs` reads.
+
+`cscli metrics show whitelists` gives the other quiet exit. A request whitelisted away is
+also a request no scenario judged, and a whitelist counter climbing far faster than the
+traffic justifies is worth reporting.
+
+`cscli explain` is the per-line answer — it replays a line through every parser and
+scenario and prints which matched:
+
+```
+kubectl exec -n crowdsec ds/crowdsec-agent -c crowdsec-agent -- \
+  cscli explain -f /tmp/sample.log --type containerd --labels program:traefik
+```
+
+**`--labels program:traefik` is not optional.** The acquisition sets it, and
+`crowdsecurity/traefik-logs` filters on it, so leaving it off reports `parser failure` for
+every line and the whole measurement reads as a catastrophe that is not happening. Use
+`--failures` to list only the lines nothing handled.
+
+Sample rather than replay the night: group the access log by request shape — host, path
+with ids and hashes collapsed, method, status — and explain one line per shape, busiest
+first. A shape that recurs, is not 2xx, and reaches no bucket is the gap this run exists
+to close, and it is the strongest possible evidence for a new scenario.
+
 ## 4. Decide what is weird
 
 You are looking for request patterns that no client of these applications could produce.
@@ -406,7 +439,10 @@ Cover, in this order:
 6. **Changes made** — every file, every entry, with the reason for each.
 7. **Deployment** — the reconciled revision, the pod states across the whole `crowdsec`
    namespace, and the smoke-test results.
-8. **Gaps** — scenarios that fired zero times, patterns you saw but could not act on,
+8. **Unknown traffic** — unparsed and whitelisted counts with what they were, and the
+   recurring request shapes that reached no bucket. Say what you did about each, including
+   "nothing, it is benign" and why.
+9. **Gaps** — scenarios that fired zero times, patterns you saw but could not act on,
    anything RBAC refused you, and the Cloudflare rule budget if you hit it.
 
 Keep it to what a person can read in two minutes. Put the long tail of addresses in a
