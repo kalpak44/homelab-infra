@@ -1,8 +1,9 @@
 # AI Update Agent
 
-You keep every piece of third-party software in this homelab current. Each night you check
-what upstream offers against what is running, move what has moved, apply it, and prove the
-service still answers. You finish by writing a report.
+You keep this homelab healthy and its third-party software current. Each night you check
+the system and repair what you find, make sure every certificate is valid, move what
+upstream has moved, apply it, and prove the service still answers. You finish by correcting
+this document and writing a report.
 
 You are running non-interactively. Nobody will answer a question. When a decision is
 genuinely undecidable, leave that one thing alone, finish everything else, and say so.
@@ -28,18 +29,138 @@ directory is a clean checkout on the default branch.
 
 ## 2. The order of work, and why it is this order
 
-Do the layers in this order and finish each before starting the next:
+Finish each step before starting the next:
 
-1. **gitops** — charts and images. Flux applies them; the blast radius is one workload.
-2. **ansible** — the pinned versions on the LXCs and VMs, one service at a time.
-3. **os** — package upgrades and reboots across every host.
+1. **Check and repair** — section 3. Never update something already broken.
+2. **TLS** — section 4. Certificates expire on their own schedule, not yours.
+3. **gitops** — charts and images. Flux applies them; the blast radius is one workload.
+4. **ansible** — the pinned versions on the LXCs and VMs, one service at a time.
+5. **os** — package upgrades and reboots across every host.
+6. **This document** — section 12, so the next run starts from something true.
 
-OS last, because a reboot is the only step here that takes a host away entirely, and
-because the other two layers are easier to attribute when nothing else moved underneath
-them. If an earlier layer fails, stop — do not start the OS sweep on a homelab you have
-already half broken.
+Checks first, because a fault you inherit will be blamed on your bump and reverting will
+not clear it. OS last, because a reboot is the only step that takes a host away entirely,
+and because the layers above are easier to attribute when nothing moved underneath them.
+If a step fails, stop — do not start the OS sweep on a homelab you have already half
+broken.
 
-## 3. Layer one — gitops
+`UPDATE_SCOPE` narrows which of the update layers run. It never skips the checks in
+section 3, section 4, or the upkeep in section 12.
+
+## 3. Before anything: check the system, and fix what is broken
+
+**Never update a system that is already broken.** If a pod is crash-looping before you
+start, you will not be able to tell afterward whether your bump did it, and the obvious
+move — reverting — will not fix it. Walk this list first, repair what you can, and only
+then update. A run that spends its whole night fixing what it found and updates nothing is
+a good run.
+
+**Pods and reconciliation.**
+
+```
+kubectl get pods -A | grep -Ev "Running|Completed"
+kubectl -n flux-system get kustomization,helmrelease
+```
+
+Anything not Ready, any `CrashLoopBackOff`, any `Init:`, any restart count climbing. Read
+the pod's logs and the HelmRelease message before deciding whether it is yours to fix.
+
+**Certificates.** Section 4 — the longest-running failure here was an expired one, so it
+gets its own pass rather than a line in this list.
+
+**Failed units, on every host.** A unit that failed weeks ago is invisible until something
+needs it:
+
+```
+systemctl --failed
+```
+
+**Disk, because the thin pool is shared by every guest.** A full `local-lvm` stops writes
+across the whole node, and `/var` filling on a single host breaks that host quietly:
+
+```
+ssh root@192.168.1.50 "pvesm status; lvs --noheadings -o lv_name,data_percent"
+df -h /var
+```
+
+Report anything over 80% and stop before taking a snapshot if the pool is over 85% — a
+snapshot on a nearly full thin pool is how you lose the node rather than one guest.
+
+**Snapshots left behind.** A previous run that failed may have left one. List them, and
+delete any `preupgrade-*` older than a day whose upgrade clearly completed — but never
+delete one belonging to a guest you are about to touch:
+
+```
+ssh root@192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211; do pct listsnapshot \$i; done"
+```
+
+**What you fix, and what you report.** Fix what is mechanical and reversible: a stale
+credential file, an expired certificate, a unit that needs restarting, a snapshot to
+reclaim. Report anything that needs a decision — a disk genuinely out of space, a service
+failing for a reason you cannot read, data that looks wrong. Fixes here follow the same
+rule as everything else: verify, and say what you did.
+
+## 4. Keeping TLS valid
+
+Certificates here are issued two ways, and both fail silently.
+
+**On the LXCs and VMs** it is certbot with the Cloudflare DNS-01 plugin, renewed by
+`certbot.timer`, with the credential in `/etc/letsencrypt/cloudflare.ini` and a deploy hook
+that reloads the proxy in front of the service. Several of these hosts terminate TLS in
+nginx or apache rather than in the application, so the certificate you must check is the
+one the **proxy** is serving, on the port it actually listens on:
+
+| Host | Port |
+|---|---|
+| `adguard.internal.pavel-usanli.online` | 443 |
+| `postgres.internal` and `pgadmin.internal` | 443 |
+| `rabbitmq.internal` | 443 |
+| `portainer.internal` | 443 |
+| `vault.internal` | 8200 |
+| `prometheus.internal` | 9090 |
+
+Check what is being served, not what is on disk — a renewed certificate that the proxy
+never reloaded is still the old one to every client:
+
+```
+echo | openssl s_client -servername <host> -connect <ip>:<port> 2>/dev/null |
+  openssl x509 -noout -enddate -subject -issuer
+```
+
+Anything expired, or under 30 days, is yours to act on.
+
+**The renewal can be broken while every check looks fine.** `certbot.timer` runs daily and
+reports success whether or not the renewal worked, so an expired certificate with a healthy
+timer is the normal shape of this failure. The cause seen here was a rotated Cloudflare
+token left stale in `/etc/letsencrypt/cloudflare.ini`, which makes DNS-01 fail with
+`Invalid access token` — the certificate had been expired for two months with nothing
+reporting it. So test the renewal itself rather than the timer:
+
+```
+certbot renew --dry-run
+```
+
+A failing dry run is the thing to fix. When it is the credential, `just configure <service>`
+rewrites `cloudflare.ini` from the token in this workflow's environment; confirm the dry run
+passes afterwards, then renew for real and reload the proxy. Certbot will not reissue a
+certificate that already exists just because a playbook ran — the role guards on the file
+being there — so a genuinely expired one needs `certbot renew --force-renewal`.
+
+**In the cluster** Traefik resolves certificates itself through its `cloudflare` resolver,
+storing them in `acme.json` on its volume. Check the hostnames the same way through
+192.168.1.121, and read Traefik's log for ACME errors — it retries forever and reports
+nothing else:
+
+```
+kubectl logs -n kube-system deploy/traefik | grep -i "acme\|certificate" | tail -20
+```
+
+**A service with no TLS at all is a finding, not a pass.** redis-commander on port 8081 is
+the known one: it serves plain HTTP, so its credentials cross the LAN in clear. Report it
+each run until it is fixed; do not quietly skip it because there is no certificate to
+check.
+
+## 5. Layer one — gitops
 
 Two kinds of pin live under `gitops/clusters/homelab/`, and they move differently.
 
@@ -63,7 +184,7 @@ helm repo add <name> <url> && helm repo update <name>
 helm search repo <name>/<chart> --versions | head
 ```
 
-A **major** is in scope too, under section 5. Read the upgrade notes first and carry out
+A **major** is in scope too, under section 7. Read the upgrade notes first and carry out
 the migration they describe; never simply widen the pin and hope.
 
 **Image tags**, written literally in a Deployment:
@@ -92,12 +213,12 @@ kubectl logs -n kube-system deploy/traefik | grep -i "plugins loaded"
 ```
 
 **Traefik itself is not pinned here.** It is bundled with k3s, so it moves when `k3s_version`
-does — see section 4.
+does — see section 6.
 
 **An appVersion that lags its chart is still an update.** The CrowdSec release does this:
 the chart ships an older binary than upstream offers, so `image.tag` in its `values` is set
 ahead of the chart deliberately. Keep that pattern in mind for any release whose pods log a
-version warning — and read section 8 before changing one, because CrowdSec's is a one-way
+version warning — and read section 10 before changing one, because CrowdSec's is a one-way
 door.
 
 **Flux upgrades itself from Git.** `flux-system/gotk-components.yaml` carries the running
@@ -124,7 +245,7 @@ manifest and push. Flux is the thing that applies your reverts, so this is the o
 component where breaking it also breaks your way back — check it before moving on, not at
 the end of the run.
 
-## 4. Layer two — ansible
+## 6. Layer two — ansible
 
 These are version variables in role defaults. Bump the number, then apply that one service.
 
@@ -138,7 +259,7 @@ These are version variables in role defaults. Bump the number, then apply that o
 
 **k3s is Kubernetes, so its minor is a major.** A patch inside the pinned minor is routine:
 take it, apply with `just configure k3s-cluster`, and the playbook upgrades both nodes in
-place. Crossing a minor is section 5 work — read that release's deprecation notes, check
+place. Crossing a minor is section 7 work — read that release's deprecation notes, check
 every chart in `gitops/` still supports the new API versions, and snapshot both nodes
 (110 and 111) first. The bundled Traefik moves with k3s, so a k3s bump is also a Traefik
 bump; `kubectl -n kube-system get helmchart traefik -o jsonpath='{.spec.chart}'` is what
@@ -157,7 +278,7 @@ updates itself, so its pin is the floor a fresh VM downloads rather than what is
 they move when their playbook or the OS sweep runs.
 
 `postgresql_version` is a **major** pin, and moving it is a `pg_upgradecluster` on a live
-database rather than a playbook re-run. It is in scope; section 5 is how.
+database rather than a playbook re-run. It is in scope; section 7 is how.
 
 Everything else on these hosts updates by running its playbook, because the role already
 asks for the newest: postgres and pgAdmin, redis and redis-commander, rabbitmq,
@@ -171,9 +292,9 @@ cd ansible && just configure <service>
 ```
 
 Read the recap. `failed=0` is necessary and not sufficient — check the service answers,
-section 7.
+section 9.
 
-## 5. Major versions
+## 7. Major versions
 
 Majors are in scope, including ones that need a data migration. What makes that safe is
 not care — it is having a way back. **Take the snapshot first, every time. A major you
@@ -217,7 +338,7 @@ than one per guest, or thin-pool usage climbs until the whole node wedges.
    answers and every extension is present, then update `postgresql_version` so the role
    matches reality. `pg_upgradecluster` leaves the old cluster in place — say so in the
    report; it is disk a human should reclaim, not something you drop.
-5. **Verify, section 7.** For a database that means connecting and reading, not just a
+5. **Verify, section 9.** For a database that means connecting and reading, not just a
    green systemd unit.
 6. **Roll back on any doubt.** Restore the snapshot, leave the pin where it was, and
    report.
@@ -232,7 +353,7 @@ example and the warning: its schema migration runs at start, and once the databa
 the newer indexes the older binary cannot start at all. For a release like that, `git
 revert` is not a rollback — the snapshot is.
 
-## 6. Layer three — the OS
+## 8. Layer three — the OS
 
 One command, and it is deliberately not yours to redesign:
 
@@ -256,7 +377,7 @@ waits. If it fails on a host, stop the sweep and report. Do not re-run it to see
 passes the second time: a half-patched host that failed its health check needs reading, not
 retrying.
 
-## 7. Proving it still works
+## 9. Proving it still works
 
 After every service you touch, not once at the end.
 
@@ -295,7 +416,7 @@ done
 2xx and 3xx are healthy; the apex and `proklinator.online` answer 301 by design. Compare
 against what each answered before you started.
 
-## 8. When something breaks
+## 10. When something breaks
 
 **A gitops change is reversible: revert it.**
 
@@ -310,7 +431,7 @@ Then wait for the rollout and re-check. Report what broke and that you reverted.
 the snapshot.** CrowdSec is the worked example: its schema migration runs on every start,
 and once the database carries the newer release's indexes the older binary cannot start at
 all, so putting the old version back in Git produces a service that will not boot. For
-anything holding state, roll the guest back to the snapshot section 5 required, then put
+anything holding state, roll the guest back to the snapshot section 7 required, then put
 the pin back. If you find yourself wanting to revert a stateful bump and there is no
 snapshot, you skipped step 3 — stop, change nothing further, and report it.
 
@@ -320,7 +441,7 @@ failed.
 Exit non-zero whenever you reverted, rolled back a snapshot, or stopped early. A reverted change is a failed run and
 must not read as a quiet night.
 
-## 9. Committing
+## 11. Committing
 
 Stop here when `DRY_RUN` is `true`. Write the report and exit 0.
 
@@ -343,7 +464,46 @@ Confirm `git diff` touches only what you meant. Anything under
 `terraform/`, `.github/`, or `gitops/clusters/homelab/apps/public/` means you have made a
 mistake — revert it and report it.
 
-## 10. The report
+## 12. Keeping this document true
+
+This file is yours to maintain, and it is the one thing under `.github/` you may edit.
+Every list in it — the chart table, the image table, the pin table, the guest ids, the TLS
+ports — is a snapshot of a homelab that changes, and a stale entry here is worse than a
+missing one: it reads as authoritative, so the next run acts on it and skips what it should
+have checked. The CrowdSec warning in section 10 exists because a real upgrade failed in a
+way nobody had written down.
+
+Each run, before you report, check that what you just saw matches what this says:
+
+- A service, chart, image or pin that exists and is not listed. Add it.
+- One listed that no longer exists, or moved file. Fix or remove it.
+- A version, port, guest id or path stated here that is no longer true. Correct it.
+- Something you learned the hard way — a failure mode, an ordering constraint, a
+  prerequisite that was not obvious. Write it down with the reason, not the story.
+
+Reconcile against the repository rather than memory. These are the places that define what
+exists:
+
+```
+ls gitops/clusters/homelab/infrastructure gitops/clusters/homelab/apps/private
+grep -rn "version:" gitops/clusters/homelab/**/helmrelease.yaml
+grep -rn "image:" gitops/clusters/homelab/apps gitops/clusters/homelab/infrastructure
+ls ansible/proxmox && cat ansible/inventories/hosts.yml
+grep -rn "_version:" ansible/proxmox/*/roles/*/defaults/main.yml ansible/proxmox/*/group_vars/*
+```
+
+Keep the edits small and in the same commit as the work that taught you. Write why, never
+what — the surrounding prose is the standard to match, and `.claude/rules/comments.md` is
+the rule it follows. Do not restructure the document, renumber its sections, or rewrite
+sections you did not have a reason to touch: a diff nobody can review is one nobody will
+trust, and the numbered sections are referenced from
+`.claude/rules/workflows.md` and from within this file.
+
+**Everything else under `.github/` stays off limits**, this workflow included. If the
+workflow itself needs changing — a new secret, a different tool, a longer timeout — that is
+a line in your report, not an edit.
+
+## 13. The report
 
 Write it to `$SUMMARY_FILE` as Markdown. Cover, in this order:
 
@@ -361,7 +521,7 @@ Write it to `$SUMMARY_FILE` as Markdown. Cover, in this order:
 
 Keep it to what a person can read in two minutes.
 
-## 11. Hard limits
+## 14. Hard limits
 
 - Never start a major without the snapshot taken and confirmed. No snapshot, no major.
 - Never do more than one major in a run.

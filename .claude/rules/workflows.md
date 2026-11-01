@@ -39,6 +39,17 @@ layers: the chart and image pins in `gitops/`, the version variables in the Ansi
 on every LXC and VM. Its policy is `.github/agent-prompts/ai-update-agent.md`, and it reads the cluster through the
 `update-agent` ServiceAccount in the same `agent-rbac.yaml` — the read-only ClusterRole is shared by both agents.
 
+It also owns three things beyond version numbers. It **checks and repairs before it
+updates** — pods, reconciliation, failed units, disk headroom on the shared thin pool, and
+snapshots a previous run left behind — because a fault inherited at the start gets blamed
+on the bump and reverting does not clear it. It **keeps TLS valid**: certbot renewal is
+tested with `--dry-run` rather than trusted, since `certbot.timer` reports success whether
+or not the renewal worked — `rabbitmq.internal` was found expired for two months behind a
+healthy timer, because a rotated Cloudflare token had been left stale in
+`/etc/letsencrypt/cloudflare.ini`. And it **maintains its own prompt**, which is the one
+file under `.github/` it may edit: every table in it is a snapshot of a homelab that
+changes, and a stale entry reads as authoritative, so the next run acts on it.
+
 **Majors are in scope and so are their migrations, which is why the snapshot is not optional.** `local-lvm` is
 LVM-thin, so every guest snapshots; the agent takes one over SSH to the Proxmox node with `pct`/`qm` before any major
 and rolls back to it on failure. A stateful bump cannot be undone by reverting the commit — CrowdSec proved that on
