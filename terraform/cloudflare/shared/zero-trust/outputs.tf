@@ -25,10 +25,10 @@ output "saas_customer_onboarding" {
   description = "Per-customer records to hand over, plus current certificate status"
   value = {
     for host, ch in cloudflare_custom_hostname.customer : host => {
-      cname                 = { name = host, type = "CNAME", value = local.saas_fallback_origin }
-      ownership_validation  = ch.ownership_verification
+      cname                  = { name = host, type = "CNAME", value = local.saas_fallback_origin }
+      ownership_validation   = ch.ownership_verification
       certificate_validation = ch.ssl[0].validation_records
-      status                = ch.status
+      status                 = ch.status
     }
   }
 }

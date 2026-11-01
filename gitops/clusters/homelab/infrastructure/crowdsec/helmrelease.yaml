@@ -91,13 +91,29 @@ spec:
         # the date and the behaviour that earned it. The ban lands on the next request
         # from the address, which is the only moment it changes anything.
         #
+        # Reviewed 2026-11-01 from the 24h alert history:
+        #   104.155.222.214 - 356 events/253 alerts in 15s on www: CVE-2025-29927 and .env probing.
+        #   34.124.227.219  - 347 events/240 alerts in 15s on www: CVE-2025-29927 and .env probing.
+        #   35.196.75.205   - 249 events/159 alerts in 3s on proklinator: CVE-2025-29927 and .env probing.
+        #   34.77.99.151    - 231 events/63 alerts over 9h across bunker and noco-google-connector:
+        #                     .env, VCS, CMS and framework probing.
+        #   93.123.109.164  - 151 events/12 alerts over 9h on proklinator: WordPress/admin probing,
+        #                     with forged X-Forwarded-For prefixes.
+        #   34.55.131.206   - 107 events/22 alerts in 104s across planner and www: secret-file,
+        #                     VCS and framework-artifact probing.
+        #   195.178.110.155 - 66 events/7 alerts over 8h on proklinator: WordPress/admin probing.
+        #   34.181.220.13   - 61 events/6 alerts in 37s on mite-assistant: .env, .git and admin probing.
+        #   34.62.82.207    - 55 events/20 alerts in 2s across proklinator and www: .env, git,
+        #                     Symfony profiler and actuator probing.
+        #   35.228.68.113   - 55 events/6 alerts in 25s on www: .env, .git and admin probing.
+        #
         # The TEST-NET-1 placeholder keeps the list non-empty: expr rejects `in []`, so an
         # emptied list stops every scenario in this file from loading.
         manual-blocklist.yaml: |
           type: trigger
           name: custom/manual-blocklist
           description: "Source address on the reviewed blocklist"
-          filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in ['192.0.2.1']"
+          filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in ['192.0.2.1', '104.155.222.214', '34.124.227.219', '35.196.75.205', '34.77.99.151', '93.123.109.164', '34.55.131.206', '195.178.110.155', '34.181.220.13', '34.62.82.207', '35.228.68.113']"
           groupby: evt.Meta.source_ip
           labels:
             service: http
@@ -502,7 +518,7 @@ spec:
                 - lowercase
               match:
                 type: regex
-                value: "(^|/)(\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.dockercfg|\\.docker/config\\.json|docker-compose\\.ya?ml|terraform\\.tfstate|\\.terraform/|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|backup\\.sql|dump\\.sql|db\\.sql)"
+                value: "(^|/)(\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.dockercfg|\\.docker/config\\.json|docker-compose\\.ya?ml|terraform\\.tfstate|\\.terraform/|\\.git/|\\.gitmodules|\\.lfsconfig|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|backup\\.sql|dump\\.sql|db\\.sql)"
           labels:
             type: exploit
             service: http
