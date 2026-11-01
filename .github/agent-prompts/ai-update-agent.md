@@ -18,6 +18,7 @@ that mechanism. Leave every one of them alone.
 | Variable | Meaning |
 |---|---|
 | `KUBECONFIG` | Read-only cluster credential |
+| `HOST_PASSWORD` | Root password for every LXC, VM and the Proxmox node |
 | `UPDATE_SCOPE` | `all`, `gitops`, `ansible` or `os` — do only that layer |
 | `DRY_RUN` | `true` means report what is behind and change nothing |
 | `GH_TOKEN` | Authenticates `gh` and `git push` |
@@ -26,6 +27,19 @@ that mechanism. Leave every one of them alone.
 
 The service credentials `just configure` needs are already in the environment. The working
 directory is a clean checkout on the default branch.
+
+**Reaching a host over SSH.** The runner holds no key for these hosts; `HOST_PASSWORD` in
+the environment is the root password for every LXC and VM, the Proxmox node included. Use
+it explicitly — `sshpass -e` without exporting `SSHPASS` is the failure this note exists to
+prevent:
+
+```
+sshpass -p "$HOST_PASSWORD" ssh -o StrictHostKeyChecking=accept-new \
+  -o PreferredAuthentications=password root@<ip> "<command>"
+```
+
+`nocobase` is the exception: its sshd is key-only on port 22022 and rejects what the runner
+has, so anything needing a shell there is a line in the report, not a command to retry.
 
 ## 2. The order of work, and why it is this order
 
@@ -79,9 +93,18 @@ systemctl --failed
 across the whole node, and `/var` filling on a single host breaks that host quietly:
 
 ```
-ssh root@192.168.1.50 "pvesm status; lvs --noheadings -o lv_name,data_percent"
-df -h /var
+ssh_host() {
+  sshpass -p "$HOST_PASSWORD" ssh -o StrictHostKeyChecking=accept-new \
+    -o PreferredAuthentications=password "root@$1" "$2"
+}
+
+ssh_host 192.168.1.50 "pvesm status; lvs --noheadings -o lv_name,data_percent"
+ssh_host <ip> "df -h /"
 ```
+
+Check the guest filesystems as well as the pool: they are separate numbers and the guest
+fills first. A thin volume reads near-full long after the guest has freed the space, so
+compare the two rather than trusting either alone.
 
 Report anything over 80% and stop before taking a snapshot if the pool is over 85% — a
 snapshot on a nearly full thin pool is how you lose the node rather than one guest.
@@ -91,7 +114,7 @@ delete any `preupgrade-*` older than a day whose upgrade clearly completed — b
 delete one belonging to a guest you are about to touch:
 
 ```
-ssh root@192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211; do pct listsnapshot \$i; done"
+ssh_host 192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211; do pct listsnapshot \$i; done"
 ```
 
 **What you fix, and what you report.** Fix what is mechanical and reversible: a stale
@@ -301,7 +324,9 @@ not care — it is having a way back. **Take the snapshot first, every time. A m
 cannot undo is one you do not start.**
 
 The storage is `local-lvm`, which is LVM-thin, so every guest snapshots. Reach Proxmox over
-SSH as root at `192.168.1.50`; no separate credential is involved.
+SSH as root at `192.168.1.50` with `HOST_PASSWORD`, as in section 1 — no separate
+credential is involved. If you cannot reach it, you cannot snapshot, and therefore you do
+no majors this run: report that and move on.
 
 | Guest | id | | Guest | id |
 |---|---|---|---|---|
