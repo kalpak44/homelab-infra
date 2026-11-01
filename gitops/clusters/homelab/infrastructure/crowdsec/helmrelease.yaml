@@ -87,33 +87,17 @@ spec:
                 - "2c0f:f248::/32"
 
       scenarios:
-        # Addresses .github/workflows/ai-security-agent.yml has judged abusive, each with
-        # the date and the behaviour that earned it. The ban lands on the next request
-        # from the address, which is the only moment it changes anything.
+        # Addresses .github/workflows/ai-security-agent.yml has judged abusive. The list is
+        # blocked-ips.txt beside this file, mounted into the agent pods — kept out of here
+        # so a night's bans do not grow the HelmRelease.
         #
-        # Reviewed 2026-11-01 from the 24h alert history:
-        #   104.155.222.214 - 356 events/253 alerts in 15s on www: CVE-2025-29927 and .env probing.
-        #   34.124.227.219  - 347 events/240 alerts in 15s on www: CVE-2025-29927 and .env probing.
-        #   35.196.75.205   - 249 events/159 alerts in 3s on proklinator: CVE-2025-29927 and .env probing.
-        #   34.77.99.151    - 231 events/63 alerts over 9h across bunker and noco-google-connector:
-        #                     .env, VCS, CMS and framework probing.
-        #   93.123.109.164  - 151 events/12 alerts over 9h on proklinator: WordPress/admin probing,
-        #                     with forged X-Forwarded-For prefixes.
-        #   34.55.131.206   - 107 events/22 alerts in 104s across planner and www: secret-file,
-        #                     VCS and framework-artifact probing.
-        #   195.178.110.155 - 66 events/7 alerts over 8h on proklinator: WordPress/admin probing.
-        #   34.181.220.13   - 61 events/6 alerts in 37s on mite-assistant: .env, .git and admin probing.
-        #   34.62.82.207    - 55 events/20 alerts in 2s across proklinator and www: .env, git,
-        #                     Symfony profiler and actuator probing.
-        #   35.228.68.113   - 55 events/6 alerts in 25s on www: .env, .git and admin probing.
-        #
-        # The TEST-NET-1 placeholder keeps the list non-empty: expr rejects `in []`, so an
-        # emptied list stops every scenario in this file from loading.
+        # An unreadable or missing file fails the scenario at load, so the ConfigMap mount
+        # below is what keeps it loading. An empty one is fine: File() returns no lines.
         manual-blocklist.yaml: |
           type: trigger
           name: custom/manual-blocklist
           description: "Source address on the reviewed blocklist"
-          filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in ['192.0.2.1', '104.155.222.214', '34.124.227.219', '35.196.75.205', '34.77.99.151', '93.123.109.164', '34.55.131.206', '195.178.110.155', '34.181.220.13', '34.62.82.207', '35.228.68.113']"
+          filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in File('blocked-ips.txt')"
           groupby: evt.Meta.source_ip
           labels:
             service: http
@@ -411,6 +395,24 @@ spec:
           memory: 200Mi
 
     agent:
+      # The ConfigMap mount does not reload in a running pod, and nothing else here changes
+      # when only the list does — without this the DaemonSet keeps serving the old one.
+      # sha256 of blocked-ips.txt; update both in the same commit.
+      podAnnotations:
+        homelab.pavel-usanli.online/blocked-ips-sha256: "e3262da98ab6d4cc11ffdfe066d496c20ceda780f4baa49ab3aa73e19b3c05aa"
+
+      # subPath, so the mount adds one file instead of masking the data directory the hub
+      # downloads its pattern files into.
+      extraVolumes:
+        - name: blocked-ips
+          configMap:
+            name: crowdsec-blocked-ips
+      extraVolumeMounts:
+        - name: blocked-ips
+          mountPath: /var/lib/crowdsec/data/blocked-ips.txt
+          subPath: blocked-ips.txt
+          readOnly: true
+
       acquisition:
         - namespace: kube-system
           podName: "traefik-*"

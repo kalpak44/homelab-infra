@@ -26,10 +26,12 @@ day under review is always over. Its policy lives in `.github/agent-prompts/ai-s
 place to change what it will and will not do; the workflow only assembles tools and credentials. It reads the cluster
 through a token minted for the `security-agent` ServiceAccount
 (`gitops/clusters/homelab/infrastructure/crowdsec/security-agent-rbac.yaml`), so the read-only boundary is the API
-server's rather than the prompt's — never hand it an admin kubeconfig to save a step. Its two edit points are the
-`manual-blocklist` scenario in the CrowdSec HelmRelease and `local.blocked_ips` in
-`terraform/cloudflare/shared/zero-trust/waf-blocked-ips.tf`; both lists are read by rules that already exist, because
-each zone allows one WAF ruleset and a second one would delete the first's rules on every apply.
+server's rather than the prompt's — never hand it an admin kubeconfig to save a step. Its two edit points are
+`gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt` and `terraform/cloudflare/shared/zero-trust/blocked-ips.txt`
+— plain lists, so a night's bans never grow the HelmRelease or the HCL. Both are read by rules that already exist,
+because each zone allows one WAF ruleset and a second one would delete the first's rules on every apply. The CrowdSec
+list is a ConfigMap mount, which a running pod does not reload, so the `blocked-ips-sha256` pod annotation in
+`helmrelease.yaml` has to move with it or the DaemonSet silently keeps the old list.
 
 ## Shape of every workflow
 

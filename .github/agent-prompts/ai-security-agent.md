@@ -122,8 +122,24 @@ CrowdSec rule and let the scenario decide, rather than banning the address yours
 
 ## 6. Choose the remedy
 
-Work out which of these fits, in this order. Prefer a rule over a ban: a rule catches the
-next source too, a ban catches one.
+**First rule out everything already handled.** Most of what a night's logs show is traffic
+an existing scenario already caught, and re-banning it adds entries that do nothing but
+make the list harder to read. Two checks, both from evidence you already gathered:
+
+- **The address is already in `cscli decisions list`.** CrowdSec banned it; the rule that
+  banned it will ban it again. Leave it alone unless its behaviour came back *after* an
+  earlier ban expired, or the automatic ban is far shorter than what you are seeing
+  warrants. Say in the report that you saw it and why you left it.
+- **The pattern already matches a loaded scenario or AppSec rule.** Read
+  `cscli scenarios list` and the `appsec.rules` in the HelmRelease before proposing
+  anything new. A near-duplicate rule splits the evidence across two buckets and makes
+  both fire later than either would alone — tune the existing one instead.
+
+What is left is what this run exists for: behaviour no rule describes, and addresses no
+rule caught. Act on that, and only that.
+
+Then work out which of these fits, in this order. Prefer a rule over a ban: a rule catches
+the next source too, a ban catches one.
 
 **An existing scenario should have caught it but did not.** Tune that scenario's threshold
 or filter in `helmrelease.yaml`. Say in the report what the old and new values are.
@@ -149,18 +165,29 @@ it saw is a successful run.
 
 Every ban goes to CrowdSec. Only the worst also go to Cloudflare.
 
-**CrowdSec — every ban.** The `manual-blocklist.yaml` scenario in
-`gitops/clusters/homelab/infrastructure/crowdsec/helmrelease.yaml`. Add the address to the
-filter's list, keeping the `192.0.2.1` placeholder — the list must never be empty, because
-`expr` rejects `in []` and an empty list stops every scenario in that file from loading.
+Both lists are plain text files, one address per line, with the evidence in a `#` comment
+above each. Append to the file — never put an address into the YAML or the HCL, which is
+what the files exist to keep from growing.
+
+**CrowdSec — every ban.**
+`gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt`, read by the
+`custom/manual-blocklist` scenario through `File()`.
+
+Appending is not enough on its own. The file is mounted as a ConfigMap and a running pod
+does not reload it, so in the same commit set `agent.podAnnotations`'
+`homelab.pavel-usanli.online/blocked-ips-sha256` in `helmrelease.yaml` to the file's new
+digest — `sha256sum` of the file, nothing else. Skip it and the run goes green, Flux
+reports success, and the DaemonSet keeps enforcing yesterday's list.
 
 This covers every hostname Traefik serves, `*.internal` included, and the ban arrives as a
 real CrowdSec decision the first time that address comes back.
 
-**Cloudflare — the worst offenders only.** `local.blocked_ips` in
-`terraform/cloudflare/shared/zero-trust/waf-blocked-ips.tf`. Promote an address here only
-when it was sustained, hit more than one hostname, and is not a shared egress. This stops
-the traffic at Cloudflare's edge before it crosses the tunnel.
+**Cloudflare — the worst offenders only.**
+`terraform/cloudflare/shared/zero-trust/blocked-ips.txt`, read by `waf-blocked-ips.tf`
+into both zones' rulesets. No annotation to update here; Terraform reads the file at plan
+time. Promote an address only when it was sustained, hit more than one hostname, and is
+not a shared egress. This stops the traffic at Cloudflare's edge before it crosses the
+tunnel.
 
 Both zones read that one list, and each already spends custom rules on other things: the
 Free plan caps a zone at five. If adding the rule would exceed that on either zone, skip
@@ -233,6 +260,17 @@ terraform -chdir=/tmp/tf-validate validate
 
 The CrowdSec scenarios are YAML embedded in a YAML string, so `kustomize` passing does not
 prove they parse. Extract each block you edited and parse it on its own before committing.
+
+If you touched either list, prove both halves of it:
+
+```
+sha256sum gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt
+grep blocked-ips-sha256 gitops/clusters/homelab/infrastructure/crowdsec/helmrelease.yaml
+```
+
+The two must match. Every non-comment line in either file must be a bare address with
+nothing else on it — a trailing comment there is read as part of the address, and in the
+Terraform list that produces an expression Cloudflare rejects.
 
 Check `git diff` and confirm it touches only the files you meant to. If the diff reaches
 anything under `gitops/clusters/homelab/apps/`, `ansible/`, or any Terraform directory
@@ -381,6 +419,8 @@ fenced block rather than a table.
 - Never remove an existing scenario, profile, AppSec rule or allowlist entry. You add and
   you tune; retiring a defense is a human decision.
 - Never widen `trusted_ips`, the Cloudflare whitelist parser, or any `skip` rule.
+- Never put an address into `helmrelease.yaml` or `waf-blocked-ips.tf`. The two
+  `blocked-ips.txt` files are the only place a ban is written.
 - Never edit anything outside `gitops/clusters/homelab/infrastructure/crowdsec/` and
   `terraform/cloudflare/shared/zero-trust/`. Applications, Ansible, and every other
   Terraform directory are out of scope even when the evidence points at them — report it

@@ -9,3 +9,15 @@ resources:
   - metrics-ingressroute.yaml
   - appsec-service.yaml
   - security-agent-rbac.yaml
+
+# Named without a hash suffix so helmrelease.yaml can mount it by name — Kustomize does not
+# rewrite references inside a HelmRelease's free-form values. The pod roll comes from the
+# blocked-ips-sha256 annotation there instead.
+configMapGenerator:
+  - name: crowdsec-blocked-ips
+    namespace: crowdsec
+    files:
+      - blocked-ips.txt
+
+generatorOptions:
+  disableNameSuffixHash: true

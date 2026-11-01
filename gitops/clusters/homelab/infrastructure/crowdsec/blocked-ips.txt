@@ -1,0 +1,35 @@
+# Addresses the security agent has judged abusive, newest last, one per line.
+# Mounted into the agent pods at /var/lib/crowdsec/data/blocked-ips.txt and read by the
+# custom/manual-blocklist scenario in helmrelease.yaml.
+#
+# A comment is never a valid source address, so it can never match — keep the evidence
+# beside the entry. An address with no date and no behaviour is one nobody can retire.
+#
+# Changing this file alone changes nothing: the mount is a ConfigMap and the pods do not
+# reload it. Update agent.podAnnotations' blocked-ips-sha256 in helmrelease.yaml in the
+# same commit, or the DaemonSet keeps serving the previous list.
+
+# 2026-11-01 CVE-2025-29927 and .env probing, 356 events in 15s on www
+104.155.222.214
+# 2026-11-01 CVE-2025-29927 and .env probing, 347 events in 15s on www
+34.124.227.219
+# 2026-11-01 CVE-2025-29927 and .env probing, 249 events in 3s on proklinator
+35.196.75.205
+# 2026-11-01 .env, VCS, CMS and framework probing, 231 events over 9h across bunker and
+# noco-google-connector
+34.77.99.151
+# 2026-11-01 WordPress/admin probing with forged X-Forwarded-For, 151 events over 9h on
+# proklinator
+93.123.109.164
+# 2026-11-01 secret-file, VCS and framework-artifact probing, 107 events in 104s across
+# planner and www
+34.55.131.206
+# 2026-11-01 WordPress/admin probing, 66 events over 8h on proklinator
+195.178.110.155
+# 2026-11-01 .env, .git and admin probing, 61 events in 37s on mite-assistant
+34.181.220.13
+# 2026-11-01 .env, git, Symfony profiler and actuator probing, 55 events in 2s across
+# proklinator and www
+34.62.82.207
+# 2026-11-01 .env, .git and admin probing, 55 events in 25s on www
+35.228.68.113

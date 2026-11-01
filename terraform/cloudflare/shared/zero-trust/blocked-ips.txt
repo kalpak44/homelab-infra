@@ -1,0 +1,14 @@
+# Addresses promoted to the Cloudflare edge by the security agent, newest last, one per
+# line. Read by waf-blocked-ips.tf into both zones' WAF rulesets.
+#
+# Only sustained offenders that hit more than one hostname belong here. CrowdSec carries
+# every ban and covers *.internal too; this list stops traffic before it enters the tunnel,
+# and each zone has five custom rules in total on the Free plan.
+#
+# A comment is never a valid address, so it can never match — keep the evidence beside the
+# entry.
+
+# 2026-11-01 .env, VCS and CMS probing across bunker and noco-google-connector, 231 events over 9h
+34.77.99.151
+# 2026-11-01 CVE-2025-29927, secret-file and framework probing across planner and www, 107 events in 104s
+34.55.131.206
