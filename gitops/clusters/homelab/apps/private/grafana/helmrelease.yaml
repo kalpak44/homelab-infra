@@ -17,7 +17,7 @@ spec:
     # The chart is frozen at appVersion 12.3.1 and no longer published, so the image tag
     # is pinned here instead: without it Grafana cannot be patched at all.
     image:
-      tag: "13.2.4"
+      tag: "13.3.0"
 
     admin:
       existingSecret: grafana-admin

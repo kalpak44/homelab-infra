@@ -52,7 +52,7 @@ spec:
           emptyDir: {}
       containers:
         - name: headlamp
-          image: ghcr.io/headlamp-k8s/headlamp:v0.45.0
+          image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
           args:
             - -in-cluster
             # Drops the "paste a token" screen - every request is served with
