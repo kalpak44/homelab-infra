@@ -1,0 +1,55 @@
+---
+# Patch one host and reboot it only if the packages asked for it. Imported by every play
+# in ../os-update.yml so the policy is written once.
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+    autoremove: true
+    cache_valid_time: 0
+  register: apt_upgrade
+
+- name: Check whether a reboot is pending
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required
+
+- name: Report what moved
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: {{ 'packages changed' if apt_upgrade.changed else 'already current' }},
+      reboot {{ 'REQUIRED' if reboot_required.stat.exists else 'not needed' }}
+
+# A kernel or libc upgrade leaves the old one running until this happens, so skipping it
+# means the host reports patched while still executing the vulnerable code.
+- name: Reboot
+  ansible.builtin.reboot:
+    msg: "Rebooting for a pending package update"
+    reboot_timeout: 600
+    post_reboot_delay: 15
+    connect_timeout: 20
+    test_command: /bin/true
+  when: reboot_required.stat.exists
+
+# `is-system-running` answers `degraded` when any unit failed, which is the one signal
+# that separates "came back" from "came back broken". Both are accepted here and the
+# value is reported; the units that actually matter are asserted below.
+- name: Read overall systemd state
+  ansible.builtin.command: systemctl is-system-running
+  register: systemd_state
+  changed_when: false
+  failed_when: false
+
+- name: Confirm the units this host exists to run are active
+  ansible.builtin.command: "systemctl is-active {{ item }}"
+  register: unit_state
+  changed_when: false
+  failed_when: unit_state.stdout != "active"
+  loop: "{{ health_units | default([]) }}"
+
+- name: Summarise
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} back up — systemd {{ systemd_state.stdout | default('unknown') }},
+      units ok: {{ health_units | default([]) | join(', ') | default('none declared', true) }}

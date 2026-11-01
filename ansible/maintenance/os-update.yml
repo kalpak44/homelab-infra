@@ -1,0 +1,165 @@
+---
+# Patch every LXC and VM and reboot the ones that ask for it. Run by `just os-update
+# [host]` and nightly by .github/workflows/ai-update-agent.yml.
+#
+# The play order is the whole design. Storage, both cluster nodes, the tunnel and the LAN
+# resolver are each a single point of failure for something else here, so they are patched
+# last and one at a time — a run that breaks an application host stops before it reaches
+# anything the rest of the homelab depends on. `serial: 1` inside a play does the same for
+# the hosts within it.
+#
+# Narrow a run with `--limit`; never reorder these plays to make one host go first.
+
+- name: Patch application hosts
+  hosts: portainer:prometheus:mihal:nocobase:rabbitmq:redis:postgres:vault
+  serial: 1
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    # nocobase's sshd listens on a non-standard port and falls back to 22 on a container
+    # that has not been hardened yet. Probing is what keeps this playbook host-agnostic.
+    - name: Find the port sshd answers on
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ item }}"
+        timeout: 5
+        state: started
+      delegate_to: localhost
+      become: false
+      loop: "{{ [nocobase_ssh_port | default(22), 22] | unique }}"
+      register: ssh_probe
+      ignore_errors: true
+
+    - name: Fail when sshd answers on neither port
+      ansible.builtin.fail:
+        msg: "No sshd on {{ ansible_host }}"
+      when: ssh_probe.results | rejectattr('failed') | list | length == 0
+
+    - name: Connect on the first port that answered
+      ansible.builtin.set_fact:
+        ansible_port: "{{ ssh_probe.results | rejectattr('failed') | map(attribute='item') | first }}"
+
+    - name: Gather facts now that the port is known
+      ansible.builtin.setup:
+
+  tasks:
+    - name: Patch and reboot
+      ansible.builtin.import_tasks: tasks/patch-and-reboot.yml
+      vars:
+        health_units: "{{ host_health_units[inventory_hostname] | default([]) }}"
+
+  vars:
+    host_health_units:
+      portainer: [docker]
+      prometheus: [prometheus, node_exporter]
+      rabbitmq: [rabbitmq-server, nginx]
+      redis: [redis-server, redis-commander]
+      postgres: [postgresql@18-main, apache2]
+      vault: [vault]
+
+# Reboots while pods hold NFS mounts leave those pods in uninterruptible sleep, so this
+# runs before the nodes rather than after: the node reboots that follow clear anything
+# left hanging.
+- name: Patch the storage VM
+  hosts: nfs
+  become: true
+
+  tasks:
+    - name: Patch and reboot
+      ansible.builtin.import_tasks: tasks/patch-and-reboot.yml
+      vars:
+        health_units: [nfs-server]
+
+# The worker before the server: losing k3s-2 reschedules pods, losing k3s-1 takes the API
+# with it, so the cheaper failure is the one that happens first.
+- name: Patch the k3s worker
+  hosts: k3s-2
+  become: true
+
+  tasks:
+    - name: Patch and reboot
+      ansible.builtin.import_tasks: tasks/patch-and-reboot.yml
+      vars:
+        health_units: [k3s-agent]
+
+- name: Patch the k3s server
+  hosts: k3s-1
+  become: true
+
+  tasks:
+    - name: Patch and reboot
+      ansible.builtin.import_tasks: tasks/patch-and-reboot.yml
+      vars:
+        health_units: [k3s]
+
+    - name: Wait for both nodes to report Ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=300s
+      changed_when: false
+      retries: 5
+      delay: 15
+
+# Second to last: every public hostname is served through this tunnel, so a break here is
+# invisible from inside the LAN and total from outside.
+- name: Patch the tunnel host
+  hosts: cloudflared
+  become: true
+
+  tasks:
+    - name: Patch and reboot
+      ansible.builtin.import_tasks: tasks/patch-and-reboot.yml
+      vars:
+        health_units: [cloudflared]
+
+# Last, because this is the LAN's DNS server: while it reboots nothing on the network
+# resolves anything, this runner included. Every play above would fail halfway through.
+- name: Patch the DNS host
+  hosts: adguard
+  become: true
+
+  tasks:
+    - name: Patch and reboot
+      ansible.builtin.import_tasks: tasks/patch-and-reboot.yml
+      vars:
+        health_units: [AdGuardHome]
+
+    - name: Confirm it is resolving again
+      ansible.builtin.command: >-
+        dig +short +time=3 +tries=2 @{{ ansible_host }} traefik.internal.pavel-usanli.online
+      delegate_to: localhost
+      become: false
+      register: dns_check
+      changed_when: false
+      failed_when: dns_check.stdout | trim == ""
+      retries: 10
+      delay: 10
+      until: dns_check.stdout | trim != ""
+
+# The two hosts this run cannot reboot, because the job is running on one of them and the
+# other is its hypervisor: either reboot kills the process doing the patching, so nothing
+# would be left to verify the result or roll it back. They are patched and any pending
+# reboot is reported for a human to take.
+- name: Patch the runner and the hypervisor without rebooting
+  hosts: github-runner:proxmox
+  serial: 1
+  become: true
+
+  tasks:
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: true
+      register: apt_upgrade
+
+    - name: Check whether a reboot is pending
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: {{ 'packages changed' if apt_upgrade.changed else 'already current' }},
+          {{ 'REBOOT PENDING - needs a human, rebooting it would kill this run'
+             if reboot_required.stat.exists else 'no reboot needed' }}

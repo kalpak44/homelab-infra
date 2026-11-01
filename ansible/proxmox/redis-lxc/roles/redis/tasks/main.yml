@@ -90,10 +90,14 @@
     state: started
     enabled: true
 
+# `creates:` on the binary made this a one-shot: once the file existed the task was
+# skipped for ever, so the install never moved off whatever npm served that first day.
 - name: Install redis-commander
-  ansible.builtin.command:
-    cmd: npm install -g redis-commander
-    creates: /usr/local/bin/redis-commander
+  community.general.npm:
+    name: redis-commander
+    global: true
+    state: latest
+  notify: Restart redis-commander
 
 - name: Deploy redis-commander credentials file
   ansible.builtin.copy:

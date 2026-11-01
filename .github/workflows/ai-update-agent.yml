@@ -1,0 +1,280 @@
+name: AI Update Agent
+
+# Keeps every piece of third-party software here current: the version pins in the Ansible
+# roles, the chart and image versions in gitops, and the OS packages on every LXC and VM.
+# It checks what upstream offers, moves what has moved, applies it, and proves the service
+# still answers before it moves to the next one.
+#
+# Read-only in the cluster by construction: the agent is handed a token minted for the
+# `update-agent` ServiceAccount in
+# gitops/clusters/homelab/infrastructure/crowdsec/agent-rbac.yaml. Everything it changes in
+# the cluster, it changes through Git and lets Flux apply.
+#
+# The policy is the prompt in .github/agent-prompts/ai-update-agent.md, not bash — this
+# file only assembles the tools and credentials and hands the agent its context.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what is behind, change nothing.
+        required: false
+        type: boolean
+        default: false
+      scope:
+        description: Which layer to update.
+        required: false
+        type: choice
+        default: all
+        options:
+          - all
+          - gitops
+          - ansible
+          - os
+
+# The agent pushes with a PAT, so nothing here needs widening.
+permissions:
+  contents: read
+
+# Never two at once: both would patch the same hosts and reboot them from under each
+# other. Never cancel-in-progress either — a canceled run can leave a host halfway
+# through an upgrade with no one to finish it.
+concurrency:
+  group: ai-update-agent
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # Must be the self-hosted runner: every host it patches is on the home network, and so
+    # is the cluster API it verifies against.
+    runs-on: self-hosted
+    # Long, because a full sweep reboots a dozen hosts one at a time and waits for each.
+    timeout-minutes: 180
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      K3S_SERVER: 192.168.1.110
+      KUBECONFIG: /tmp/update-agent.kubeconfig
+
+      # `just configure <service>` reads the union of these; an undeclared one is ignored,
+      # so one block covers every service the agent may need to re-run.
+      HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+      ADGUARD_USERNAME: ${{ secrets.ADGUARD_USERNAME }}
+      ADGUARD_PASSWORD: ${{ secrets.ADGUARD_PASSWORD }}
+      VAULT_USERNAME: ${{ secrets.VAULT_USERNAME }}
+      VAULT_PASSWORD: ${{ secrets.VAULT_PASSWORD }}
+      POSTGRESQL_USER: ${{ secrets.POSTGRESQL_USER }}
+      POSTGRESQL_PASSWORD: ${{ secrets.POSTGRESQL_PASSWORD }}
+      POSTGRESQL_DB: ${{ secrets.POSTGRESQL_DB }}
+      PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL }}
+      PGADMIN_PASSWORD: ${{ secrets.PGADMIN_PASSWORD }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      REDIS_COMMANDER_USER: ${{ secrets.REDIS_COMMANDER_USER }}
+      REDIS_COMMANDER_PASSWORD: ${{ secrets.REDIS_COMMANDER_PASSWORD }}
+      RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
+      RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+      FLUX_GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
+
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      UPDATE_SCOPE: ${{ inputs.scope || 'all' }}
+
+      # Outside the working tree: the agent must see a clean tree before it commits.
+      SUMMARY_FILE: /tmp/update-agent-summary.md
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      - name: Configure Git identity
+        # The automation identity, not ours. See .claude/rules/commits.md.
+        run: |
+          set -euo pipefail
+
+          git config user.name "homelab-infra"
+          git config user.email "homelab-infra@users.noreply.github.com"
+
+      - name: Ensure runner tooling
+        # Same three the security agent needs, installed the same way, so whichever runs
+        # first leaves the runner ready for the other.
+        run: |
+          set -euo pipefail
+
+          sudo_apt() { sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }
+
+          k8s_minor=v1.34
+
+          if [ ! -f /etc/apt/sources.list.d/kubernetes.list ] ||
+             ! grep -q "$k8s_minor" /etc/apt/sources.list.d/kubernetes.list; then
+            curl -fsSL "https://pkgs.k8s.io/core:/stable:/${k8s_minor}/deb/Release.key" |
+              sudo gpg --dearmor --yes -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${k8s_minor}/deb/ /" |
+              sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
+          fi
+
+          if [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then
+            curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key |
+              sudo gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg
+            echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" |
+              sudo tee /etc/apt/sources.list.d/nodesource.list >/dev/null
+          fi
+
+          sudo_apt update -qq
+          # dnsutils: the OS sweep confirms the resolver answers again after it reboots it.
+          sudo_apt install -y kubectl nodejs sshpass dnsutils
+
+          codex_version=0.154.0
+
+          if [ "$(codex --version 2>/dev/null | grep -o '[0-9.]*' | head -1)" != "$codex_version" ]; then
+            sudo npm install -g "@openai/codex@${codex_version}" --ignore-scripts
+          fi
+
+      - name: Mint a read-only cluster token
+        # The admin kubeconfig stays on the k3s server; only the CA and a short-lived
+        # ServiceAccount token come back.
+        run: |
+          set -euo pipefail
+
+          on_k3s() {
+            sshpass -p "$HOST_PASSWORD" ssh \
+              -o StrictHostKeyChecking=accept-new \
+              -o PreferredAuthentications=password \
+              -o ConnectTimeout=10 \
+              "root@${K3S_SERVER}" "$1"
+          }
+
+          ca=$(on_k3s "awk '/certificate-authority-data/{print \$2}' /etc/rancher/k3s/k3s.yaml")
+          # Longer than the security agent's: a full sweep reboots a dozen hosts serially
+          # and the token has to outlive the whole run.
+          token=$(on_k3s "k3s kubectl -n crowdsec create token update-agent --duration=8h")
+
+          if [ -z "$ca" ] || [ -z "$token" ]; then
+            echo "could not mint a token for the update-agent ServiceAccount — has" >&2
+            echo "gitops/.../crowdsec/agent-rbac.yaml reconciled?" >&2
+            exit 1
+          fi
+
+          umask 077
+          cat > "$KUBECONFIG" <<EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: homelab
+              cluster:
+                server: https://${K3S_SERVER}:6443
+                certificate-authority-data: ${ca}
+          users:
+            - name: update-agent
+              user:
+                token: ${token}
+          contexts:
+            - name: update-agent@homelab
+              context:
+                cluster: homelab
+                user: update-agent
+          current-context: update-agent@homelab
+          EOF
+
+          # The RBAC is the boundary, so assert it rather than trusting the prompt.
+          if [ "$(kubectl auth can-i delete pods --all-namespaces)" != "no" ]; then
+            echo "the minted token is not read-only — refusing to hand it to the agent" >&2
+            exit 1
+          fi
+
+          kubectl get nodes >/dev/null
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in this repository's secrets?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        # One cheap call, so a bad credential fails here rather than halfway through a
+        # sweep that has already rebooted half the homelab.
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o /tmp/smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 /tmp/smoke.json
+            echo
+            exit 1
+          fi
+
+      - name: Run the agent
+        run: |
+          set -euo pipefail
+
+          prompt=.github/agent-prompts/ai-update-agent.md
+
+          if [ ! -f "$prompt" ]; then
+            echo "$prompt is missing" >&2
+            exit 1
+          fi
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$SUMMARY_FILE" \
+            "$(cat "$prompt")"
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## AI Update Agent"
+            echo
+            if [ -f "$SUMMARY_FILE" ]; then
+              cat "$SUMMARY_FILE"
+            else
+              echo "Agent produced no report."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Discard the cluster token
+        if: always()
+        run: rm -f "$KUBECONFIG"

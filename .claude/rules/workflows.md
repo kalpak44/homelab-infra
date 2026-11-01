@@ -1,8 +1,8 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Ten workflows, all running on the **self-hosted** runner (VM 101 on the
-Proxmox node). All are `workflow_dispatch` (manual) except the three on a `schedule`: `gitops-bump-images.yml` daily,
-`scanners-bump-pins.yml` weekly and `ai-security-agent.yml` nightly.
+All CI/CDs live in `.github/workflows/`. Eleven workflows, all running on the **self-hosted** runner (VM 101 on the
+Proxmox node). All are `workflow_dispatch` (manual) except the four on a `schedule`: `gitops-bump-images.yml` daily,
+`scanners-bump-pins.yml` weekly, and `ai-security-agent.yml` and `ai-update-agent.yml` nightly.
 
 | File                     | Purpose                                    | Underlying command                   |
 |--------------------------|--------------------------------------------|--------------------------------------|
@@ -16,6 +16,7 @@ Proxmox node). All are `workflow_dispatch` (manual) except the three on a `sched
 | `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
 | `ai-security-agent.yml`  | Review a day of requests, ban sources, tune CrowdSec | the agent prompt, not a recipe |
+| `ai-update-agent.yml`    | Update third-party software and patch every host | the agent prompt, plus `just os-update` |
 
 Every workflow has one job with three steps: `checkout`, `extractions/setup-just@v2`, and a single `just <recipe>` call.
 All actual logic lives in the layer's `Justfile`.
@@ -25,13 +26,26 @@ own. It runs Codex against DeepSeek nightly at 22:00 UTC — 00:00 in Sofia on E
 day under review is always over. Its policy lives in `.github/agent-prompts/ai-security-agent.md`, which is the one
 place to change what it will and will not do; the workflow only assembles tools and credentials. It reads the cluster
 through a token minted for the `security-agent` ServiceAccount
-(`gitops/clusters/homelab/infrastructure/crowdsec/security-agent-rbac.yaml`), so the read-only boundary is the API
+(`gitops/clusters/homelab/infrastructure/crowdsec/agent-rbac.yaml`), so the read-only boundary is the API
 server's rather than the prompt's — never hand it an admin kubeconfig to save a step. Its two edit points are
 `gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt` and `terraform/cloudflare/shared/zero-trust/blocked-ips.txt`
 — plain lists, so a night's bans never grow the HelmRelease or the HCL. Both are read by rules that already exist,
 because each zone allows one WAF ruleset and a second one would delete the first's rules on every apply. The CrowdSec
 list is a ConfigMap mount, which a running pod does not reload, so the `blocked-ips-sha256` pod annotation in
 `helmrelease.yaml` has to move with it or the DaemonSet silently keeps the old list.
+
+`ai-update-agent.yml` is the other. It runs at 06:00 UTC and keeps third-party software current across all three
+layers: the chart and image pins in `gitops/`, the version variables in the Ansible role defaults, and the OS packages
+on every LXC and VM. Its policy is `.github/agent-prompts/ai-update-agent.md`, and it reads the cluster through the
+`update-agent` ServiceAccount in the same `agent-rbac.yaml` — the read-only ClusterRole is shared by both agents.
+
+The OS half is `just os-update`, which runs `ansible/maintenance/os-update.yml`. **That playbook's play order is the
+safety mechanism, not a style choice**: application hosts, then storage, then the k3s worker, then the server, then
+the tunnel, then AdGuard last, one host at a time, each gated on the previous coming back. AdGuard is last because it
+is the LAN resolver and nothing — the runner included — resolves anything while it reboots. The runner VM and the
+Proxmox node are patched but never rebooted, because the job runs on one and inside the other, so a reboot would kill
+the process doing the patching and leave nothing to verify or roll back. Never reorder, parallelise, or `--limit` the
+playbook to work around a stubborn host.
 
 ## Shape of every workflow
 

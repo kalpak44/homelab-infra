@@ -1,18 +1,19 @@
-# The identity .github/workflows/ai-security-agent.yml runs as. It exists so "read-only"
-# is enforced by the API server rather than by the prompt: the agent is handed a token
-# minted for this account and never sees a cluster-admin credential.
+# The identities the two agent workflows run as. They exist so "read-only" is enforced by
+# the API server rather than by a prompt: each agent is handed a token minted for its own
+# account and never sees a cluster-admin credential.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: security-agent
   namespace: crowdsec
 ---
-# Traefik's pod logs are the request evidence and the workload objects are what the agent
-# checks after Flux applies its change. No verb here can mutate anything.
+# Shared by both agents. Traefik's pod logs are the security agent's request evidence, and
+# the workload and node objects are what either one checks after a change lands. No verb
+# here can mutate anything.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: security-agent-read
+  name: agent-read
 rules:
   - apiGroups: [""]
     resources: [pods, pods/log, services, endpoints, namespaces, nodes, events]
@@ -32,19 +33,42 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: security-agent-read
+  name: agent-read
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: security-agent-read
+  name: agent-read
 subjects:
   - kind: ServiceAccount
     name: security-agent
     namespace: crowdsec
 ---
-# The one write-shaped verb the agent gets, and it is namespaced to crowdsec. cscli is the
-# only interface to the alert and decision history, and reaching it means exec. Widening
-# this to another namespace hands the agent a shell next to whatever runs there.
+# The identity .github/workflows/ai-update-agent.yml runs as. It reads nodes, workloads and
+# reconciliation status to decide whether an upgrade landed; it gets no exec anywhere,
+# because nothing it does needs a shell in a pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: update-agent
+  namespace: crowdsec
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: update-agent-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-read
+subjects:
+  - kind: ServiceAccount
+    name: update-agent
+    namespace: crowdsec
+---
+# The one write-shaped verb the security agent gets, and it is namespaced to crowdsec.
+# cscli is the only interface to the alert and decision history, and reaching it means
+# exec. Widening this to another namespace hands the agent a shell next to whatever runs
+# there.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

@@ -20,7 +20,8 @@ homelab-infra/
     ├── ansible-configure.yml    | Ansible    - Configure
     ├── gitops-bump-images.yml   | GitOps     - Bump images
     ├── scanners-bump-pins.yml   | Scanners   - Bump pins
-    └── ai-security-agent.yml    | AI Security Agent
+    ├── ai-security-agent.yml    | AI Security Agent
+    └── ai-update-agent.yml      | AI Update Agent
 ```
 
 Each Terraform resource has its own directory and its own R2 state file. Every service under `terraform/proxmox/` has a

@@ -1,7 +1,9 @@
+# `latest`, not `present`: with `present` the package is installed once and then never
+# moves, so a broker provisioned a year ago stays on that year's release for ever.
 - name: Install RabbitMQ
   apt:
     name: rabbitmq-server
-    state: present
+    state: latest
     update_cache: true
 
 - name: Enable and start RabbitMQ

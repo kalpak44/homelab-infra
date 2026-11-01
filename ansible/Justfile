@@ -131,6 +131,19 @@ bootstrap-tls: setup
       -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
       bootstrap/04-proxmox-tls.yml
 
+# The play order in maintenance/os-update.yml is deliberate - do not narrow it by editing
+# the playbook, pass `host` instead.
+# Patch every LXC/VM and reboot what needs it (host limits the run to one)
+os-update host='': setup
+    #!/usr/bin/env bash
+    set -euo pipefail
+    limit_args=()
+    if [[ -n "{{host}}" ]]; then
+      limit_args=(--limit "{{host}}")
+    fi
+    ansible-playbook maintenance/os-update.yml ${limit_args[@]+"${limit_args[@]}"} \
+      -e "host_password=${HOST_PASSWORD:-}"
+
 # List every configurable resource
 list:
     @echo "Bootstrap (one-time, fresh Proxmox node):"
@@ -152,3 +165,6 @@ list:
     @printf "  %-24s %s\n" "mihal-lxc"        "Cloudflare Tunnel daemon - isolated WARP-only SSH, no LAN access"
     @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
     @printf "  %-24s %s\n" "k3s-cluster/flux" "Flux CD - GitOps bootstrap on the k3s cluster"
+    @echo
+    @echo "Maintenance:"
+    @printf "  %-24s %s\n" "os-update [host]" "apt upgrade every LXC/VM, reboot what needs it (host limits the run)"
