@@ -17,7 +17,10 @@ homelab-infra/
     ├── proxmox-destroy.yml      | Proxmox    - Destroy
     ├── github-deploy.yml        | GitHub     - Deploy
     ├── github-destroy.yml       | GitHub     - Destroy
-    └── ansible-configure.yml    | Ansible    - Configure
+    ├── ansible-configure.yml    | Ansible    - Configure
+    ├── gitops-bump-images.yml   | GitOps     - Bump images
+    ├── scanners-bump-pins.yml   | Scanners   - Bump pins
+    └── ai-security-agent.yml    | AI Security Agent
 ```
 
 Each Terraform resource has its own directory and its own R2 state file. Every service under `terraform/proxmox/` has a

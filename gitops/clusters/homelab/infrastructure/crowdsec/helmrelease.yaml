@@ -77,6 +77,23 @@ spec:
                 - "2c0f:f248::/32"
 
       scenarios:
+        # Addresses .github/workflows/ai-security-agent.yml has judged abusive, each with
+        # the date and the behaviour that earned it. The ban lands on the next request
+        # from the address, which is the only moment it changes anything.
+        #
+        # The TEST-NET-1 placeholder keeps the list non-empty: expr rejects `in []`, so an
+        # emptied list stops every scenario in this file from loading.
+        manual-blocklist.yaml: |
+          type: trigger
+          name: custom/manual-blocklist
+          description: "Source address on the reviewed blocklist"
+          filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in ['192.0.2.1']"
+          groupby: evt.Meta.source_ip
+          labels:
+            service: http
+            type: manual-blocklist
+            remediation: true
+
         # The MCP server answers 401 only when the bearer header is missing, malformed,
         # or rejected by Mite - including a request replaying another client's session
         # id. Repeats from one IP are key stuffing, not a misconfigured client.
@@ -215,6 +232,16 @@ spec:
             remediation: true
 
       profiles.yaml: |
+        # First, because every profile below ends on `break`: reached later, the reviewed
+        # ban would be pre-empted by whatever short automatic ban fired on the same alert.
+        name: manual_blocklist_ban
+        filters:
+          - Alert.Remediation == true && Alert.GetScenario() == "custom/manual-blocklist"
+        decisions:
+          - type: ban
+            duration: 720h
+        on_success: break
+        ---
         name: repeat_offender
         filters:
           - Alert.Remediation == true && Alert.GetScope() == "Ip" && GetDecisionsCount(Alert.GetValue()) >= 3

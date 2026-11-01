@@ -98,6 +98,21 @@ resource "cloudflare_ruleset" "proklinator_scanners" {
       local.proklinator_waf_hosts
     )
   }
+
+  # Omitted entirely while the list is empty: Cloudflare rejects `ip.src in {}`, and a
+  # ruleset that will not compile takes every rule below it off the air with it. The list
+  # is in waf-blocked-ips.tf.
+  dynamic "rules" {
+    for_each = length(local.blocked_ips) > 0 ? [1] : []
+    content {
+      ref         = "block_reviewed_abusive_ips"
+      action      = "block"
+      description = "Block addresses on the reviewed blocklist"
+      enabled     = true
+
+      expression = local.blocked_ips_expression
+    }
+  }
 }
 
 # Rate limiting is its own phase entrypoint, so it cannot live in the ruleset above.

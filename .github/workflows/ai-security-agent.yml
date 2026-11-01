@@ -1,0 +1,285 @@
+name: AI Security Agent
+
+# Reads a day of requests that reached Traefik, decides which sources to ban and which
+# CrowdSec rules to add or tune, commits the change here, and then proves the cluster
+# still serves before it calls the run good.
+#
+# Read-only in the cluster by construction, not by instruction: the agent is handed a
+# token minted for the `security-agent` ServiceAccount in
+# gitops/clusters/homelab/infrastructure/crowdsec/security-agent-rbac.yaml and never sees
+# a cluster-admin kubeconfig. Everything it changes, it changes through Git.
+#
+# The policy is the prompt in .github/agent-prompts/ai-security-agent.md, not bash — this
+# file only assembles the tools and credentials and hands the agent its context.
+
+on:
+  schedule:
+    # cron carries no timezone, so one of Sofia's two offsets has to be chosen: 22:00 UTC
+    # is 00:00 there on EET and 01:00 on EEST. Late is the safe direction — the day being
+    # reviewed is over either way, where early would review one still in progress.
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Analyse and report only - commit nothing, deploy nothing.
+        required: false
+        type: boolean
+        default: false
+      window_hours:
+        description: How far back to read request evidence.
+        required: false
+        type: string
+        default: "24"
+
+# The agent pushes with a PAT, so nothing here needs widening. A grant made at this level
+# reaches every job, including ones that only read.
+permissions:
+  contents: read
+
+# Two runs would analyze the same evidence and commit conflicting blocklists. Never
+# cancel-in-progress: a canceled run can leave a pushed commit unverified.
+concurrency:
+  group: ai-security-agent
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # Must be the self-hosted runner: the cluster API, Traefik's LAN addresses and the
+    # *.internal hostnames the verification step checks exist only on the home network.
+    runs-on: self-hosted
+    timeout-minutes: 90
+
+    env:
+      # A PAT rather than GITHUB_TOKEN. This credential is what `git push` uses, and it is
+      # also what reads workflow runs when the agent checks that its own push landed
+      # cleanly — neither of which the job's own token can do.
+      GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
+
+      # Reads the cluster CA and mints the ServiceAccount token on the k3s server. The
+      # admin kubeconfig is never copied here; only the short-lived token comes back.
+      HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
+      K3S_SERVER: 192.168.1.110
+      KUBECONFIG: /tmp/security-agent.kubeconfig
+
+      # `just deploy cloudflare shared/zero-trust` reads these. The token needs
+      # Zone:WAF:Edit, which the edge-ports rule already requires.
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      WINDOW_HOURS: ${{ inputs.window_hours || '24' }}
+      # A run that wants to ban more than this has found something the prompt did not
+      # anticipate, and a human should see it before the list grows by that much.
+      MAX_NEW_BANS: ${{ vars.AI_MAX_NEW_BANS || '10' }}
+
+      # Outside the working tree: the agent must see a clean tree before it commits, and
+      # an untracked file in the repo would read as uncommitted work.
+      SUMMARY_FILE: /tmp/security-agent-summary.md
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          # The PAT, not GITHUB_TOKEN: a push made with GITHUB_TOKEN raises no workflow
+          # run, so the agent could not check that what it pushed was accepted.
+          token: ${{ secrets.GH_ADMIN_TOKEN }}
+
+      - name: Configure Git identity
+        # The automation identity, not ours. See .claude/rules/commits.md.
+        run: |
+          set -euo pipefail
+
+          git config user.name "homelab-infra"
+          git config user.email "homelab-infra@users.noreply.github.com"
+
+      - name: Ensure runner tooling
+        # The runner is long-lived, so this both installs what a fresh one lacks and moves
+        # what an old one has already drifted on. ansible/bootstrap/03-runner-vm.yml
+        # installs the same three; this is what keeps them current between bootstraps.
+        run: |
+          set -euo pipefail
+
+          sudo_apt() { sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }
+
+          # Pinned to the cluster's minor. kubectl is supported one minor either side of
+          # the API server, so tracking `stable` would eventually skew past that.
+          k8s_minor=v1.34
+
+          if [ ! -f /etc/apt/sources.list.d/kubernetes.list ] ||
+             ! grep -q "$k8s_minor" /etc/apt/sources.list.d/kubernetes.list; then
+            curl -fsSL "https://pkgs.k8s.io/core:/stable:/${k8s_minor}/deb/Release.key" |
+              sudo gpg --dearmor --yes -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${k8s_minor}/deb/ /" |
+              sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
+          fi
+
+          if [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then
+            curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key |
+              sudo gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg
+            echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" |
+              sudo tee /etc/apt/sources.list.d/nodesource.list >/dev/null
+          fi
+
+          sudo_apt update -qq
+          sudo_apt install -y kubectl nodejs sshpass
+
+          # Pinned, and --ignore-scripts because the package declares none: an unpinned
+          # global install takes whatever the registry served that night.
+          codex_version=0.154.0
+
+          if [ "$(codex --version 2>/dev/null | grep -o '[0-9.]*' | head -1)" != "$codex_version" ]; then
+            sudo npm install -g "@openai/codex@${codex_version}" --ignore-scripts
+          fi
+
+          {
+            echo "## Runner tooling"
+            echo
+            echo '```'
+            kubectl version --client=true -o yaml 2>/dev/null | grep gitVersion | head -1
+            node --version
+            codex --version
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mint a read-only cluster token
+        # The admin kubeconfig stays on the k3s server. Only the CA and a short-lived
+        # ServiceAccount token come back, so nothing cluster-admin ever lands on disk here.
+        run: |
+          set -euo pipefail
+
+          on_k3s() {
+            sshpass -p "$HOST_PASSWORD" ssh \
+              -o StrictHostKeyChecking=accept-new \
+              -o PreferredAuthentications=password \
+              -o ConnectTimeout=10 \
+              "root@${K3S_SERVER}" "$1"
+          }
+
+          ca=$(on_k3s "awk '/certificate-authority-data/{print \$2}' /etc/rancher/k3s/k3s.yaml")
+          token=$(on_k3s "k3s kubectl -n crowdsec create token security-agent --duration=4h")
+
+          if [ -z "$ca" ] || [ -z "$token" ]; then
+            echo "could not mint a token for the security-agent ServiceAccount — has" >&2
+            echo "gitops/.../crowdsec/security-agent-rbac.yaml reconciled?" >&2
+            exit 1
+          fi
+
+          umask 077
+          cat > "$KUBECONFIG" <<EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: homelab
+              cluster:
+                server: https://${K3S_SERVER}:6443
+                certificate-authority-data: ${ca}
+          users:
+            - name: security-agent
+              user:
+                token: ${token}
+          contexts:
+            - name: security-agent@homelab
+              context:
+                cluster: homelab
+                user: security-agent
+                namespace: crowdsec
+          current-context: security-agent@homelab
+          EOF
+
+          # The RBAC is the boundary, so assert it here rather than trusting the prompt to
+          # stay inside it. A token that can delete is a misbound role, not a usable run.
+          if [ "$(kubectl auth can-i delete pods --all-namespaces)" != "no" ]; then
+            echo "the minted token is not read-only — refusing to hand it to the agent" >&2
+            exit 1
+          fi
+
+          kubectl get pods -n crowdsec >/dev/null
+
+      - name: Point Codex at DeepSeek
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEEPSEEK_APIKEY:-}" ]; then
+            echo "DEEPSEEK_APIKEY is empty — is it configured in this repository's secrets?" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+
+          cat > ~/.codex/config.toml <<EOF
+          model = "${DEEPSEEK_MODEL}"
+          model_provider = "deepseek"
+
+          [model_providers.deepseek]
+          name = "DeepSeek"
+          base_url = "https://api.deepseek.com/v1"
+          env_key = "DEEPSEEK_APIKEY"
+          wire_api = "responses"
+          EOF
+
+      - name: Smoke-test the model
+        # One cheap call, so a bad credential or model name fails here rather than halfway
+        # through a review that has already pushed a commit.
+        run: |
+          set -euo pipefail
+
+          CODE=$(curl -sS -o /tmp/smoke.json -w '%{http_code}' \
+            https://api.deepseek.com/v1/responses \
+            -H "Authorization: Bearer $DEEPSEEK_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"${DEEPSEEK_MODEL}\",\"input\":\"reply with the single word: ok\"}")
+
+          echo "HTTP $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            head -c 500 /tmp/smoke.json
+            echo
+            exit 1
+          fi
+
+      - name: Run the agent
+        # The prompt is read before the agent starts, so nothing it does mid-run can swap
+        # the instructions out from under it.
+        run: |
+          set -euo pipefail
+
+          prompt=.github/agent-prompts/ai-security-agent.md
+
+          if [ ! -f "$prompt" ]; then
+            echo "$prompt is missing" >&2
+            exit 1
+          fi
+
+          codex exec \
+            --skip-git-repo-check \
+            --sandbox danger-full-access \
+            --output-last-message "$SUMMARY_FILE" \
+            "$(cat "$prompt")"
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## AI Security Agent"
+            echo
+            if [ -f "$SUMMARY_FILE" ]; then
+              cat "$SUMMARY_FILE"
+            else
+              echo "Agent produced no report."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Discard the cluster token
+        if: always()
+        run: rm -f "$KUBECONFIG"

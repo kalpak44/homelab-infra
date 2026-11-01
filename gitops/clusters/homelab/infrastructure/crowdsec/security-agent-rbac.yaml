@@ -1,0 +1,70 @@
+# The identity .github/workflows/ai-security-agent.yml runs as. It exists so "read-only"
+# is enforced by the API server rather than by the prompt: the agent is handed a token
+# minted for this account and never sees a cluster-admin credential.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: security-agent
+  namespace: crowdsec
+---
+# Traefik's pod logs are the request evidence and the workload objects are what the agent
+# checks after Flux applies its change. No verb here can mutate anything.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: security-agent-read
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, namespaces, nodes, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, daemonsets, statefulsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [traefik.io]
+    resources: [ingressroutes, middlewares]
+    verbs: [get, list, watch]
+  # Reconciliation status only. Flux is left to its own 30s interval rather than nudged,
+  # because `flux reconcile` annotates the object and that is a write.
+  - apiGroups: [helm.toolkit.fluxcd.io, kustomize.toolkit.fluxcd.io]
+    resources: [helmreleases, kustomizations]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: security-agent-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: security-agent-read
+subjects:
+  - kind: ServiceAccount
+    name: security-agent
+    namespace: crowdsec
+---
+# The one write-shaped verb the agent gets, and it is namespaced to crowdsec. cscli is the
+# only interface to the alert and decision history, and reaching it means exec. Widening
+# this to another namespace hands the agent a shell next to whatever runs there.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: security-agent-exec
+  namespace: crowdsec
+rules:
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: security-agent-exec
+  namespace: crowdsec
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: security-agent-exec
+subjects:
+  - kind: ServiceAccount
+    name: security-agent
+    namespace: crowdsec

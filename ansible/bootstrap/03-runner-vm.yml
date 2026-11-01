@@ -83,7 +83,10 @@
   become: true
   vars:
     terraform_version: 1.15.4
-    runner_version: "2.334.0"
+    runner_version: "2.338.2"
+    # Pinned to the cluster's minor: kubectl is supported one minor either side of
+    # the API server, so tracking `stable` would eventually skew past that.
+    k8s_minor: "v1.34"
     runner_dir: /home/ubuntu/actions-runner
     github_token: "{{ github_token | default('') }}"
     github_repo: "{{ github_repo | default('') }}"
@@ -112,6 +115,34 @@
         content: "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n"
         mode: "0644"
 
+    - name: Add Kubernetes apt keyring
+      ansible.builtin.shell:
+        cmd: >-
+          curl -fsSL https://pkgs.k8s.io/core:/stable:/{{ k8s_minor }}/deb/Release.key
+          | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+
+    - name: Add Kubernetes apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/kubernetes.list
+        content: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ k8s_minor }}/deb/ /\n"
+        mode: "0644"
+
+    - name: Add NodeSource apt keyring
+      ansible.builtin.shell:
+        cmd: >-
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+          | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+      args:
+        creates: /usr/share/keyrings/nodesource.gpg
+
+    - name: Add NodeSource apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/nodesource.list
+        content: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main\n"
+        mode: "0644"
+
     - name: Install apt packages
       ansible.builtin.apt:
         name:
@@ -124,6 +155,12 @@
           - jq
           - gh
           - qemu-guest-agent
+          # .github/workflows/ai-security-agent.yml reads the cluster with kubectl, runs
+          # the Codex CLI on node, and reaches the k3s server through sshpass. That
+          # workflow reinstalls any that are missing, so an older runner still works.
+          - kubectl
+          - nodejs
+          - sshpass
         state: present
         update_cache: true
 

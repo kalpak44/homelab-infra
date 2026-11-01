@@ -93,16 +93,19 @@ homelab-infra/
 │       ├── flux-system/
 │       ├── infrastructure/         # MetalLB, Traefik, cert-manager, NFS, External Secrets, CrowdSec
 │       └── apps/{public,private}/
-└── .github/workflows/
-    ├── cloudflare-deploy.yml       # just deploy cloudflare <resource>
-    ├── cloudflare-destroy.yml      # just destroy cloudflare <resource>
-    ├── proxmox-deploy.yml          # just deploy proxmox <resource>
-    ├── proxmox-destroy.yml         # just destroy proxmox <resource>
-    ├── github-deploy.yml           # just deploy github <repo>
-    ├── github-destroy.yml          # just destroy github <repo>
-    ├── ansible-configure.yml       # just configure <resource>
-    ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
-    └── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)
+├── .github/workflows/
+│   ├── cloudflare-deploy.yml       # just deploy cloudflare <resource>
+│   ├── cloudflare-destroy.yml      # just destroy cloudflare <resource>
+│   ├── proxmox-deploy.yml          # just deploy proxmox <resource>
+│   ├── proxmox-destroy.yml         # just destroy proxmox <resource>
+│   ├── github-deploy.yml           # just deploy github <repo>
+│   ├── github-destroy.yml          # just destroy github <repo>
+│   ├── ansible-configure.yml       # just configure <resource>
+│   ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
+│   ├── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)
+│   └── ai-security-agent.yml       # CrowdSec review agent (nightly cron 22:00 UTC)
+└── .github/agent-prompts/
+    └── ai-security-agent.md        # what that agent may and may not do
 ```
 
 ---

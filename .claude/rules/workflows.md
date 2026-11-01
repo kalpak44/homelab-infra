@@ -1,8 +1,8 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Nine workflows, all running on the **self-hosted** runner (VM 101 on the
-Proxmox node). All are `workflow_dispatch` (manual) except the two on a `schedule`: `gitops-bump-images.yml` daily
-and `scanners-bump-pins.yml` weekly.
+All CI/CDs live in `.github/workflows/`. Ten workflows, all running on the **self-hosted** runner (VM 101 on the
+Proxmox node). All are `workflow_dispatch` (manual) except the three on a `schedule`: `gitops-bump-images.yml` daily,
+`scanners-bump-pins.yml` weekly and `ai-security-agent.yml` nightly.
 
 | File                     | Purpose                                    | Underlying command                   |
 |--------------------------|--------------------------------------------|--------------------------------------|
@@ -15,9 +15,21 @@ and `scanners-bump-pins.yml` weekly.
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
 | `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
+| `ai-security-agent.yml`  | Review a day of requests, ban sources, tune CrowdSec | the agent prompt, not a recipe |
 
 Every workflow has one job with three steps: `checkout`, `extractions/setup-just@v2`, and a single `just <recipe>` call.
 All actual logic lives in the layer's `Justfile`.
+
+`ai-security-agent.yml` is the one exception, and it is the only workflow here that writes to this repository on its
+own. It runs Codex against DeepSeek nightly at 22:00 UTC — 00:00 in Sofia on EET and 01:00 on EEST, chosen late so the
+day under review is always over. Its policy lives in `.github/agent-prompts/ai-security-agent.md`, which is the one
+place to change what it will and will not do; the workflow only assembles tools and credentials. It reads the cluster
+through a token minted for the `security-agent` ServiceAccount
+(`gitops/clusters/homelab/infrastructure/crowdsec/security-agent-rbac.yaml`), so the read-only boundary is the API
+server's rather than the prompt's — never hand it an admin kubeconfig to save a step. Its two edit points are the
+`manual-blocklist` scenario in the CrowdSec HelmRelease and `local.blocked_ips` in
+`terraform/cloudflare/shared/zero-trust/waf-blocked-ips.tf`; both lists are read by rules that already exist, because
+each zone allows one WAF ruleset and a second one would delete the first's rules on every apply.
 
 ## Shape of every workflow
 
