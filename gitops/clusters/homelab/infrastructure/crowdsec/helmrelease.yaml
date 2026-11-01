@@ -20,6 +20,13 @@ spec:
   values:
     container_runtime: containerd
 
+    # Ahead of the chart on purpose: 0.24.2's appVersion is still v1.8.1, and CrowdSec
+    # logs a warning on every start when the binary is behind, because the hub ships
+    # parsers written against the newer one. Drop this once the chart's appVersion
+    # catches up — an override left in place holds the version back instead.
+    image:
+      tag: "v1.8.2"
+
     config:
       config.yaml.local: |
         # AppSec writes one alert per blocked request, so the 5000-item default is

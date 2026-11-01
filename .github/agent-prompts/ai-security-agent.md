@@ -166,10 +166,48 @@ Both zones read that one list, and each already spends custom rules on other thi
 Free plan caps a zone at five. If adding the rule would exceed that on either zone, skip
 the Cloudflare half entirely and report it — CrowdSec still has the ban.
 
+**Both zones are on the Free plan and must stay there.** Your only Cloudflare lever is one
+more address inside `local.blocked_ips`. Do not reach for anything that bills: no IP Lists,
+no Bot Management, no managed ruleset beyond the free one, no second rate limiting rule,
+and no `matches` operator — match with `contains` on a `lower()`ed field. If the right
+answer needs a paid feature, it is not the right answer here; write the CrowdSec rule
+instead and say in the report what the edge could have done.
+
 Every entry in both files carries a comment with the date and the behaviour that earned
 it. An entry without evidence is one nobody can ever remove.
 
-## 8. Validate before you commit
+## 8. Keep CrowdSec current
+
+Every run, before you decide anything else. A version warning in the logs is not cosmetic:
+the hub ships parsers and scenarios written against the newer binary, so a lagging one
+silently matches less than it reports.
+
+Compare three things and act on each:
+
+- **The running binary** against CrowdSec's latest release. The pods log
+  `A new CrowdSec release is available` when they are behind. The fix is `image.tag` in
+  the HelmRelease's `values`, which is already set when the chart lags upstream.
+- **The chart** against what the `crowdsec` HelmRepository offers. The pin is a patch
+  range, so a new patch arrives on its own and a new minor needs the range widening.
+- **Whether the `image.tag` override is still earning its place.** Once the chart's own
+  appVersion reaches the tag it names, delete the override. Left in, it stops being a
+  bump and becomes a hold.
+
+Check the versions from the published sources rather than from memory:
+
+```
+kubectl -n crowdsec get pods -o jsonpath='{.items[*].spec.containers[0].image}'
+gh api repos/crowdsecurity/crowdsec/releases/latest --jq .tag_name
+```
+
+The hub content itself needs nothing from you. `agent.persistentVolume.config` is disabled,
+so every agent pod re-downloads its collections and scenarios on start, and any change you
+make here rolls those pods anyway. Do not run `cscli hub upgrade` — it writes, and it would
+change a pod that the next restart resets.
+
+A version bump is a legitimate reason to commit on a night with no bans at all.
+
+## 9. Validate before you commit
 
 Run all of these. A broken manifest here takes the cluster's ingress protection down, and
 a broken Terraform file is applied to the live edge.
@@ -193,7 +231,7 @@ Check `git diff` and confirm it touches only the files you meant to. If the diff
 anything under `gitops/clusters/homelab/apps/`, `ansible/`, or any Terraform directory
 other than `shared/zero-trust`, you have made a mistake: revert it and report it.
 
-## 9. Commit and push
+## 10. Commit and push
 
 Stop here when `DRY_RUN` is `true`. Write the report and exit 0.
 
@@ -208,7 +246,7 @@ git push origin "$DEFAULT_BRANCH"
 ```
 
 If the push is rejected because the branch moved, rebase onto the new head, re-run the
-validation from section 8, and push again. Never force-push.
+validation from section 9, and push again. Never force-push.
 
 After the push, confirm with `gh` that nothing you pushed broke a pipeline here:
 
@@ -218,9 +256,9 @@ gh run list --repo "$REPO" --commit "$(git rev-parse HEAD)" --json name,status,c
 
 Most commits to this repository start no workflow at all, so an empty list is the expected
 answer and not a failure. If a run did start, wait for it with `gh run watch` and treat a
-failure as a failed deployment — section 11.
+failure as a failed deployment — section 12.
 
-## 10. Deploy and verify
+## 11. Deploy and verify
 
 **CrowdSec** is reconciled by Flux from Git. Do not run `flux reconcile`: annotating the
 object is a White and your token cannot do it. The `crowdsec` Kustomization has a 30s
@@ -275,7 +313,7 @@ design. A 403 is the failure that matters most — it means the bouncer is now b
 runner, which means you banned something you should not have. A 000 or a 5xx is also a
 failure. Compare against what these answered before your change where you can.
 
-## 11. If verification fails
+## 12. If verification fails
 
 Revert, immediately and without deliberation. A homelab serving 403 to everyone is worse
 than one that skipped a night's bans.
@@ -292,7 +330,7 @@ Then wait for the rollout again and re-run the checks. Report what you tried, wh
 and that you reverted. Exit non-zero so the run goes red — a reverted change is still a
 failed run, and it must not read as a quiet night.
 
-## 12. The report
+## 13. The report
 
 Write it to `$SUMMARY_FILE` as Markdown. It is the only thing anyone reads, so it carries
 the evidence, not a summary of your activity. No preamble, no restating these
@@ -307,15 +345,16 @@ Cover, in this order:
    if you can resolve it, request count, what it was doing, and the verdict (banned /
    covered by a new rule / watched).
 4. **What CrowdSec caught by itself** — scenarios that fired, with counts.
-5. **Changes made** — every file, every entry, with the reason for each.
-6. **Deployment** — the reconciled revision, the rollouts, and the smoke-test results.
-7. **Gaps** — scenarios that fired zero times, patterns you saw but could not act on,
+5. **Versions** — the running CrowdSec, the chart, and whether either moved tonight.
+6. **Changes made** — every file, every entry, with the reason for each.
+7. **Deployment** — the reconciled revision, the rollouts, and the smoke-test results.
+8. **Gaps** — scenarios that fired zero times, patterns you saw but could not act on,
    anything RBAC refused you, and the Cloudflare rule budget if you hit it.
 
 Keep it to what a person can read in two minutes. Put the long tail of addresses in a
 fenced block rather than a table.
 
-## 13. Hard limits
+## 14. Hard limits
 
 - Never ban more than `MAX_NEW_BANS` addresses in one run. Hitting the cap means picking
   the worst ones and reporting the rest as unactioned.
@@ -326,5 +365,8 @@ fenced block rather than a table.
   `terraform/cloudflare/shared/zero-trust/`. Applications, Ansible, and every other
   Terraform directory are out of scope even when the evidence points at them — report it
   instead.
+- Never use a Cloudflare feature the Free plan does not include. Both zones stay on Free.
+- Never hold a version back. `image.tag` exists to get ahead of a lagging chart, never to
+  pin away from a release that has already shipped.
 - Never commit an address, a token or a header value that came out of a secret.
 - Never disable a check to make a run pass.
