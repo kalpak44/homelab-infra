@@ -28,6 +28,10 @@ that mechanism. Leave every one of them alone.
 The service credentials `just configure` needs are already in the environment. The working
 directory is a clean checkout on the default branch.
 
+`KUBECONFIG` is read-only and narrower than a cluster-admin credential; reads of
+`HelmChart`, `Ingress`, and `ExternalSecret` are denied. Use the manifests in this
+repository or the APIs the credential can read, and do not mistake `Forbidden` for absence.
+
 **Reaching a host over SSH.** The runner holds no key for these hosts; `HOST_PASSWORD` in
 the environment is the root password for every LXC and VM, the Proxmox node included. Use
 it explicitly — `sshpass -e` without exporting `SSHPASS` is the failure this note exists to
@@ -40,7 +44,8 @@ sshpass -p "$HOST_PASSWORD" ssh -o StrictHostKeyChecking=accept-new \
 
 `nocobase` is the exception: its sshd is key-only on port 22022. `just configure` and
 `just os-update` load `SSH_PRIVATE_KEY` for it; a manual check must use `ssh -i` rather
-than the root password.
+than the root password. A failed five-second port probe there is not a liveness check;
+verify port 22022 with the operator key before treating the host as down.
 
 ## 2. The order of work, and why it is this order
 
@@ -273,9 +278,9 @@ manifest and push. Flux is the thing that applies your reverts, so this is the o
 component where breaking it also breaks your way back — check it before moving on, not at
 the end of the run.
 
-Flux v2.10 requires Kubernetes 1.35.2 or newer and changes RBAC/API handling. Move k3s
-across its minor first, and review the v2.10 upgrade notes before regenerating the
-controllers, so the running cluster is not asked to support an unsupported manifest.
+Flux v2.10 requires Kubernetes 1.35.2 or newer and changes RBAC/API handling. Review the
+v2.10 upgrade notes before regenerating the controllers. If the cluster is below 1.35.2,
+move k3s across its minor first; otherwise the normal gitops-first order is safe.
 
 ## 6. Layer two — ansible
 
@@ -327,6 +332,11 @@ Apply one service at a time, and verify before the next:
 ```
 cd ansible && just configure <service>
 ```
+
+`just configure mihal-lxc` reads its dedicated tunnel token from Terraform state, so it
+needs the R2 backend variables in addition to the Ansible credentials. Without them the
+recipe fails before reaching the host; do not substitute an empty token, and report the
+host as not configured.
 
 Read the recap. `failed=0` is necessary and not sufficient — check the service answers,
 section 9.
@@ -416,6 +426,10 @@ Expect the run to be slow and to lose contact with hosts while they restart; the
 waits. If it fails on a host, stop the sweep and report. Do not re-run it to see if it
 passes the second time: a half-patched host that failed its health check needs reading, not
 retrying.
+
+Vault can still be `activating` when the immediate post-reboot health check runs because it
+is unsealing. Inspect its status and health before treating that as a failure, and do not
+resume or re-run the sweep just to test the host.
 
 ## 9. Proving it still works
 
