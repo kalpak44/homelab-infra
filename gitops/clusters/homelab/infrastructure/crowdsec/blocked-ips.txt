@@ -39,3 +39,6 @@
 # 2026-11-01 .env probing on bunker at 12:04 and mite-assistant at 18:36, returning
 # after an earlier short ban expired
 193.47.62.29
+# 2026-11-02 .env, VCS, credential and framework probing, 354 requests across 347 paths
+# in 14s on www; the automatic vpatch ban was only 4h
+136.92.17.206

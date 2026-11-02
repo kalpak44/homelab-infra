@@ -404,7 +404,7 @@ spec:
       # when only the list does — without this the DaemonSet keeps serving the old one.
       # sha256 of blocked-ips.txt; update both in the same commit.
       podAnnotations:
-        homelab.pavel-usanli.online/blocked-ips-sha256: "fea5dde4b31a25ff61e044b90875b6e22947dcb439ef2d6dc6dd3f808a0451f6"
+        homelab.pavel-usanli.online/blocked-ips-sha256: "f7111e5e1af4e59db798c36b996e6136b69b0711d37039640f1d3878d5f996fd"
 
       # subPath, so the mount adds one file instead of masking the data directory the hub
       # downloads its pattern files into.
@@ -506,7 +506,7 @@ spec:
                 - lowercase
               match:
                 type: regex
-                value: "^/(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail)([?/]|$)"
+                value: "(^|/)(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail|wordpress|wp)([?/]|$)"
           labels:
             type: scan
             service: http
@@ -525,7 +525,7 @@ spec:
                 - lowercase
               match:
                 type: regex
-                value: "(^|/)(\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.dockercfg|\\.docker/config\\.json|docker-compose\\.ya?ml|terraform\\.tfstate|\\.terraform/|\\.git/|\\.gitmodules|\\.lfsconfig|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|backup\\.sql|dump\\.sql|db\\.sql)"
+                value: "(^|/)(\\.env([.~_-][^/]*)?|\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.htaccess|\\.dockercfg|\\.docker/config\\.json|\\.git-credentials|\\.git/|\\.gitmodules|\\.lfsconfig|\\.gitlab-ci\\.yml|\\.github/|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|\\.boto|\\.s3cfg|\\.amplifyrc|\\.pypirc|\\.cursor/mcp\\.json|\\.claude/settings[^/]*|\\.streamlit/secrets\\.toml|auth\\.json|credentials\\.json|aws-exports\\.js|firebase-(admin|service-account)[^/]*\\.json|appsettings([.][^/]*)?\\.json|app\\.config\\.js|local_settings\\.py|secrets\\.(env|ya?ml)|docker-compose\\.ya?ml|terraform\\.tfstate|\\.terraform/|backup\\.sql|dump\\.sql|db\\.sql)"
           labels:
             type: exploit
             service: http
