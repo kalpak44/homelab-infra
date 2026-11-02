@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: song-radar
-          image: ghcr.io/kalpak44/song-radar:0fb3ecb
+          image: ghcr.io/kalpak44/song-radar:6884f9a
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
