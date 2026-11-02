@@ -86,6 +86,17 @@ spec:
                 - "2a06:98c0::/29"
                 - "2c0f:f248::/32"
 
+          # `cscli allowlists` is fetched only by the appsec pods, so a log-fed scenario still
+          # bans an allowlisted address. This one is the homelab's own egress IP, and banning it
+          # locks the LAN out of every public hostname.
+          trusted-clients.yaml: |
+            name: custom/trusted-clients
+            description: "Whitelist the homelab's own egress address"
+            whitelist:
+              reason: "Trusted client IP"
+              cidr:
+                - "46.10.211.21/32"
+
       scenarios:
         # Addresses .github/workflows/ai-security-agent.yml has judged abusive. The list is
         # blocked-ips.txt beside this file, mounted into the agent pods — kept out of here
@@ -196,8 +207,10 @@ spec:
         http-error-burst.yaml: |
           type: leaky
           name: custom/http-error-burst
-          description: "Block IP after 20 non-2xx HTTP responses within 10 seconds (automated/brute-force detection)"
-          filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
+          description: "Block IP after 20 4xx/5xx HTTP responses within 10 seconds (automated/brute-force detection)"
+          # 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
+          # and counting them bans a visitor who merely followed a redirect and missed a favicon.
+          filter: "evt.Meta.service == 'http' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
           groupby: evt.Meta.source_ip
           capacity: 20
           leakspeed: "500ms"
@@ -224,15 +237,16 @@ spec:
         http-error-threshold.yaml: |
           type: leaky
           name: custom/http-error-threshold
-          description: "Block IP after 5 non-2xx HTTP responses, regardless of rate"
+          description: "Block IP after 5 4xx/5xx HTTP responses, regardless of rate"
 
-          # Only count HTTP events that have a status code and are not 2xx (e.g. 404, 403, 500)
-          filter: "evt.Meta.service == 'http' && evt.Meta.http_status != '' && !(evt.Meta.http_status startsWith '2')"
+          # 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
+          # and counting them bans a visitor who merely followed a redirect and missed a favicon.
+          filter: "evt.Meta.service == 'http' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
 
           # Group events by source IP - each IP gets its own bucket
           groupby: evt.Meta.source_ip
 
-          # capacity 4 + 1 overflow event = 5 non-2xx responses trigger a ban
+          # capacity 4 + 1 overflow event = 5 4xx/5xx responses trigger a ban
           capacity: 4
 
           # leakspeed 6h → effective window = 4 × 6h = 24h (long enough to catch slow, spread-out probing)
