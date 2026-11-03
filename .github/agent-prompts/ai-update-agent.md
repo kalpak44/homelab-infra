@@ -79,7 +79,7 @@ a good run.
 
 ```
 kubectl get pods -A | grep -Ev "Running|Completed"
-kubectl -n flux-system get kustomization,helmrelease
+kubectl get kustomization,helmrelease -A
 ```
 
 Anything not Ready, any `CrashLoopBackOff`, any `Init:`, any restart count climbing. Read
@@ -121,6 +121,7 @@ delete one belonging to a guest you are about to touch:
 
 ```
 ssh_host 192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211; do pct listsnapshot \$i; done"
+ssh_host 192.168.1.50 "for i in 110 111 301 302; do qm listsnapshot \$i; done"
 ```
 
 **What you fix, and what you report.** Fix what is mechanical and reversible: a stale
@@ -193,6 +194,10 @@ the known one: it serves plain HTTP, so its credentials cross the LAN in clear. 
 each run until it is fixed; do not quietly skip it because there is no certificate to
 check.
 
+`nocobase` is also HTTP-only at the origin: nginx listens on port 80 and there is no 443
+listener. It is LAN-isolated and reached through a WARP service-token path, so probe
+`http://192.168.1.5/` rather than treating the absent TLS port as an outage.
+
 ## 5. Layer one — gitops
 
 Two kinds of pin live under `gitops/clusters/homelab/`, and they move differently.
@@ -232,6 +237,8 @@ the migration they describe; never simply widen the pin and hope.
 
 Move these to the newest release of the same major. Keep `nginx` pinned to a concrete
 `1.x.y-alpine`; a floating tag looks current and is not, because nothing re-pulls it.
+`apps/public/capacity-planner` also uses a literal `nginx:alpine`, but `apps/public/` is
+outside this agent's write scope; report the floating tag rather than editing it.
 
 **Two Traefik plugins are versioned outside all of this**, in
 `infrastructure/traefik-config/helmchartconfig.yaml`: the CrowdSec bouncer and the Sablier
@@ -430,6 +437,11 @@ retrying.
 Vault can still be `activating` when the immediate post-reboot health check runs because it
 is unsealing. Inspect its status and health before treating that as a failure, and do not
 resume or re-run the sweep just to test the host.
+
+`k3s-agent` can be `activating` the same way just after its node returns. Separately, a
+CrowdSec pod that keeps its name across a reboot fails its init with `user already exist`
+from `cscli lapi register`; delete that pod so its controller recreates it with a fresh
+watcher identity, then confirm both agent and appsec are Ready.
 
 ## 9. Proving it still works
 
