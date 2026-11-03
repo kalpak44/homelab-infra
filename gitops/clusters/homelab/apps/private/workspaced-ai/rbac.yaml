@@ -1,5 +1,6 @@
-# The API starts, watches and deletes one pod per workspace in its own namespace, and
-# nothing else: a Role, not a ClusterRole, and pods only.
+# The API starts, watches and deletes one pod per workspace in its own namespace, with a
+# Secret and a ConfigMap holding its environment: a Role, not a ClusterRole. Secrets need
+# get and patch because a workspace's secrets are added and removed one key at a time.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -15,6 +16,12 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

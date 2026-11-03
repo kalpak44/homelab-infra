@@ -17,7 +17,7 @@ spec:
         app: workspaced-ai-api
     spec:
       # The token is what the API manages workspace pods with; rbac.yaml limits it to
-      # pods in this namespace.
+      # pods, Secrets and ConfigMaps in this namespace.
       serviceAccountName: workspaced-ai-api
       automountServiceAccountToken: true
       # A pod-level context, not only the per-container one below: the config scanner
