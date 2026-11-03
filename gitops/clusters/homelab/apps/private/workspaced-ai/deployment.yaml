@@ -41,18 +41,18 @@ spec:
               containerPort: 8080
           startupProbe:
             httpGet:
-              path: /actuator/health/liveness
+              path: /api/v1/actuator/health/liveness
               port: http
             periodSeconds: 5
             failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /actuator/health/readiness
+              path: /api/v1/actuator/health/readiness
               port: http
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /actuator/health/liveness
+              path: /api/v1/actuator/health/liveness
               port: http
             periodSeconds: 20
           volumeMounts:
