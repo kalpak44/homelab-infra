@@ -1,0 +1,31 @@
+# The API starts, watches and deletes one pod per workspace in its own namespace, and
+# nothing else: a Role, not a ClusterRole, and pods only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workspaced-ai-api
+  namespace: private
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workspaced-ai-api
+  namespace: private
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workspaced-ai-api
+  namespace: private
+subjects:
+  - kind: ServiceAccount
+    name: workspaced-ai-api
+    namespace: private
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workspaced-ai-api
