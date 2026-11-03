@@ -100,6 +100,18 @@ vault kv put secret/mite-assistant-mcp-secrets \
 The optional AudD token is exposed to the app as `SONGRADAR_AUDD_API_TOKEN` by its
 `ExternalSecret`.
 
+### `secret/workspaced-secrets`
+
+| Property | Description |
+|---|---|
+| `database-host` | PostgreSQL hostname used by the workspaced-ai API |
+| `database-port` | PostgreSQL port |
+| `database-name` | workspaced-ai database name |
+| `database-username` | PostgreSQL username |
+| `database-password` | PostgreSQL password |
+
+Its `ExternalSecret` exposes each as `WORKSPACED_DB_*` to the API.
+
 ### Manual k8s secret - `cloudflare-api-token` (namespace: `kube-system`)
 
 Used by Traefik for Cloudflare DNS-01 Let's Encrypt challenges. Created by the k3s Ansible playbook.

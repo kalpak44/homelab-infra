@@ -36,6 +36,11 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # Every key in this Secret is named for the variable it sets, so there is no
+          # mapping here to drift from the ExternalSecret that produces it.
+          envFrom:
+            - secretRef:
+                name: workspaced-ai-secrets
           ports:
             - name: http
               containerPort: 8080
