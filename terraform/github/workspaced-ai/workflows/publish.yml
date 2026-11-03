@@ -2,7 +2,7 @@
 # Edits made here in the target repo are overwritten by `just deploy github workspaced-ai`.
 #
 # One pipeline for every trigger: the API (format, build, test, coverage, SonarCloud) and
-# the web app (type check, build) in parallel, then both images and the cluster rollout.
+# the web app (test, coverage, SonarCloud, type check, build) in parallel, then both images and the cluster rollout.
 # Those last two are the only conditional parts — they run when the ref being built is
 # main and never on a pull request, so a dependency bump is fully validated without
 # pushing an image or touching the cluster.
@@ -152,11 +152,15 @@ jobs:
         working-directory: apps/web
 
     env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
     steps:
       - name: Checkout source
+        # Full history: Sonar needs it for blame and new-code detection.
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Node 24
         uses: actions/setup-node@v7
@@ -169,9 +173,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The line floor is in vite.config.ts, so this step enforces it on its own.
+      - name: Test, coverage
+        run: npm test
+
+      # A separate project from the API's, so a failing gate names which app broke.
+      - name: SonarCloud analysis
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          projectBaseDir: apps/web
+          args: >
+            -Dsonar.organization=kalpak44
+            -Dsonar.projectKey=workspaced-ai-web
+            -Dsonar.sources=src
+            -Dsonar.tests=test
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
+
       # `tsc` runs before `vite build`, so a type error fails here and not in the browser.
+      # The short SHA is the image tag too, so the version the UI shows names the image.
       - name: Type check and build
-        run: npm run build
+        run: VITE_APP_VERSION="${GITHUB_SHA:0:7}" npm run build
 
       - name: Log in to GHCR
         if: ${{ env.PUBLISH == 'true' }}

@@ -28,6 +28,12 @@ variable "sonar_project_key" {
   default     = "workspaced-ai-api"
 }
 
+variable "sonar_project_key_web" {
+  description = "SonarCloud project key of the web app, published as SONAR_PROJECT_KEY_SITE"
+  type        = string
+  default     = "workspaced-ai-web"
+}
+
 variable "sonar_organization" {
   description = "SonarCloud organization owning the project"
   type        = string

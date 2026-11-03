@@ -99,6 +99,14 @@ resource "github_actions_variable" "sonar_project_key" {
   value         = var.sonar_project_key
 }
 
+# The web app is its own project. The agent reads every non-empty key among
+# SONAR_PROJECT_KEY, _SITE and _API, so naming it _SITE puts its gate in the sweep too.
+resource "github_actions_variable" "sonar_project_key_site" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEY_SITE"
+  value         = var.sonar_project_key_web
+}
+
 resource "github_actions_variable" "sonar_organization" {
   repository    = github_repository.this.name
   variable_name = "SONAR_ORGANIZATION"
