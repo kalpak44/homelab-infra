@@ -26,7 +26,8 @@ updates:
     allow:
       - dependency-type: all
     # Minor and patch arrive batched; majors stay one PR each, so a break is attributable
-    # to a single package and the agent can repair it on that branch.
+    # to a single package and the agent can repair it on that branch. The API image has
+    # no Dockerfile: its buildpack builder is pinned by Spring Boot, so this entry moves it.
     groups:
       maven-minor-and-patch:
         patterns:
@@ -34,16 +35,6 @@ updates:
         update-types:
           - minor
           - patch
-
-  # The runtime base image in the Dockerfile. Separate so a base-image change that breaks
-  # startup is attributable on its own.
-  - package-ecosystem: docker
-    directory: /apps/api
-    schedule:
-      interval: daily
-      time: "05:00"
-      timezone: Etc/UTC
-    open-pull-requests-limit: 5
 
   # The web app's toolchain: Vite, Tailwind, TypeScript. Its own entry and group, so a
   # front-end bump is attributable apart from a Java one.

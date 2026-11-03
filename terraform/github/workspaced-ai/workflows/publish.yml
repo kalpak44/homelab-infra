@@ -127,7 +127,8 @@ jobs:
         id: vars
         run: echo "sha_short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-      # The Dockerfile packages the jar `verify` already built, so nothing compiles twice.
+      # Buildpacks build the image from the jar `verify` produced; there is no Dockerfile.
+      # `-no-fork` because a forked lifecycle would rerun the tests.
       - name: Build & push image to GHCR
         if: ${{ env.PUBLISH == 'true' }}
         # Contexts go through env, never interpolated into the script body.
@@ -135,8 +136,9 @@ jobs:
           GHCR_IMAGE: ghcr.io/${{ github.repository }}-api
           IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
         run: |
-          docker build --platform linux/amd64 \
-            -t "$GHCR_IMAGE:$IMAGE_TAG" -t "$GHCR_IMAGE:latest" .
+          mvn -B -DskipTests package spring-boot:build-image-no-fork \
+            -Dspring-boot.build-image.imageName="$GHCR_IMAGE:$IMAGE_TAG" \
+            -Dspring-boot.build-image.tags="$GHCR_IMAGE:latest"
           docker push "$GHCR_IMAGE:$IMAGE_TAG"
           docker push "$GHCR_IMAGE:latest"
 
