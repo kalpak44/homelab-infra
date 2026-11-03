@@ -1,14 +1,15 @@
 # Managed by homelab-infra — terraform/github/workspaced-ai/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github workspaced-ai`.
 #
-# One pipeline for every trigger: the API (format, build, test, coverage, SonarCloud) and
-# the web app (test, coverage, SonarCloud, type check, build) in parallel, then both images and the cluster rollout.
-# Those last two are the only conditional parts — they run when the ref being built is
-# main and never on a pull request, so a dependency bump is fully validated without
-# pushing an image or touching the cluster.
+# One pipeline for every trigger: the API (format, build, test, coverage, SonarCloud), the
+# web app (test, coverage, SonarCloud, type check, build) and the agent harness (build,
+# smoke test) in parallel, then the images and the cluster rollout. Those last two are the
+# only conditional parts — they run when the ref being built is main and never on a pull
+# request, so a dependency bump is fully validated without pushing an image or touching
+# the cluster.
 #
-# Both images are built on every run and share one tag, because the deploy points every
-# image of this repository at the same tag and a missing one would never pull.
+# All three images are built on every run and share one tag, because the deploy points
+# every image of this repository at the same tag and a missing one would never pull.
 #
 # This is also the workflow the AI maintenance agent gates on
 # (PR_CHECK_WORKFLOW=publish.yml). It refuses to merge without a green check here, and it
@@ -222,18 +223,106 @@ jobs:
           docker push "$GHCR_IMAGE:$tag"
           docker push "$GHCR_IMAGE:latest"
 
+  harness:
+    name: Build harness
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+
+    defaults:
+      run:
+        working-directory: apps/harness
+
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build --platform linux/amd64 -t harness:candidate .
+
+      # Run as the workspace pod runs it: read-only root, a fresh home, no capabilities.
+      # Each check is a contract the API depends on, so a harness upgrade that breaks one
+      # fails here rather than in a workspace.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          docker run -d --name harness --platform linux/amd64 \
+            --read-only --tmpfs /home/workspace:uid=1000,gid=1000 --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e OPENCODE_SERVER_PASSWORD=smoke \
+            -e OPENROUTER_BASE_URL=https://openrouter.ai/api/v1 \
+            -p 4096:4096 harness:candidate
+          for _ in $(seq 1 60); do
+            curl -s -o /dev/null localhost:4096/ && break
+            sleep 1
+          done
+
+          # Every route sits behind the password the API generates per workspace.
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:4096/session)" = 401
+
+          # Only the workspace's own provider, so no reply silently runs elsewhere.
+          providers=$(curl -fsS -u opencode:smoke localhost:4096/config/providers \
+            | jq -c '[.providers[].id]')
+          test "$providers" = '["openrouter"]'
+
+          # A session gets its directory on create and loses it on delete.
+          dir=/home/workspace/sessions/smoke
+          id=$(curl -fsS -u opencode:smoke -X POST localhost:4096/session \
+            -H "x-opencode-directory: $dir" -H 'Content-Type: application/json' -d '{}' \
+            | jq -r .id)
+          docker exec harness test -d "$dir"
+          curl -fsS -u opencode:smoke -X DELETE "localhost:4096/session/$id" \
+            -H "x-opencode-directory: $dir"
+          sleep 1
+          if docker exec harness test -e "$dir"; then
+            echo "::error::the session directory outlived its session"
+            exit 1
+          fi
+
+      - name: Show the harness log
+        if: failure()
+        run: docker logs harness || true
+
+      - name: Log in to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Pinned to the commit behind v4.6.0 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same tag as the API image: the deploy moves all three to it at once.
+      - name: Push image to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}-harness
+        run: |
+          tag="${GITHUB_SHA:0:7}"
+          docker tag harness:candidate "$GHCR_IMAGE:$tag"
+          docker tag harness:candidate "$GHCR_IMAGE:latest"
+          docker push "$GHCR_IMAGE:$tag"
+          docker push "$GHCR_IMAGE:latest"
+
   scan:
     name: Scan image
     # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
     # blocking gate. A threshold here would deadlock on unfixable base-image CVEs.
-    needs: [build, web]
+    needs: [build, web, harness]
     # Only a published image can be pulled, so a PR has nothing to scan.
-    if: needs.build.outputs.tag != '' && needs.web.result == 'success'
-    # One report per image; neither scan waits on or fails the other.
+    if: >-
+      needs.build.outputs.tag != '' && needs.web.result == 'success' &&
+      needs.harness.result == 'success'
+    # One report per image; no scan waits on or fails another.
     strategy:
       fail-fast: false
       matrix:
-        app: [api, web]
+        app: [api, web, harness]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -392,13 +481,13 @@ jobs:
     name: Deploy to cluster
     # `scan` is listed for ordering only — a scanner outage must not strand an image
     # that published cleanly.
-    needs: [build, web, scan]
+    needs: [build, web, harness, scan]
     # `tag` is set by a step that only runs when PUBLISH is true, so an empty tag means
     # no image was pushed. Keying the deploy off the artifact rather than repeating the
     # event/ref test means the two conditions cannot drift apart.
     if: >-
       always() && needs.build.result == 'success' && needs.web.result == 'success' &&
-      needs.build.outputs.tag != ''
+      needs.harness.result == 'success' && needs.build.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

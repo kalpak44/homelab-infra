@@ -44,6 +44,11 @@ spec:
           envFrom:
             - secretRef:
                 name: workspaced-ai-secrets
+          env:
+            # The harness every workspace pod runs. Pinned here rather than baked into the
+            # API, and bumped with the API's own tag, because both come from one commit.
+            - name: WORKSPACED_WORKSPACE_IMAGE
+              value: ghcr.io/kalpak44/workspaced-ai-harness:latest
           ports:
             - name: http
               containerPort: 8080

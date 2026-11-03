@@ -61,3 +61,13 @@ updates:
       time: "05:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+
+  # The harness's Alpine base. opencode itself is pinned by version and checksum in the
+  # Dockerfile, which Dependabot cannot recompute, so it moves by hand.
+  - package-ecosystem: docker
+    directory: /apps/harness
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
