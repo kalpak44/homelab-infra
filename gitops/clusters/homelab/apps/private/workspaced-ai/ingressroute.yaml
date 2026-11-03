@@ -1,5 +1,5 @@
-# The app serves everything, Swagger and health included, under its /api/v1 context path,
-# so the host root is left to the frontend. SSE and the WebSocket pass through as-is.
+# The app serves everything, Swagger and health included, under its /api/v1 context path;
+# web-ingressroute.yaml takes the rest of the host. SSE and the WebSocket pass through as-is.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:

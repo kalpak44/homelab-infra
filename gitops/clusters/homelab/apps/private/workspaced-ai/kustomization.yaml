@@ -5,5 +5,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingressroute.yaml
+  - web-deployment.yaml
+  - web-service.yaml
+  - web-ingressroute.yaml
 
 namespace: private

@@ -1,10 +1,14 @@
 # Managed by homelab-infra — terraform/github/workspaced-ai/workflows/publish.yml
 # Edits made here in the target repo are overwritten by `just deploy github workspaced-ai`.
 #
-# One pipeline for every trigger: format, build, test, coverage, SonarCloud, then the
-# image and the cluster rollout. Those last two are the only conditional parts — they run
-# when the ref being built is main and never on a pull request, so a dependency bump is
-# fully validated without pushing an image or touching the cluster.
+# One pipeline for every trigger: the API (format, build, test, coverage, SonarCloud) and
+# the web app (type check, build) in parallel, then both images and the cluster rollout.
+# Those last two are the only conditional parts — they run when the ref being built is
+# main and never on a pull request, so a dependency bump is fully validated without
+# pushing an image or touching the cluster.
+#
+# Both images are built on every run and share one tag, because the deploy points every
+# image of this repository at the same tag and a missing one would never pull.
 #
 # This is also the workflow the AI maintenance agent gates on
 # (PR_CHECK_WORKFLOW=publish.yml). It refuses to merge without a green check here, and it
@@ -135,20 +139,80 @@ jobs:
           docker push "$GHCR_IMAGE:$IMAGE_TAG"
           docker push "$GHCR_IMAGE:latest"
 
+  web:
+    name: Build web
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          # The lockfile is not at the repository root, where the cache looks by default.
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `tsc` runs before `vite build`, so a type error fails here and not in the browser.
+      - name: Type check and build
+        run: npm run build
+
+      - name: Log in to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Pinned to the commit behind v4.6.0 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same tag as the API image: the deploy moves both to it at once.
+      - name: Build & push image to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}-web
+        run: |
+          tag="${GITHUB_SHA:0:7}"
+          docker build --platform linux/amd64 \
+            -t "$GHCR_IMAGE:$tag" -t "$GHCR_IMAGE:latest" .
+          docker push "$GHCR_IMAGE:$tag"
+          docker push "$GHCR_IMAGE:latest"
+
   scan:
     name: Scan image
     # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
     # blocking gate. A threshold here would deadlock on unfixable base-image CVEs.
-    needs: build
+    needs: [build, web]
     # Only a published image can be pulled, so a PR has nothing to scan.
-    if: needs.build.outputs.tag != ''
+    if: needs.build.outputs.tag != '' && needs.web.result == 'success'
+    # One report per image; neither scan waits on or fails the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [api, web]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       packages: read
     env:
-      IMAGE: ghcr.io/${{ github.repository }}-api
+      IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.app }}
       # Pinned: an unpinned scanner changes the report without the image changing.
       SYFT_VERSION: v1.55.0
       GRYPE_VERSION: v0.121.0
@@ -287,7 +351,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: image-scan-${{ needs.build.outputs.tag }}
+          name: image-scan-${{ matrix.app }}-${{ needs.build.outputs.tag }}
           if-no-files-found: ignore
           retention-days: 30
           path: |
@@ -300,11 +364,13 @@ jobs:
     name: Deploy to cluster
     # `scan` is listed for ordering only — a scanner outage must not strand an image
     # that published cleanly.
-    needs: [build, scan]
+    needs: [build, web, scan]
     # `tag` is set by a step that only runs when PUBLISH is true, so an empty tag means
     # no image was pushed. Keying the deploy off the artifact rather than repeating the
     # event/ref test means the two conditions cannot drift apart.
-    if: always() && needs.build.result == 'success' && needs.build.outputs.tag != ''
+    if: >-
+      always() && needs.build.result == 'success' && needs.web.result == 'success' &&
+      needs.build.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
