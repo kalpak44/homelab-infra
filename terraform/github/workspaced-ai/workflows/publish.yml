@@ -227,6 +227,7 @@ jobs:
   harness:
     name: Build harness
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -246,38 +247,47 @@ jobs:
       - name: Build image
         run: docker build --platform linux/amd64 -t harness:candidate .
 
-      # Run as the workspace pod runs it: read-only root, a fresh home, no capabilities.
-      # Each check is a contract the API depends on, so a harness upgrade that breaks one
-      # fails here rather than in a workspace.
+      # Run as the workspace pod runs it: read-only root, a fresh home, no capabilities —
+      # and no network, because a pod start must not depend on one. Each check is a
+      # contract the API depends on, so a harness upgrade that breaks one fails here
+      # rather than in a workspace. Every request is bounded, so a harness that stops
+      # answering fails the step instead of holding the queue.
       - name: Smoke test
+        timeout-minutes: 5
         run: |
           set -euo pipefail
-          docker run -d --name harness --platform linux/amd64 \
+          docker run -d --name harness --platform linux/amd64 --network none \
             --read-only --tmpfs /home/workspace:uid=1000,gid=1000 --tmpfs /tmp \
             --cap-drop ALL --security-opt no-new-privileges \
             -e OPENCODE_SERVER_PASSWORD=smoke \
             -e OPENROUTER_BASE_URL=https://openrouter.ai/api/v1 \
-            -p 4096:4096 harness:candidate
-          for _ in $(seq 1 60); do
-            curl -s -o /dev/null localhost:4096/ && break
+            harness:candidate
+
+          # From inside the container: with no network there is no port to reach it on.
+          api() { docker exec harness curl -sS --max-time 30 "$@"; }
+          code() { api -o /dev/null -w '%{http_code}' "$@" || true; }
+
+          echo "Waiting for the server"
+          for _ in $(seq 1 30); do
+            [ "$(code localhost:4096/session)" = 401 ] && break
             sleep 1
           done
 
-          # Every route sits behind the password the API generates per workspace.
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:4096/session)" = 401
+          echo "Every route sits behind the password the API generates per workspace"
+          test "$(code localhost:4096/session)" = 401
 
-          # Only the workspace's own provider, so no reply silently runs elsewhere.
-          providers=$(curl -fsS -u opencode:smoke localhost:4096/config/providers \
+          echo "Only the workspace's own provider, so no reply silently runs elsewhere"
+          providers=$(api -f -u opencode:smoke localhost:4096/config/providers \
             | jq -c '[.providers[].id]')
           test "$providers" = '["openrouter"]'
 
-          # A session gets its directory on create and loses it on delete.
+          echo "A session gets its directory on create and loses it on delete"
           dir=/home/workspace/sessions/smoke
-          id=$(curl -fsS -u opencode:smoke -X POST localhost:4096/session \
+          id=$(api -f -u opencode:smoke -X POST localhost:4096/session \
             -H "x-opencode-directory: $dir" -H 'Content-Type: application/json' -d '{}' \
             | jq -r .id)
           docker exec harness test -d "$dir"
-          curl -fsS -u opencode:smoke -X DELETE "localhost:4096/session/$id" \
+          api -f -u opencode:smoke -X DELETE "localhost:4096/session/$id" \
             -H "x-opencode-directory: $dir"
           sleep 1
           if docker exec harness test -e "$dir"; then
@@ -287,7 +297,9 @@ jobs:
 
       - name: Show the harness log
         if: failure()
-        run: docker logs harness || true
+        run: |
+          docker logs harness || true
+          docker exec harness cat /home/workspace/.local/share/opencode/log/opencode.log || true
 
       - name: Log in to GHCR
         if: ${{ env.PUBLISH == 'true' }}

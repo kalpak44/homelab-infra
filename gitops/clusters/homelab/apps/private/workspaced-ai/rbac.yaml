@@ -1,6 +1,8 @@
-# The API starts, watches and deletes one pod per workspace in its own namespace, with a
-# Secret and a ConfigMap holding its environment: a Role, not a ClusterRole. Secrets need
-# get and patch because a workspace's secrets are added and removed one key at a time.
+# The API runs each workspace as a one-replica Deployment behind a Service, with a Secret
+# and a ConfigMap holding its environment, in the API's namespace: a Role, not a ClusterRole.
+# Pods are only watched, and deleted for the bare pods workspaces ran as before
+# Deployments. Secrets need get and patch because a workspace's secrets are added and
+# removed one key at a time.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -15,7 +17,13 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "create", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "create", "patch", "delete"]
