@@ -90,19 +90,20 @@ jobs:
           # The pom is not at the repository root, where the cache looks by default.
           cache-dependency-path: apps/api/pom.xml
 
+      # Maven comes with the runner image; the repository carries no wrapper.
       - name: Check formatting
-        run: ./mvnw -B fmt:check
+        run: mvn -B fmt:check
 
       # The 80% line-coverage floor is a jacoco rule in the pom, so `verify` enforces it.
       - name: Build, test, coverage
-        run: ./mvnw -B verify
+        run: mvn -B verify
 
       - name: SonarCloud analysis
         # qualitygate.wait makes the gate an actual gate: a failing gate fails this
         # check, so a PR cannot be merged past it.
         if: ${{ env.SONAR_TOKEN != '' }}
         run: |
-          ./mvnw -B sonar:sonar \
+          mvn -B sonar:sonar \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.organization=kalpak44 \
             -Dsonar.projectKey=workspaced-ai-api \
