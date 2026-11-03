@@ -1,5 +1,5 @@
-# Only /api/v1 is routed, so the host stays free for a web app at the root later. SSE and
-# the terminal WebSocket both pass through Traefik as-is.
+# Only the API and its Swagger docs are routed, so the root stays free for a web app later.
+# SSE and the terminal WebSocket both pass through Traefik as-is.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -9,7 +9,9 @@ spec:
   entryPoints:
     - private-web-secure
   routes:
-    - match: Host(`workspaced-ai.internal.pavel-usanli.online`) && PathPrefix(`/api/v1/`)
+    - match: >-
+        Host(`workspaced-ai.internal.pavel-usanli.online`) &&
+        (PathPrefix(`/api/v1/`) || PathPrefix(`/swagger-ui`) || PathPrefix(`/v3/api-docs`))
       kind: Rule
       services:
         - name: workspaced-ai-api
