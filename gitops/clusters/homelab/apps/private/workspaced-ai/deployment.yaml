@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/kalpak44/workspaced-ai-api:1c01007
+          image: ghcr.io/kalpak44/workspaced-ai-api:49704cb
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
