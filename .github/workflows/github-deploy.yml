@@ -21,6 +21,7 @@ on:
           - postgres-awscli
           - proklinator-app
           - song-radar
+          - workspaced-ai
 
 jobs:
   deploy:
