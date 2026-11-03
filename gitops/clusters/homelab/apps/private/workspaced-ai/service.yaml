@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: workspaced-ai-api
+  namespace: private
+spec:
+  selector:
+    app: workspaced-ai-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspaced-ai-api
+  namespace: private
+spec:
+  replicas: 1
+  # A new image tag on every bump leaves the superseded ReplicaSet behind for ever, and
+  # the image scanner reports each one, burying live findings under dead revisions.
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: workspaced-ai-api
+  template:
+    metadata:
+      labels:
+        app: workspaced-ai-api
+    spec:
+      automountServiceAccountToken: false
+      # A pod-level context, not only the per-container one below: the config scanner
+      # treats an empty pod securityContext as running with defaults regardless of what
+      # the containers set.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/kalpak44/workspaced-ai-api:02469f9
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            # readOnlyRootFilesystem is on, and Tomcat and the JVM still need somewhere
+            # to write their temporary files.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+              ephemeral-storage: 256Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

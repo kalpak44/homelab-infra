@@ -28,7 +28,8 @@ gitops/clusters/homelab/
     └── private/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
-        └── grafana/                         # Grafana dashboards (Prometheus datasource, CrowdSec board)
+        ├── grafana/                         # Grafana dashboards (Prometheus datasource, CrowdSec board)
+        └── workspaced-ai/                   # workspaced-ai API (workspaced-ai.internal.pavel-usanli.online/api/v1/)
 ```
 
 ## Required secrets in Vault

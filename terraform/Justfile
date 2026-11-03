@@ -251,6 +251,7 @@ list:
     @printf "    %-40s %s\n" "dns/private/crowdsec"                    "crowdsec.internal → 192.168.1.121 (CrowdSec metrics, scraped by Prometheus)"
     @printf "    %-40s %s\n" "dns/private/private-home-page"           "home.internal → 192.168.1.121 (internal home page)"
     @printf "    %-40s %s\n" "dns/private/songradar"                   "songradar.internal → 192.168.1.121 (SongRadar, in-cluster)"
+    @printf "    %-40s %s\n" "dns/private/workspaced-ai"               "workspaced-ai.internal → 192.168.1.121 (workspaced-ai API, in-cluster)"
     @printf "    %-40s %s\n" "dns/private/prometheus"                  "prometheus.internal → 192.168.1.11 (Prometheus)"
     @printf "    %-40s %s\n" "dns/private/acestream"                   "acestream.internal → 192.168.1.7 (AceStream engine + acexy + Threadfin, Portainer stack)"
     @echo "  shared (non-DNS Cloudflare resources)"
@@ -286,4 +287,4 @@ list:
     @printf "  %-30s %s\n" "postgres-awscli"                "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "proklinator-app"                "kalpak44/proklinator-app · PR sweep + issue resolver + publish.yml (2 Sonar gates, 2 images, deploy)"
     @printf "  %-30s %s\n" "song-radar"                     "kalpak44/song-radar · same + fmt/test/coverage/Sonar gate + publish.yml (PR check, GHCR publish, syft/grype report) + dependabot"
-    @printf "  %-30s %s\n" "workspaced-ai"                  "kalpak44/workspaced-ai · repo settings only · created here, no secrets, no generated .github/"
+    @printf "  %-30s %s\n" "workspaced-ai"                  "kalpak44/workspaced-ai · same + fmt/test/80%-coverage/Sonar gate + publish.yml (PR check, GHCR publish of apps/api, syft/grype report) + dependabot"

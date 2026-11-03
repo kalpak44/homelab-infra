@@ -1,0 +1,46 @@
+# Managed by homelab-infra — terraform/github/workspaced-ai/dependabot.yml
+# Edits made here in the target repo are overwritten by `just deploy github workspaced-ai`.
+#
+# Opens the dependency PRs that ai-maintenance-agent.yml then reviews, repairs and merges.
+# The agent sweeps daily at 06:00 UTC, so this runs at 05:00 to give it something to find
+# on the same morning.
+#
+# One entry per manifest actually in the tree — a `directory` that holds no manifest is
+# not an error Dependabot reports anywhere; it just silently never opens a PR.
+#
+# `github-actions` is deliberately absent: every workflow here is generated, so an action
+# bump merged in this repository is reverted by the next sync and re-opened the next day.
+version: 2
+
+updates:
+  - package-ecosystem: maven
+    directory: /apps/api
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    # It throttles how many sit open at once, not how many exist.
+    open-pull-requests-limit: 10
+    # Spring Boot's BOM pins most of the transitive tree, so an indirect proposal is
+    # usually something the BOM does not manage — the case worth seeing.
+    allow:
+      - dependency-type: all
+    # Minor and patch arrive batched; majors stay one PR each, so a break is attributable
+    # to a single package and the agent can repair it on that branch.
+    groups:
+      maven-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The runtime base image in the Dockerfile. Separate so a base-image change that breaks
+  # startup is attributable on its own.
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
