@@ -1,5 +1,6 @@
 # The API runs each workspace as a one-replica Deployment behind a Service, with a Secret
-# and a ConfigMap holding its environment, in the API's namespace: a Role, not a ClusterRole.
+# and a ConfigMap holding its environment and a PersistentVolumeClaim for its home, in the
+# API's namespace: a Role, not a ClusterRole.
 # Pods are only watched, and deleted for the bare pods workspaces ran as before
 # Deployments. Secrets need get and patch because a workspace's secrets are added and
 # removed one key at a time.
@@ -29,6 +30,9 @@ rules:
     verbs: ["get", "create", "patch", "delete"]
   - apiGroups: [""]
     resources: ["configmaps"]
+    verbs: ["create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
     verbs: ["create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
