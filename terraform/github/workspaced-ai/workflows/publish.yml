@@ -267,31 +267,44 @@ jobs:
           api() { docker exec harness curl -sS --max-time 30 "$@"; }
           code() { api -o /dev/null -w '%{http_code}' "$@" || true; }
 
+          # Every chat is scoped to the workspace project by this query parameter.
+          loc='location%5Bdirectory%5D=%2Fhome%2Fworkspace%2Fproject'
+
           echo "Waiting for the server"
           for _ in $(seq 1 30); do
-            [ "$(code localhost:4096/session)" = 401 ] && break
+            [ "$(code localhost:4096/api/info)" = 401 ] && break
             sleep 1
           done
 
+          # Only /api is guarded: the bare paths serve the web UI's static shell.
           echo "Every route sits behind the password the API generates per workspace"
-          test "$(code localhost:4096/session)" = 401
+          test "$(code localhost:4096/api/info)" = 401
+          test "$(code localhost:4096/api/session)" = 401
+
+          echo "The API refuses any harness that is not OpenCode V2"
+          api -f -u opencode:smoke localhost:4096/api/info | jq -e '.version | startswith("2.")'
 
           echo "Only the workspace's own provider, so no reply silently runs elsewhere"
-          providers=$(api -f -u opencode:smoke localhost:4096/config/providers \
-            | jq -c '[.providers[].id]')
+          providers=$(api -f -u opencode:smoke "localhost:4096/api/model?$loc" \
+            | jq -c '[.data[].providerID] | unique')
           test "$providers" = '["openrouter"]'
 
-          echo "A session gets its directory on create and loses it on delete"
-          dir=/home/workspace/sessions/smoke
-          id=$(api -f -u opencode:smoke -X POST localhost:4096/session \
-            -H "x-opencode-directory: $dir" -H 'Content-Type: application/json' -d '{}' \
-            | jq -r .id)
-          docker exec harness test -d "$dir"
-          api -f -u opencode:smoke -X DELETE "localhost:4096/session/$id" \
-            -H "x-opencode-directory: $dir"
-          sleep 1
-          if docker exec harness test -e "$dir"; then
-            echo "::error::the session directory outlived its session"
+          echo "The event stream the API relays opens with a server.connected event"
+          # The stream never ends on its own, so curl's timeout is the expected exit.
+          events=$(api -u opencode:smoke -N --max-time 3 localhost:4096/api/event || true)
+          grep -q '"type":"server.connected"' <<< "$events"
+
+          echo "A session in the project is listed on create and gone on delete"
+          id=$(api -f -u opencode:smoke -X POST localhost:4096/api/session \
+            -H 'Content-Type: application/json' \
+            -d '{"location":{"directory":"/home/workspace/project"},"title":"smoke"}' \
+            | jq -r .data.id)
+          listed() { api -f -u opencode:smoke 'localhost:4096/api/session?limit=100' \
+            | jq -e --arg id "$id" 'any(.data[]; .id == $id)' > /dev/null; }
+          listed
+          api -f -u opencode:smoke -X DELETE "localhost:4096/api/session/$id"
+          if listed; then
+            echo "::error::the session outlived its deletion"
             exit 1
           fi
 
