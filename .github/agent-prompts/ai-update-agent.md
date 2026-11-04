@@ -225,7 +225,7 @@ helm search repo <name>/<chart> --versions | head
 A **major** is in scope too, under section 7. Read the upgrade notes first and carry out
 the migration they describe; never simply widen the pin and hope.
 
-**Image tags**, written literally in a Deployment:
+**Image tags**, written literally in a Deployment or HelmRelease values:
 
 | Image | Where |
 |---|---|
@@ -234,6 +234,10 @@ the migration they describe; never simply widen the pin and hope.
 | `dgraziotin/nginx-webdav-nononsense` | `apps/private/song-radar/webdav-deployment.yaml` |
 | `sablierapp/sablier` | `infrastructure/sablier/deployment.yaml` |
 | `nginx` | `apps/private/private-home-page/deployment.yaml` |
+| `grafana/grafana` | `apps/private/grafana/helmrelease.yaml`, `image.tag` |
+| `busybox` | same file, `initChownData.image.tag` |
+| `kiwigrid/k8s-sidecar` | same file, `sidecar.image.tag` |
+| `crowdsecurity/crowdsec` | `infrastructure/crowdsec/helmrelease.yaml`, `image.tag` |
 
 Move these to the newest release of the same major. Keep `nginx` pinned to a concrete
 `1.x.y-alpine`; a floating tag looks current and is not, because nothing re-pulls it.

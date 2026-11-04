@@ -86,7 +86,7 @@ spec:
       # Pinned for the same reason as the Grafana image: the chart's own default is
       # years stale and carries Criticals this dashboard loader has no need of.
       image:
-        tag: "2.14.1"
+        tag: "2.14.3"
       dashboards:
         enabled: true
 
