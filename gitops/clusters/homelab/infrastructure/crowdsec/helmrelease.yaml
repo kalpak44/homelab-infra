@@ -154,6 +154,23 @@ spec:
             type: mcp-surface-probe
             remediation: true
 
+        # www is a static site: it does not serve MCP or JSON-RPC and rejects POSTs
+        # with 405. A browser has no reason to retry those paths, so repeats are a
+        # client or scanner looking for an API that is not there.
+        public-mcp-probing.yaml: |
+          type: leaky
+          name: custom/public-mcp-probing
+          description: "Repeated POSTs to MCP-shaped paths on the public site"
+          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'www.pavel-usanli.online' && evt.Meta.http_verb == 'POST' && evt.Meta.http_status == '405' && evt.Meta.http_path in ['/', '/mcp', '/jsonrpc']"
+          groupby: evt.Meta.source_ip
+          capacity: 1
+          leakspeed: "5m"
+          blackhole: 6h
+          labels:
+            service: http
+            type: public-mcp-probe
+            remediation: true
+
         # The API defines three routes and a catch-all 404. Nothing a browser loads from
         # the site sits under /api, so a 404 there is never an ordinary missing asset.
         proklinator-api-probing.yaml: |
@@ -305,7 +322,7 @@ spec:
         ---
         name: app_surface_ban
         filters:
-          - Alert.Remediation == true && Alert.GetScenario() in ["custom/mcp-auth-failure", "custom/mcp-surface-probing", "custom/proklinator-api-probing", "custom/checkout-payload-rejected"]
+          - Alert.Remediation == true && Alert.GetScenario() in ["custom/mcp-auth-failure", "custom/mcp-surface-probing", "custom/public-mcp-probing", "custom/proklinator-api-probing", "custom/checkout-payload-rejected"]
         decisions:
           - type: ban
             duration: 24h
