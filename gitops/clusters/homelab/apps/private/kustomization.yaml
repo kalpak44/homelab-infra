@@ -3,6 +3,6 @@ kind: Kustomization
 resources:
   - private-home-page
   - headlamp
-  - grafana
-  - song-radar
+#  - grafana
+#  - song-radar
   - workspaced-ai
