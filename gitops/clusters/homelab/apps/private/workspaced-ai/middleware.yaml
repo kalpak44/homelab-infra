@@ -1,0 +1,11 @@
+# Traefik forwards a WebSocket upgrade as X-Forwarded-Proto: wss, which Tomcat does not read
+# as secure, so Spring's same-origin check sees http and refuses the browser's https origin.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: workspaced-ai-forwarded-https
+  namespace: private
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: https

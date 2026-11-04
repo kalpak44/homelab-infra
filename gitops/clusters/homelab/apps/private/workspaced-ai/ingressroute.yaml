@@ -1,5 +1,6 @@
 # The app serves everything, Swagger and health included, under its /api/v1 context path;
-# web-ingressroute.yaml takes the rest of the host. SSE and the WebSocket pass through as-is.
+# web-ingressroute.yaml takes the rest of the host. middleware.yaml keeps the terminal's
+# WebSocket handshake from failing the origin check.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -11,6 +12,8 @@ spec:
   routes:
     - match: Host(`workspaced-ai.internal.pavel-usanli.online`) && PathPrefix(`/api/v1/`)
       kind: Rule
+      middlewares:
+        - name: workspaced-ai-forwarded-https
       services:
         - name: workspaced-ai-api
           port: 8080

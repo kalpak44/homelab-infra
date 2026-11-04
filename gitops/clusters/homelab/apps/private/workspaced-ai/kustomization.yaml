@@ -5,6 +5,7 @@ resources:
   - rbac.yaml
   - deployment.yaml
   - service.yaml
+  - middleware.yaml
   - ingressroute.yaml
   - web-deployment.yaml
   - web-service.yaml
