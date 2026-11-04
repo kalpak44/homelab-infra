@@ -442,10 +442,12 @@ Vault can still be `activating` when the immediate post-reboot health check runs
 is unsealing. Inspect its status and health before treating that as a failure, and do not
 resume or re-run the sweep just to test the host.
 
-`k3s-agent` can be `activating` the same way just after its node returns. Separately, a
-CrowdSec pod that keeps its name across a reboot fails its init with `user already exist`
-from `cscli lapi register`; delete that pod so its controller recreates it with a fresh
-watcher identity, then confirm both agent and appsec are Ready.
+`k3s-agent` and `k3s` can be `activating` just after the node returns; the server's SSH
+and API can also stay unavailable for several minutes while containerd and pods settle.
+A failed health check still stops the sweep. Separately, a CrowdSec pod that keeps its
+name across a reboot fails its init with `user already exist` from `cscli lapi register`;
+delete that pod so its controller recreates it with a fresh watcher identity, then confirm
+both agent and appsec are Ready.
 
 ## 9. Proving it still works
 
