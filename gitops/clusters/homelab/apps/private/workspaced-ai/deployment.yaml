@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/kalpak44/workspaced-ai-api:dd7d6f6
+          image: ghcr.io/kalpak44/workspaced-ai-api:7546840
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -48,7 +48,7 @@ spec:
             # The harness every workspace pod runs. Pinned here rather than baked into the
             # API, and bumped with the API's own tag, because both come from one commit.
             - name: WORKSPACED_WORKSPACE_IMAGE
-              value: ghcr.io/kalpak44/workspaced-ai-harness:dd7d6f6
+              value: ghcr.io/kalpak44/workspaced-ai-harness:7546840
           ports:
             - name: http
               containerPort: 8080
