@@ -143,13 +143,13 @@ one the **proxy** is serving, on the port it actually listens on:
 | Host | Port |
 |---|---|
 | `adguard.internal.pavel-usanli.online` | 443 |
-| `postgres.internal` and `pgadmin.internal` | 443 |
-| `rabbitmq.internal` | 443 |
-| `portainer.internal` | 443 |
-| `vault.internal` | 8200 |
-| `prometheus.internal` | 9090 |
+| `postgres.internal.pavel-usanli.online` and `pgadmin.internal.pavel-usanli.online` | 443 |
+| `rabbitmq.internal.pavel-usanli.online` | 443 |
+| `portainer.internal.pavel-usanli.online` | 443 |
+| `vault.internal.pavel-usanli.online` | 8200 |
+| `prometheus.internal.pavel-usanli.online` | 9090 |
 
-`postgres.internal` and `pgadmin.internal` share one SAN certificate and the pgAdmin
+The two Postgres hostnames share one SAN certificate and the pgAdmin
 Apache vhost. Adding a hostname in only one place produces a certificate that clients
 reject for the missing name.
 
