@@ -147,11 +147,15 @@
   become: true
 
   tasks:
+    # needrestart otherwise restarts every daemon linked to an upgraded library, the
+    # runner service included, which cancels the job doing the patching.
     - name: Upgrade all packages
       ansible.builtin.apt:
         update_cache: true
         upgrade: dist
         autoremove: true
+      environment:
+        NEEDRESTART_MODE: l
       register: apt_upgrade
 
     - name: Check whether a reboot is pending
