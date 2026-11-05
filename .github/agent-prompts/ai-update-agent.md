@@ -171,8 +171,11 @@ token left stale in `/etc/letsencrypt/cloudflare.ini`, which makes DNS-01 fail w
 reporting it. So test the renewal itself rather than the timer:
 
 ```
-certbot renew --dry-run
+certbot renew --dry-run --no-random-sleep-on-renew
 ```
+
+Without that flag a dry run takes the timer's random sleep, up to about eight minutes per
+host, which looks like a hang when checking several hosts in sequence.
 
 A failing dry run is the thing to fix. When it is the credential, `just configure <service>`
 rewrites `cloudflare.ini` from the token in this workflow's environment; confirm the dry run
@@ -181,9 +184,11 @@ certificate that already exists just because a playbook ran — the role guards 
 being there — so a genuinely expired one needs `certbot renew --force-renewal`.
 
 **In the cluster** Traefik resolves certificates itself through its `cloudflare` resolver,
-storing them in `acme.json` on its volume. Check the hostnames the same way through
-192.168.1.121, and read Traefik's log for ACME errors — it retries forever and reports
-nothing else:
+storing them in `acme.json` on its volume. The in-cluster hostnames are `home`, `headlamp`,
+`workspaced-ai`, `crowdsec`, `grafana`, `songradar` and `traefik`; check those through
+192.168.1.121. `vault` and `prometheus` terminate on their own hosts above, so probing them
+through the ingress returns Traefik's default certificate, not a fault. Read Traefik's log
+for ACME errors — it retries forever and reports nothing else:
 
 ```
 kubectl logs -n kube-system deploy/traefik | grep -i "acme\|certificate" | tail -20
@@ -238,6 +243,10 @@ the migration they describe; never simply widen the pin and hope.
 | `busybox` | same file, `initChownData.image.tag` |
 | `kiwigrid/k8s-sidecar` | same file, `sidecar.image.tag` |
 | `crowdsecurity/crowdsec` | `infrastructure/crowdsec/helmrelease.yaml`, `image.tag` |
+
+`apps/private/grafana` and `apps/private/song-radar` are commented out of
+`apps/private/kustomization.yaml`, so keep their files current but expect no workload from
+them until they are re-enabled.
 
 Move these to the newest release of the same major. Keep `nginx` pinned to a concrete
 `1.x.y-alpine`; a floating tag looks current and is not, because nothing re-pulls it.
@@ -314,8 +323,8 @@ take it, apply with `just configure k3s-cluster`, and the playbook upgrades both
 place. Crossing a minor is section 7 work — read that release's deprecation notes, check
 every chart in `gitops/` still supports the new API versions, and snapshot both nodes
 (110 and 111) first. The bundled Traefik moves with k3s, so a k3s bump is also a Traefik
-bump; `kubectl -n kube-system get helmchart traefik -o jsonpath='{.spec.chart}'` is what
-it actually ended up on.
+bump; the update-agent token cannot read `HelmChart`, so use the node's own client:
+`ssh root@192.168.1.110 "k3s kubectl -n kube-system get helmchart traefik -o jsonpath='{.spec.chart}'"`.
 
 **Three components are pinned in the bootstrap playbook and are not applied by a nightly
 run.** `runner_version` and `terraform_version` in
@@ -347,7 +356,8 @@ cd ansible && just configure <service>
 `just configure mihal-lxc` reads its dedicated tunnel token from Terraform state, so it
 needs the R2 backend variables in addition to the Ansible credentials. Without them the
 recipe fails before reaching the host; do not substitute an empty token, and report the
-host as not configured.
+host as not configured. The update-agent workflow does not currently pass `R2_*`, so this
+is expected until the workflow itself is changed.
 
 Read the recap. `failed=0` is necessary and not sufficient — check the service answers,
 section 9.
@@ -479,6 +489,8 @@ kubectl get nodes
 for h in pavel-usanli.online planner.pavel-usanli.online proklinator.online; do
   curl -s -o /dev/null -w "$h %{http_code}\n" --max-time 20 "https://$h/"
 done
+# `songradar` and `grafana` are currently commented out of apps/private, so a 404 from
+# those hostnames is expected; `home` is the one that must answer until they are enabled.
 for h in home.internal.pavel-usanli.online songradar.internal.pavel-usanli.online; do
   curl -sk -o /dev/null -w "$h %{http_code}\n" --max-time 20 \
     --resolve "$h:443:192.168.1.121" "https://$h/"
