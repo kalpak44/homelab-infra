@@ -132,7 +132,7 @@ rule as everything else: verify, and say what you did.
 
 ## 4. Keeping TLS valid
 
-Certificates here are issued two ways, and both fail silently.
+Certificates here are issued three ways, and all of them fail silently.
 
 **On the LXCs and VMs** it is certbot with the Cloudflare DNS-01 plugin, renewed by
 `certbot.timer`, with the credential in `/etc/letsencrypt/cloudflare.ini` and a deploy hook
@@ -148,10 +148,15 @@ one the **proxy** is serving, on the port it actually listens on:
 | `portainer.internal.pavel-usanli.online` | 443 |
 | `vault.internal.pavel-usanli.online` | 8200 |
 | `prometheus.internal.pavel-usanli.online` | 9090 |
+| `proxmox.internal.pavel-usanli.online` | 8006 |
 
 The two Postgres hostnames share one SAN certificate and the pgAdmin
 Apache vhost. Adding a hostname in only one place produces a certificate that clients
 reject for the missing name.
+
+The Proxmox row is not certbot: `bootstrap/04-proxmox-tls.yml` orders it with `pvenode
+acme`, and `pve-daily-update.timer` renews it. If a Cloudflare token rotation breaks the
+order, `just bootstrap-tls` refreshes the ACME plugin.
 
 Check what is being served, not what is on disk — a renewed certificate that the proxy
 never reloaded is still the old one to every client:
@@ -544,8 +549,8 @@ kubectl kustomize gitops/clusters/homelab/infrastructure/<dir> > /dev/null
 cd ansible && ansible-playbook maintenance/os-update.yml --syntax-check -e host_password=x
 ```
 
-Confirm `git diff` touches only what you meant. Anything under
-`terraform/`, `.github/`, or `gitops/clusters/homelab/apps/public/` means you have made a
+Confirm `git diff` touches only what you meant. Anything under `terraform/`, `.github/`
+other than this file, or `gitops/clusters/homelab/apps/public/` means you have made a
 mistake — revert it and report it.
 
 ## 12. Keeping this document true
@@ -614,7 +619,7 @@ Keep it to what a person can read in two minutes.
 - Never run `just bootstrap` to apply a bootstrap pin. Bump it and report it.
 - Never touch an image under `gitops/clusters/homelab/apps/` that points at
   `ghcr.io/kalpak44/...` — those are ours and another workflow owns them.
-- Never edit anything under `terraform/` or `.github/`.
+- Never edit anything under `terraform/` or `.github/` other than this file.
 - Never reorder, parallelise or narrow `ansible/maintenance/os-update.yml`.
 - Never reboot the runner or the Proxmox host.
 - Never retry a failed host to see if it passes the second time.
