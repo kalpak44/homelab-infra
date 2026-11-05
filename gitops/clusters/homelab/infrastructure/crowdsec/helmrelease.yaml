@@ -237,14 +237,15 @@ spec:
             type: http-error-burst
             remediation: true
 
+        # No application here uses Spring Actuator, so two probes in a minute are enough.
         actuator-probing.yaml: |
           type: leaky
           name: custom/actuator-probing
           description: "Block IPs probing Spring Boot Actuator endpoints"
           filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator'"
           groupby: evt.Meta.source_ip
-          capacity: 3
-          leakspeed: "10s"
+          capacity: 1
+          leakspeed: "1m"
           blackhole: 24h
           labels:
             service: http
@@ -435,7 +436,7 @@ spec:
       # when only the list does — without this the DaemonSet keeps serving the old one.
       # sha256 of blocked-ips.txt; update both in the same commit.
       podAnnotations:
-        homelab.pavel-usanli.online/blocked-ips-sha256: "f7111e5e1af4e59db798c36b996e6136b69b0711d37039640f1d3878d5f996fd"
+        homelab.pavel-usanli.online/blocked-ips-sha256: "1def364d15269d51837000c78c2e01d91d5405f6dd058e32d2619e0c5e9abc6f"
 
       # subPath, so the mount adds one file instead of masking the data directory the hub
       # downloads its pattern files into.
