@@ -2,8 +2,8 @@
 # and a ConfigMap holding its environment and a PersistentVolumeClaim for its home, in the
 # API's namespace: a Role, not a ClusterRole.
 # Pods and Deployments are watched, so workspace statuses come from a cache rather than a
-# list per request; pods are deleted only for the bare pods workspaces ran as before
-# Deployments. Secrets need get and patch because a workspace's secrets are added and
+# list per request; a Deployment is patched when a restart moves it to the current harness
+# image; pods are deleted only for the bare pods workspaces ran as before Deployments. Secrets need get and patch because a workspace's secrets are added and
 # removed one key at a time.
 apiVersion: v1
 kind: ServiceAccount
@@ -22,7 +22,7 @@ rules:
     verbs: ["get", "list", "watch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "create", "delete"]
