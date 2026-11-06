@@ -1,7 +1,8 @@
 # The API runs each workspace as a one-replica Deployment behind a Service, with a Secret
 # and a ConfigMap holding its environment and a PersistentVolumeClaim for its home, in the
 # API's namespace: a Role, not a ClusterRole.
-# Pods are only watched, and deleted for the bare pods workspaces ran as before
+# Pods and Deployments are watched, so workspace statuses come from a cache rather than a
+# list per request; pods are deleted only for the bare pods workspaces ran as before
 # Deployments. Secrets need get and patch because a workspace's secrets are added and
 # removed one key at a time.
 apiVersion: v1
@@ -21,7 +22,7 @@ rules:
     verbs: ["get", "list", "watch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "create", "delete"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "create", "delete"]
