@@ -453,6 +453,12 @@ waits. If it fails on a host, stop the sweep and report. Do not re-run it to see
 passes the second time: a half-patched host that failed its health check needs reading, not
 retrying.
 
+The Portainer and NFS data disks are mounted through `/dev/disk/by-id/...`: a guest reboot
+can enumerate the root disk as `/dev/sdb`, and a numeric data-disk mount then mounts the
+wrong volume and can leave systemd in `maintenance`. If SSH never returns, inspect the
+guest through `qm guest exec`; fix the mount source, restore the mount, and reboot once to
+prove the repaired boot before treating the host as healthy.
+
 Vault can still be `activating` when the immediate post-reboot health check runs because it
 is unsealing. Inspect its status and health before treating that as a failure, and do not
 resume or re-run the sweep just to test the host.
