@@ -20,16 +20,6 @@ spec:
   values:
     container_runtime: containerd
 
-    # Ahead of the chart: 0.24.2's appVersion is still v1.8.1, and a lagging binary logs a
-    # warning on every start because the hub ships parsers written against the newer one.
-    #
-    # This is also a one-way door. The database already holds v1.8.2's decisions index, and
-    # the schema migration runs on every start — so v1.8.1 would try to build its own index
-    # over 150k rows on NFS-backed SQLite and crash-loop on `database is locked`. Drop this
-    # only when the chart's own appVersion reaches it, never to roll back.
-    image:
-      tag: "v1.8.2"
-
     config:
       config.yaml.local: |
         # AppSec writes one alert per blocked request, so the 5000-item default is
@@ -355,12 +345,13 @@ spec:
         # Virtual-patching hits are waf-kind alerts, so they never reach
         # default_ip_remediation below (it requires Alert.Remediation, which
         # AppSec never sets). Without this they only ever get a per-request
-        # 403 and the scanner is free to keep probing other paths.
+        # 403, and a scan that finishes in seconds would be free to return
+        # the same day once four hours had passed.
         filters:
           - Alert.GetScenario() startsWith "crowdsecurity/vpatch-"
         decisions:
           - type: ban
-            duration: 4h
+            duration: 24h
         on_success: break
         ---
         name: default_ip_remediation
@@ -436,7 +427,7 @@ spec:
       # when only the list does — without this the DaemonSet keeps serving the old one.
       # sha256 of blocked-ips.txt; update both in the same commit.
       podAnnotations:
-        homelab.pavel-usanli.online/blocked-ips-sha256: "1def364d15269d51837000c78c2e01d91d5405f6dd058e32d2619e0c5e9abc6f"
+        homelab.pavel-usanli.online/blocked-ips-sha256: "2a95b483a4856bff01599ddc93bbf0ac0c271b87c0e82f372adb57989f808a54"
 
       # subPath, so the mount adds one file instead of masking the data directory the hub
       # downloads its pattern files into.
@@ -550,6 +541,8 @@ spec:
         block-secret-files.yaml: |
           name: custom/block-secret-files
           description: "Request for a credential, state or VCS file"
+          # Build-tool state and hosted-platform config are never served, so a
+          # request for them is a scan rather than a missing asset.
           rules:
             - zones:
                 - URI
@@ -557,7 +550,7 @@ spec:
                 - lowercase
               match:
                 type: regex
-                value: "(^|/)(\\.env([.~_-][^/]*)?|\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.htaccess|\\.dockercfg|\\.docker/config\\.json|\\.git-credentials|\\.git/|\\.gitmodules|\\.lfsconfig|\\.gitlab-ci\\.yml|\\.github/|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|\\.boto|\\.s3cfg|\\.amplifyrc|\\.pypirc|\\.cursor/mcp\\.json|\\.claude/settings[^/]*|\\.streamlit/secrets\\.toml|auth\\.json|credentials\\.json|aws-exports\\.js|firebase-(admin|service-account)[^/]*\\.json|appsettings([.][^/]*)?\\.json|app\\.config\\.js|local_settings\\.py|secrets\\.(env|ya?ml)|docker-compose\\.ya?ml|terraform\\.tfstate|\\.terraform/|backup\\.sql|dump\\.sql|db\\.sql)"
+                value: "(^|/)(\\.env([.~_-][^/]*)?([?#/]|$)|[^/]*\\.env([?#/]|$)|\\.aws/credentials|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.htaccess|\\.dockercfg|\\.docker/config\\.json|\\.git-credentials|\\.git/|\\.gitmodules|\\.lfsconfig|\\.gitlab-ci\\.yml|\\.github/|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|\\.boto|\\.s3cfg|\\.amplifyrc|\\.pypirc|\\.cursor/mcp\\.json|\\.claude/settings[^/]*|\\.streamlit/secrets\\.toml|auth\\.json|credentials\\.json|aws-exports\\.js|firebase-(admin|service-account)[^/]*\\.json|appsettings([.][^/]*)?\\.json|app\\.config\\.js|local_settings\\.py|secrets\\.(env|ya?ml)|docker-compose\\.ya?ml|terraform\\.tfstate|terraform\\.tfvars|\\.terraform/|backup\\.sql|dump\\.sql|db\\.sql|next\\.config\\.[a-z]+([?#/]|$)|nuxt\\.config\\.[a-z]+([?#/]|$)|\\.next/|\\.output/|\\.netlify/|\\.turbo/|\\.vercel/|wrangler\\.toml([?#/]|$)|vercel\\.json([?#/]|$)|railway\\.toml([?#/]|$)|supabase/config\\.toml([?#/]|$)|serverless\\.ya?ml([?#/]|$)|settings\\.py([?#/]|$)|serviceaccountkey\\.json([?#/]|$)|localhost\\.key([?#/]|$)|server\\.key([?#/]|$)|proc/self/environ([?#/]|$)|serviceaccount/token([?#/]|$)|telescope/|laravel\\.log([?#/]|$))"
           labels:
             type: exploit
             service: http

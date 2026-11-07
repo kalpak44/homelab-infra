@@ -45,3 +45,6 @@
 # 2026-11-05 Spring Actuator probing, /actuator and /api/actuator on www, 2 requests
 # in 16s; the existing actuator scenario required four events
 209.38.192.228
+# 2026-11-06 .env probing on mite-assistant at 05:29 and noco-google-connector at
+# 10:21, returning 52m after its automatic 4h ban expired
+45.138.12.216
