@@ -247,7 +247,7 @@ the migration they describe; never simply widen the pin and hope.
 | `grafana/grafana` | `apps/private/grafana/helmrelease.yaml`, `image.tag` |
 | `busybox` | same file, `initChownData.image.tag` |
 | `kiwigrid/k8s-sidecar` | same file, `sidecar.image.tag` |
-| `crowdsecurity/crowdsec` | `infrastructure/crowdsec/helmrelease.yaml`, `image.tag` |
+| `crowdsecurity/crowdsec` | `infrastructure/crowdsec/helmrelease.yaml` (`image.tag` only when it lags the chart) |
 
 `apps/private/grafana` and `apps/private/song-radar` are commented out of
 `apps/private/kustomization.yaml`, so keep their files current but expect no workload from
@@ -273,11 +273,12 @@ kubectl logs -n kube-system deploy/traefik | grep -i "plugins loaded"
 **Traefik itself is not pinned here.** It is bundled with k3s, so it moves when `k3s_version`
 does — see section 6.
 
-**An appVersion that lags its chart is still an update.** The CrowdSec release does this:
-the chart ships an older binary than upstream offers, so `image.tag` in its `values` is set
-ahead of the chart deliberately. Keep that pattern in mind for any release whose pods log a
-version warning — and read section 10 before changing one, because CrowdSec's is a one-way
-door.
+**An appVersion that lags its chart is still an update.** The CrowdSec release has done
+this: when the chart ships an older binary than upstream offers, `image.tag` in its `values`
+is set ahead of the chart deliberately. Chart 0.24.3 currently ships v1.8.2, so that
+override is absent — restore it if a later chart lags again. Keep that pattern in mind for
+any release whose pods log a version warning — and read section 10 before changing one,
+because CrowdSec's is a one-way door.
 
 **Flux upgrades itself from Git.** `flux-system/gotk-components.yaml` carries the running
 version in its `app.kubernetes.io/version` labels. To move it, regenerate the manifest with
@@ -468,7 +469,9 @@ and API can also stay unavailable for several minutes while containerd and pods 
 A failed health check still stops the sweep. Separately, a CrowdSec pod that keeps its
 name across a reboot fails its init with `user already exist` from `cscli lapi register`;
 delete that pod so its controller recreates it with a fresh watcher identity, then confirm
-both agent and appsec are Ready.
+both agent and appsec are Ready. The update-agent credential cannot delete pods, so use the
+node's client (`ssh root@192.168.1.110 "k3s kubectl -n crowdsec delete pod <name>"`) rather
+than reporting the `Forbidden` as the failure.
 
 ## 9. Proving it still works
 
