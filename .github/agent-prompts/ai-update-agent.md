@@ -466,12 +466,14 @@ resume or re-run the sweep just to test the host.
 
 `k3s-agent` and `k3s` can be `activating` just after the node returns; the server's SSH
 and API can also stay unavailable for several minutes while containerd and pods settle.
-A failed health check still stops the sweep. Separately, a CrowdSec pod that keeps its
-name across a reboot fails its init with `user already exist` from `cscli lapi register`;
-delete that pod so its controller recreates it with a fresh watcher identity, then confirm
-both agent and appsec are Ready. The update-agent credential cannot delete pods, so use the
-node's client (`ssh root@192.168.1.110 "k3s kubectl -n crowdsec delete pod <name>"`) rather
-than reporting the `Forbidden` as the failure.
+A failed health check still stops the sweep; inspect the unit and node to distinguish a
+settling cluster from a real failure, but do not re-run the sweep. Separately, a CrowdSec
+agent or appsec pod that keeps its name across a reboot can fail its init with
+`user already exist` from `cscli lapi register`, or return as `Completed`. Delete that
+pod so its controller recreates it with a fresh watcher identity, then confirm both agent
+and appsec are Ready. The update-agent credential cannot delete pods, so use the node's
+client (`ssh root@192.168.1.110 "k3s kubectl -n crowdsec delete pod <name>"`) rather than
+reporting the `Forbidden` as the failure.
 
 ## 9. Proving it still works
 
