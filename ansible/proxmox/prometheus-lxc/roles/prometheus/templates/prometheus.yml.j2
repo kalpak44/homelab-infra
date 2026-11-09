@@ -19,13 +19,17 @@ scrape_configs:
       - targets: ["localhost:{{ node_exporter_port }}"]
         labels:
           host: {{ inventory_hostname }}
+          kind: lxc
 
+  # kind comes from the inventory group, so dashboards can tell the node, its
+  # containers and its VMs apart without a list of their own.
   - job_name: hosts
     static_configs:
 {% for h in node_exporter_scrape_hosts %}
       - targets: ["{{ hostvars[h].ansible_host }}:{{ node_exporter_port }}"]
         labels:
           host: {{ h }}
+          kind: {{ 'proxmox' if h in groups['proxmox_host'] else 'lxc' if h in groups['lxc'] else 'vm' }}
 {% endfor %}
 {% for job in prometheus_extra_scrape_jobs %}
 
