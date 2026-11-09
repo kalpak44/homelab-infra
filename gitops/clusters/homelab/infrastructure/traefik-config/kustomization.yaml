@@ -4,3 +4,4 @@ resources:
   - helmchartconfig.yaml
   - crowdsec-externalsecret.yaml
   - dashboard-ingressroute.yaml
+  - metrics-ingressroute.yaml

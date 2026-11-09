@@ -11,4 +11,5 @@ resources:
   - crowdsec.yaml
   - sablier.yaml
   - trivy-operator.yaml
+  - request-metrics.yaml
   - apps.yaml

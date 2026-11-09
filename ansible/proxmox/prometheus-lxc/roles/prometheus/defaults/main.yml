@@ -30,3 +30,12 @@ prometheus_extra_scrape_jobs:
   - name: crowdsec
     scheme: https
     targets: ["crowdsec.internal.pavel-usanli.online"]
+  # Status, method and latency per entryPoint, router and service. No client address:
+  # that comes from traefik-requests below.
+  - name: traefik
+    scheme: https
+    targets: ["traefik.internal.pavel-usanli.online"]
+  # Per-source request counters from gitops/.../infrastructure/request-metrics. One
+  # target per k3s node, on its hostPort: a pod only has data on the node running Traefik.
+  - name: traefik-requests
+    targets: ["192.168.1.110:9598", "192.168.1.111:9598"]

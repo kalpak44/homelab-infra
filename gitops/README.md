@@ -16,7 +16,8 @@ gitops/clusters/homelab/
 │   ├── traefik-config/   # Traefik ingress config, Cloudflare DNS-01 TLS, CrowdSec middleware
 │   ├── crowdsec/         # CrowdSec IDS + AppSec engine + web UI
 │   ├── sablier/          # Sablier scale-on-demand (starts workloads on request, idles after inactivity)
-│   └── trivy-operator/   # Container CVE scanning - reports surfaced in Headlamp
+│   ├── trivy-operator/   # Container CVE scanning - reports surfaced in Headlamp
+│   └── request-metrics/  # Vector: Traefik access log → per-source request counters for Prometheus
 └── apps/
     ├── public/
     │   ├── personal-web-page/              # Personal website
@@ -133,6 +134,15 @@ Prometheus runs on its own LXC and polls it; the scrape job lives in
 `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. The board is
 `apps/private/grafana/dashboards/crowdsec.json`, loaded by Grafana's sidecar from a labelled
 ConfigMap, at `grafana.internal.pavel-usanli.online/d/crowdsec`.
+
+## Traefik request metrics
+
+Traefik serves its own `/metrics` (status, method and latency per entryPoint, router and
+service) at `traefik.internal.pavel-usanli.online/metrics`. Those carry no client address, so
+`infrastructure/request-metrics/` runs Vector on every node, reads Traefik's access log and
+exports `traefik_client_requests_total{client_ip,host,method,status,entrypoint}` on hostPort
+9598. Prometheus scrapes both and keeps 30 days, which is what lets the nightly security agent
+see a full day of sources after the log itself has rotated.
 
 ## How it works
 

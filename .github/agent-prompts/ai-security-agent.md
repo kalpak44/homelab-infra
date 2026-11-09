@@ -20,6 +20,7 @@ in the report.
 | `GH_TOKEN` | Authenticates `gh` and `git push` |
 | `SUMMARY_FILE` | Where your report must be written |
 | `DEFAULT_BRANCH` | The branch you commit to |
+| `PROMETHEUS_URL` | Prometheus API holding per-source request counts for the whole window |
 
 The working directory is a clean checkout of this repository on the default branch.
 
@@ -58,6 +59,34 @@ out of `X-Forwarded-For`. Never ban a `ClientAddr`, which is the proxy hop.
 
 The retained log may be shorter than `WINDOW_HOURS` — containerd rotates it. Say in the
 report how much you actually got, and never present a short window as a quiet night.
+
+**Prometheus — every source over the whole window, even when the log is short.** Every
+access log line is also counted in `traefik_client_requests_total`, labelled `client_ip`
+(the same address as `ClientHost`), `host`, `method`, `status` and `entrypoint`. It holds
+no paths and no User-Agents, so it tells you *who* and *how much* across the full window,
+and the log tells you *what*. Read both, and say in the report where the two disagree.
+
+```
+prom() { curl -sfG "$PROMETHEUS_URL/api/v1/query" --data-urlencode "query=$1"; }
+W="${WINDOW_HOURS}h"
+R="((traefik_client_requests_total - traefik_client_requests_total offset $W >= 0) or traefik_client_requests_total)"
+
+prom "topk(100, sum by (client_ip) ($R) > 0)"
+prom "sum by (client_ip, host, method, status, entrypoint) ($R) > 0"
+prom "sum by (entrypoint, code, method) (increase(traefik_entrypoint_requests_total[$W]))"
+```
+
+Use `R` exactly as written and never `increase()` on the per-source counter. A source's
+series begins at its first request, and `increase()` takes that first sample as its
+baseline — a scanner whose whole burst landed between two scrapes reads as zero. `R`
+counts a series that is older than the window as a difference and a younger one from
+zero. A series that dropped across the window means the exporter restarted; `R` then
+counts only since the restart, so treat it as a lower bound.
+
+A source that appears only in Prometheus — its lines rotated out of the log — has a status
+pattern and no paths. Ban on that alone only when it is unambiguous: hundreds of 4xx
+across several hosts and almost no 2xx. Anything thinner is "watched" in the report. If
+`PROMETHEUS_URL` does not answer, say so under Gaps and carry on with the log alone.
 
 **What CrowdSec already caught.**
 

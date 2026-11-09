@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: request-metrics
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: traefik-config
+  interval: 30s
+  path: ./gitops/clusters/homelab/infrastructure/request-metrics
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m

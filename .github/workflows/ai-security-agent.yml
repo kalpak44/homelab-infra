@@ -64,6 +64,10 @@ jobs:
       K3S_SERVER: 192.168.1.110
       KUBECONFIG: /tmp/security-agent.kubeconfig
 
+      # Per-source request counts survive here after Traefik's log has rotated away.
+      # Read-only and unauthenticated on the LAN, so it needs no credential.
+      PROMETHEUS_URL: https://prometheus.internal.pavel-usanli.online:9090
+
       # `just deploy cloudflare shared/zero-trust` reads these. The token needs
       # Zone:WAF:Edit, which the edge-ports rule already requires.
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

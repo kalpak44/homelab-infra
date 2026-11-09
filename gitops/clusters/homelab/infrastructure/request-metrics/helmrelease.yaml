@@ -1,0 +1,106 @@
+# Turns Traefik's access log into per-source request counters for Prometheus. Traefik's
+# own metrics carry no client address, and the log itself rotates long before a day is
+# over, so this is the only full-day record of who sent what.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vector
+  namespace: request-metrics
+spec:
+  interval: 30s
+  chart:
+    spec:
+      chart: vector
+      version: "0.61.x"
+      sourceRef:
+        kind: HelmRepository
+        name: vector
+        namespace: flux-system
+  values:
+    # A DaemonSet, because the log is read from the node that runs the Traefik pod, and
+    # that pod can move.
+    role: Agent
+
+    # Prometheus sits outside the cluster and scrapes each node directly, so every pod's
+    # counters stay a separate target. A Service would round-robin between a pod with
+    # data and one without, and the series would flap on every scrape.
+    service:
+      enabled: false
+    containerPorts:
+      - name: prom-exporter
+        containerPort: 9598
+        hostPort: 9598
+        protocol: TCP
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+
+    # The chart renders this block through Helm's tpl, so every Vector template below is
+    # escaped as a string literal; a bare one fails the Helm render.
+    customConfig:
+      data_dir: /vector-data-dir
+      api:
+        enabled: false
+
+      sources:
+        traefik:
+          type: kubernetes_logs
+          extra_label_selector: app.kubernetes.io/name=traefik
+          extra_field_selector: metadata.namespace=kube-system
+
+      transforms:
+        access:
+          type: remap
+          inputs: [traefik]
+          # Traefik's application log shares the stream; only access lines carry a
+          # status. Method is attacker-chosen, so anything unknown collapses to OTHER
+          # rather than minting a series per invented verb.
+          source: |
+            parsed, err = parse_json(.message)
+            if err != null { abort }
+            access = object(parsed) ?? {}
+            if !exists(access.DownstreamStatus) { abort }
+
+            method = upcase(string(access.RequestMethod) ?? "")
+            known = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "CONNECT"]
+            if !includes(known, method) { method = "OTHER" }
+
+            . = {
+              "client_ip": string(access.ClientHost) ?? "unknown",
+              "host": downcase(string(access.RequestHost) ?? ""),
+              "method": method,
+              "status": to_string(access.DownstreamStatus) ?? "0",
+              "entrypoint": string(access.EntryPointName) ?? "unknown"
+            }
+
+        requests:
+          type: log_to_metric
+          inputs: [access]
+          metrics:
+            - type: counter
+              field: client_ip
+              namespace: traefik_client
+              name: requests_total
+              tags:
+                client_ip: '{{ "{{ client_ip }}" }}'
+                host: '{{ "{{ host }}" }}'
+                method: '{{ "{{ method }}" }}'
+                status: '{{ "{{ status }}" }}'
+                entrypoint: '{{ "{{ entrypoint }}" }}'
+
+      sinks:
+        prometheus:
+          type: prometheus_exporter
+          inputs: [requests]
+          address: 0.0.0.0:9598
+          # How long a source's counter survives without a request. Under a day, and a
+          # source that returns restarts from zero mid-window, which the security
+          # agent's query would read as a reset and undercount.
+          flush_period_secs: 172800
+          # Vector otherwise stamps each counter with its last update, and Prometheus
+          # rejects a sample hours older than the head of its TSDB.
+          suppress_timestamp: true

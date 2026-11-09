@@ -1,0 +1,18 @@
+# Prometheus runs outside the cluster, so Traefik's metrics need a route in. Takes
+# priority over the dashboard route on the same host because its rule is longer.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-metrics
+  namespace: kube-system
+spec:
+  entryPoints:
+    - private-web-secure
+  routes:
+    - match: Host(`traefik.internal.pavel-usanli.online`) && Path(`/metrics`)
+      kind: Rule
+      services:
+        - name: prometheus@internal
+          kind: TraefikService
+  tls:
+    certResolver: cloudflare

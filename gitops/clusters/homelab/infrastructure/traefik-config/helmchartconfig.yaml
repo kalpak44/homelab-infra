@@ -135,10 +135,20 @@ spec:
               ClientAddr: keep
               RequestProtocol: keep
               Duration: keep
+              # infrastructure/request-metrics labels each source's counters with it,
+              # which is what splits public from private traffic there.
+              EntryPointName: keep
           headers:
             defaultMode: drop
             names:
               User-Agent: keep
+
+    # Served through metrics-ingressroute.yaml rather than the metrics entryPoint, which
+    # no Service exposes and Prometheus, outside the cluster, could not reach.
+    metrics:
+      prometheus:
+        manualRouting: true
+        addRoutersLabels: true
 
     certificatesResolvers:
       cloudflare:
