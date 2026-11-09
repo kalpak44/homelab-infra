@@ -317,13 +317,17 @@ These are version variables in role defaults. Bump the number, then apply that o
 |---|---|---|
 | `adguard_version` | `ansible/proxmox/adguard-lxc/roles/adguard/defaults/main.yml` | `AdguardTeam/AdGuardHome` releases |
 | `prometheus_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` | `prometheus/prometheus` releases |
-| `node_exporter_version` | same file | `prometheus/node_exporter` releases |
+| `node_exporter_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` and `ansible/maintenance/roles/node_exporter/defaults/main.yml` | `prometheus/node_exporter` releases |
 | `vault_version` | `ansible/proxmox/vault-lxc/roles/vault/defaults/main.yml` | the HashiCorp apt repo |
 | `k3s_version` | `ansible/proxmox/k3s-cluster/group_vars/k3s.yml` | `https://update.k3s.io/v1-release/channels` |
 
 HashiCorp rotates its apt signing key. The Vault role must refresh the keyring before
 `apt update`; a `creates`-guarded keyring eventually leaves every run failing with
 `NO_PUBKEY`.
+
+`just configure node-exporter` applies the maintenance copy to every LXC/VM except the
+Prometheus LXC, whose own role installs the loopback listener. Bump both copies together
+or the fleet and the local scrape drift.
 
 **k3s is Kubernetes, so its minor is a major.** A patch inside the pinned minor is routine:
 take it, apply with `just configure k3s-cluster`, and the playbook upgrades both nodes in
@@ -351,8 +355,8 @@ database rather than a playbook re-run. It is in scope; section 7 is how.
 
 Everything else on these hosts updates by running its playbook, because the role already
 asks for the newest: postgres and pgAdmin, redis and redis-commander, rabbitmq,
-cloudflared on both tunnel hosts, and portainer's `portainer-ce:latest`. Re-running is how
-they move, so run them even when no pin changed.
+cloudflared on both tunnel hosts, node_exporter on every host, and portainer's
+`portainer-ce:latest`. Re-running is how they move, so run them even when no pin changed.
 
 Apply one service at a time, and verify before the next:
 
