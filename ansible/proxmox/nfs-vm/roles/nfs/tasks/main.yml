@@ -58,6 +58,26 @@
     line: nfsd
     create: true
 
+# nfsd sizes its block limit from RAM at boot, and a mount keeps the size it negotiated, so
+# shrinking the VM made every client write "RPC fragment too large" and hang on its hard mount.
+# The value is only writable while nfsd is stopped, hence before rpc.nfsd starts.
+- name: Create the nfs-server drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/nfs-server.service.d
+    state: directory
+    mode: "0755"
+
+- name: Pin the nfsd block size
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nfs-server.service.d/max-block-size.conf
+    content: |
+      [Service]
+      ExecStartPre=/bin/sh -c 'echo {{ nfs_max_block_size }} > /proc/fs/nfsd/max_block_size'
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nfs-kernel-server
+
 - name: Enable and start nfs-kernel-server
   ansible.builtin.systemd:
     name: nfs-kernel-server

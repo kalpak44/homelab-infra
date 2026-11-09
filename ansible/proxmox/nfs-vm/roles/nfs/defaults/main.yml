@@ -2,3 +2,5 @@
 nfs_export_path: /srv/nfs/k8s
 # A reboot can make the root disk sdb, which then aliases the data disk.
 nfs_data_disk: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+# The kernel maximum; larger than any rsize/wsize a client negotiates on its own.
+nfs_max_block_size: 1048576
