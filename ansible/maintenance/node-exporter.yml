@@ -1,0 +1,40 @@
+---
+# Installs node_exporter on every LXC and VM so Prometheus sees each one's CPU, memory and
+# disk. Run by `just configure node-exporter`. The prometheus LXC is left out: its own
+# role installs one bound to loopback for the local scrape.
+#
+# The scrape targets are generated from this same inventory in
+# ansible/proxmox/prometheus-lxc/roles/prometheus/templates/prometheus.yml.j2, so a host
+# added here needs `just configure prometheus-lxc` before it is collected.
+
+- name: Install node_exporter
+  hosts: lxc:k3s:vm:!prometheus
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    # nocobase's sshd listens on a non-standard port and falls back to 22 on a container
+    # that has not been hardened yet.
+    - name: Find the port sshd answers on
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ item }}"
+        timeout: 5
+        state: started
+      delegate_to: localhost
+      become: false
+      loop: "{{ [nocobase_ssh_port | default(22), 22] | unique }}"
+      register: ssh_probe
+      ignore_errors: true
+
+    - name: Fail when sshd answers on neither port
+      ansible.builtin.fail:
+        msg: "No sshd on {{ ansible_host }}"
+      when: ssh_probe.results | rejectattr('failed') | list | length == 0
+
+    - name: Connect on the first port that answered
+      ansible.builtin.set_fact:
+        ansible_port: "{{ ssh_probe.results | rejectattr('failed') | map(attribute='item') | first }}"
+
+  roles:
+    - node_exporter

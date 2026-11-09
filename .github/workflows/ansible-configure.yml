@@ -21,6 +21,7 @@ on:
           - portainer-vm
           - k3s-cluster
           - k3s-cluster/flux
+          - node-exporter
 
 jobs:
   configure:

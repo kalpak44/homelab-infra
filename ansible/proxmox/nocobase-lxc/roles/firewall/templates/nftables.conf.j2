@@ -26,6 +26,9 @@ table inet homelab_ingress {
         # set — see the role's defaults for why that is the default here.
         {% if nocobase_firewall_admin_cidr %}ip saddr {{ nocobase_firewall_admin_cidr }} {% endif %}tcp dport {{ nocobase_ssh_port }} accept
 
+        # node_exporter has no authentication, so only the Prometheus LXC may scrape it.
+        ip saddr { {{ nocobase_firewall_metrics_sources | join(', ') }} } tcp dport {{ nocobase_firewall_metrics_port }} accept
+
         # Path-MTU discovery and plain reachability. Dropping ICMP silently breaks
         # connections that need to be told to fragment rather than failing loudly.
         icmp type { echo-request, destination-unreachable, time-exceeded } accept

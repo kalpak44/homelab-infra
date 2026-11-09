@@ -39,3 +39,7 @@ prometheus_extra_scrape_jobs:
   # target per k3s node, on its hostPort: a pod only has data on the node running Traefik.
   - name: traefik-requests
     targets: ["192.168.1.110:9598", "192.168.1.111:9598"]
+
+# Scraped as the `hosts` job, one target per inventory host, labelled with its name.
+# Must match the hosts ansible/maintenance/node-exporter.yml installs on.
+node_exporter_scrape_hosts: "{{ (groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Prometheus node exporter
+After=network.target
+
+[Service]
+Type=simple
+User=node_exporter
+Group=node_exporter
+# Bound to the LAN address only: the exporter has no authentication, and nothing
+# other than the Prometheus LXC has a reason to reach it.
+ExecStart=/usr/local/bin/node_exporter \
+  --web.listen-address={{ ansible_host }}:{{ node_exporter_port }} \
+  --collector.filesystem.mount-points-exclude={{ node_exporter_mount_points_exclude }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

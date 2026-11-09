@@ -49,6 +49,7 @@ configure resource: setup
     case "{{resource}}" in
       k3s-cluster)      playbook="proxmox/k3s-cluster/cluster-setup.yml" ;;
       k3s-cluster/flux) playbook="proxmox/k3s-cluster/flux-install.yml" ;;
+      node-exporter)    playbook="maintenance/node-exporter.yml" ;;
       *)                playbook="proxmox/{{resource}}/playbook.yml" ;;
     esac
     # Hosts that refuse password auth (nocobase-lxc) need a key. Harmless elsewhere:
@@ -184,6 +185,7 @@ list:
     @printf "  %-24s %s\n" "mihal-lxc"        "Cloudflare Tunnel daemon - isolated WARP-only SSH, no LAN access"
     @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
     @printf "  %-24s %s\n" "k3s-cluster/flux" "Flux CD - GitOps bootstrap on the k3s cluster"
+    @printf "  %-24s %s\n" "node-exporter"    "node_exporter on every LXC/VM - CPU, memory and disk for Prometheus"
     @echo
     @echo "Maintenance:"
     @printf "  %-24s %s\n" "os-update [host]" "apt upgrade every LXC/VM, reboot what needs it (host limits the run)"

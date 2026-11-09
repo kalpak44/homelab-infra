@@ -57,7 +57,8 @@ spec:
           type: remap
           inputs: [traefik]
           # Traefik's application log shares the stream; only access lines carry a
-          # status. Method is attacker-chosen, so anything unknown collapses to OTHER
+          # status. Traefik 3 writes entryPointName in lower camel case despite the
+          # EntryPointName field filter, so both spellings are read. Method is attacker-chosen, so anything unknown collapses to OTHER
           # rather than minting a series per invented verb.
           source: |
             parsed, err = parse_json(.message)
@@ -74,7 +75,7 @@ spec:
               "host": downcase(string(access.RequestHost) ?? ""),
               "method": method,
               "status": to_string(access.DownstreamStatus) ?? "0",
-              "entrypoint": string(access.EntryPointName) ?? "unknown"
+              "entrypoint": string(access.entryPointName) ?? string(access.EntryPointName) ?? "unknown"
             }
 
         requests:

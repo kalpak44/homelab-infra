@@ -21,6 +21,11 @@ nocobase_firewall_public_ports: [80, 443]
 # PasswordAuthentication no, PermitRootLogin prohibit-password.
 nocobase_firewall_admin_cidr: ""
 
+# The Prometheus LXC, scraping the node_exporter that ansible/maintenance/node-exporter.yml
+# installs. Without this rule the scrape is dropped like any other unlisted port.
+nocobase_firewall_metrics_sources: ["192.168.1.11"]
+nocobase_firewall_metrics_port: 9100
+
 # The container's only external interface (set by modules/proxmox-lxc). Traffic
 # on any other interface — loopback, a Docker bridge — is left alone.
 nocobase_firewall_wan_interface: "eth0"
