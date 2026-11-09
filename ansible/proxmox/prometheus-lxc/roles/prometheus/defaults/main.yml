@@ -37,4 +37,4 @@ prometheus_extra_scrape_jobs:
 
 # Scraped as the `hosts` job, one target per inventory host, labeled with its name.
 # Must match the hosts ansible/maintenance/node-exporter.yml installs on.
-node_exporter_scrape_hosts: "{{ (groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"
+node_exporter_scrape_hosts: "{{ (groups['proxmox_host'] + groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"

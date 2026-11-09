@@ -186,7 +186,7 @@ list:
     @printf "  %-24s %s\n" "mihal-lxc"        "Cloudflare Tunnel daemon - isolated WARP-only SSH, no LAN access"
     @printf "  %-24s %s\n" "k3s-cluster"      "k3s cluster - 2-node control-plane + worker"
     @printf "  %-24s %s\n" "k3s-cluster/flux" "Flux CD - GitOps bootstrap on the k3s cluster"
-    @printf "  %-24s %s\n" "node-exporter"    "node_exporter on every LXC/VM - CPU, memory and disk for Prometheus"
+    @printf "  %-24s %s\n" "node-exporter"    "node_exporter on the Proxmox node and every LXC/VM - CPU, memory and disk"
     @echo
     @echo "Maintenance:"
     @printf "  %-24s %s\n" "os-update [host]" "apt upgrade every LXC/VM, reboot what needs it (host limits the run)"

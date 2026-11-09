@@ -1,6 +1,6 @@
 ---
-# Installs node_exporter on every LXC and VM so Prometheus sees each one's CPU, memory and
-# disk. Run by `just configure node-exporter`. The prometheus LXC is left out: its own
+# Installs node_exporter on every LXC and VM and on the Proxmox node, so Prometheus sees
+# each one's CPU, memory and disk. Run by `just configure node-exporter`. The prometheus LXC is left out: its own
 # role installs one bound to loopback for the local scrape.
 #
 # The scrape targets are generated from this same inventory in
@@ -8,7 +8,7 @@
 # added here needs `just configure prometheus-lxc` before it is collected.
 
 - name: Install node_exporter
-  hosts: lxc:k3s:vm:!prometheus
+  hosts: proxmox_host:lxc:k3s:vm:!prometheus
   become: true
   gather_facts: false
 

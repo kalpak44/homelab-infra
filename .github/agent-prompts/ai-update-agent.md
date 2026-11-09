@@ -321,9 +321,9 @@ HashiCorp rotates its apt signing key. The Vault role must refresh the keyring b
 `apt update`; a `creates`-guarded keyring eventually leaves every run failing with
 `NO_PUBKEY`.
 
-`just configure node-exporter` applies the maintenance copy to every LXC/VM except the
-Prometheus LXC, whose own role installs the loopback listener. Bump both copies together
-or the fleet and the local scrape drift.
+`just configure node-exporter` applies the maintenance copy to the Proxmox node and every
+LXC/VM except the Prometheus LXC, whose own role installs the loopback listener. Bump both
+copies together or the fleet and the local scrape drift.
 
 **k3s is Kubernetes, so its minor is a major.** A patch inside the pinned minor is routine:
 take it, apply with `just configure k3s-cluster`, and the playbook upgrades both nodes in
