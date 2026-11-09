@@ -261,6 +261,7 @@ jobs:
             --cap-drop ALL --security-opt no-new-privileges \
             -e OPENCODE_SERVER_PASSWORD=smoke \
             -e OPENROUTER_BASE_URL=https://openrouter.ai/api/v1 \
+            -e USER_TIMEZONE=Europe/Sofia \
             harness:candidate
 
           # From inside the container: with no network there is no port to reach it on.
@@ -307,6 +308,18 @@ jobs:
             echo "::error::the session outlived its deletion"
             exit 1
           fi
+
+          # Without tzdata a zone name reads as UTC with no error, so assert the offset itself.
+          echo "The time tools show the UTC clock beside the user's"
+          docker exec harness now | grep -E 'Europe/Sofia .*\(UTC\+[23]\)'
+
+          echo "task refuses a time without a clock and keeps a one-off on the user's"
+          if docker exec harness task add smoke --at 09:00 --prompt x; then
+            echo "::error::task accepted a time without a clock"
+            exit 1
+          fi
+          docker exec harness task add smoke --in 5m --prompt x | grep 'on Europe/Sofia'
+          docker exec harness task rm smoke
 
       - name: Show the harness log
         if: failure()
