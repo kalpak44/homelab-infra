@@ -221,6 +221,7 @@ Two kinds of pin live under `gitops/clusters/homelab/`, and they move differentl
 | `infrastructure/external-secrets` | `2.14.x` |
 | `infrastructure/nfs-provisioner` | `4.*` |
 | `infrastructure/trivy-operator` | `0.38.x` |
+| `infrastructure/request-metrics` | `0.61.x` |
 | `apps/private/grafana` | `10.5.x` |
 
 The wildcard already tracks patches on its own, so Flux has them without you. Your job is
