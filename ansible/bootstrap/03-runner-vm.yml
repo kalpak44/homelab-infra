@@ -15,6 +15,9 @@
     runner_ip: 192.168.1.101
     runner_gw: 192.168.1.1
     runner_storage: local-lvm
+    # Applied on every run, not only at creation, so raising it here grows an existing
+    # runner. Proxmox cannot shrink a disk, so lowering it does nothing.
+    runner_disk_gb: 20
     cloud_image_dest: /var/lib/vz/template/iso/noble-server-cloudimg-amd64.img
   tasks:
     - name: Check if runner VM {{ runner_id }} already exists
@@ -55,13 +58,25 @@
               --onboot 1
               --agent enabled=1
 
-        - name: qm resize (+10G)
-          ansible.builtin.command:
-            cmd: "qm resize {{ runner_id }} scsi0 +10G"
-
         - name: qm start
           ansible.builtin.command:
             cmd: "qm start {{ runner_id }}"
+
+    - name: Read the runner's root disk size
+      ansible.builtin.shell:
+        cmd: >-
+          qm config {{ runner_id }} | sed -n 's/^scsi0:.*size=\([0-9]*\)\([MGT]\).*/\1 \2/p'
+      register: runner_disk
+      changed_when: false
+
+    # The guest grows its partition and filesystem to match in the next play.
+    - name: Grow the runner's root disk to {{ runner_disk_gb }}G
+      ansible.builtin.command:
+        cmd: "qm resize {{ runner_id }} scsi0 {{ runner_disk_gb }}G"
+      when: >-
+        (runner_disk.stdout.split()[0] | int) *
+        {'M': 1, 'G': 1024, 'T': 1048576}[runner_disk.stdout.split()[1]]
+        < runner_disk_gb * 1024
 
     - name: Wait for runner VM SSH to come up
       ansible.builtin.wait_for:
@@ -93,6 +108,20 @@
   tasks:
     - name: Enable root SSH + set root password
       ansible.builtin.import_tasks: ../proxmox/_shared/enable-root-ssh.yml
+
+    # Online, no reboot. growpart exits 1 with NOCHANGE when the partition already fills
+    # the disk, which is the normal case on every run after the first.
+    - name: Grow the root partition to the disk
+      ansible.builtin.command:
+        cmd: growpart /dev/sda 1
+      register: runner_growpart
+      changed_when: runner_growpart.rc == 0
+      failed_when: runner_growpart.rc != 0 and 'NOCHANGE' not in runner_growpart.stdout
+
+    - name: Grow the root filesystem to the partition
+      ansible.builtin.command:
+        cmd: resize2fs /dev/sda1
+      when: runner_growpart.changed
 
     - name: Keep ubuntu user password in sync with HOST_PASSWORD
       ansible.builtin.user:
