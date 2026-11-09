@@ -173,7 +173,7 @@ jobs:
 
           fetch_verified() {
             url="$1"; want="$2"; out="$3"
-            curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$out"
+            curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors "$url" -o "$out"
             echo "${want}  ${out}" | sha256sum -c -
           }
 
@@ -184,8 +184,19 @@ jobs:
             "https://raw.githubusercontent.com/anchore/grype/${GRYPE_VERSION}/install.sh" \
             "$GRYPE_INSTALLER_SHA256" grype-install.sh
 
-          sh syft-install.sh -b /usr/local/bin "${SYFT_VERSION}"
-          sh grype-install.sh -b /usr/local/bin "${GRYPE_VERSION}"
+          # The installers fetch release assets themselves, and an occasional 5xx from
+          # GitHub releases would otherwise fail the whole scan on its first attempt.
+          retry() {
+            for attempt in 1 2 3; do
+              "$@" && return 0
+              echo "attempt $attempt failed: $*" >&2
+              [ "$attempt" -lt 3 ] && sleep $((attempt * 15))
+            done
+            return 1
+          }
+
+          retry sh syft-install.sh -b /usr/local/bin "${SYFT_VERSION}"
+          retry sh grype-install.sh -b /usr/local/bin "${GRYPE_VERSION}"
 
           syft version
           grype version
