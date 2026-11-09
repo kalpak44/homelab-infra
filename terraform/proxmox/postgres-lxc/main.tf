@@ -10,7 +10,7 @@ module "lxc" {
   gateway    = "192.168.1.1"
 
   cpu_cores    = 1
-  memory_mb    = 2048
+  memory_mb    = 512
   disk_size_gb = 16
 
   ssh_public_keys = [var.ssh_public_key]

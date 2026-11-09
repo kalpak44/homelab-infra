@@ -10,7 +10,7 @@ module "vm" {
   gateway    = "192.168.1.1"
 
   cpu_cores         = 2
-  memory_mb         = 2048
+  memory_mb         = 1024
   disk_size_gb      = 20
   data_disk_size_gb = 512
 
