@@ -146,41 +146,65 @@ see a full day of sources after the log itself has rotated.
 
 ### Querying requests for a time range
 
-Set the range once. `@` takes Unix seconds; on macOS use
-`date -u -j -f '%Y-%m-%d %H:%M' '2026-11-09 00:00' +%s` instead of `date -d`.
+Paste the setup block into bash or zsh, then any of the queries below. The range ends at
+`END` and reaches back `RANGE`; both are plain strings, so no `date` call differs between
+macOS and Linux. The blocks carry no comments because zsh does not treat `#` as one in an
+interactive paste.
 
 ```bash
 P=https://prometheus.internal.pavel-usanli.online:9090
-START=$(date -u -d '2026-11-09 00:00' +%s)
-END=$(date -u -d '2026-11-10 00:00' +%s)
+END=2026-11-10T00:00:00Z
+RANGE=24h
 q() { curl -sG "$P/api/v1/query" --data-urlencode "query=$1" --data-urlencode "time=$END" | jq; }
-
-# Requests per source over [START, END], optionally narrowed by a label selector. Do not
-# use increase() here: a source's series starts at its first request, and increase()
-# drops everything before its second scrape.
-r() {
-  local m="traefik_client_requests_total$1"
-  echo "(($m @ $END - $m @ $START >= 0) or $m @ $END)"
-}
-
-q "sort_desc(sum by (client_ip) ($(r)) > 0)"                        # every source, busiest first
-q "sum by (client_ip, host, method, status) ($(r)) > 0"              # what each source did
-q "sum by (client_ip) ($(r '{status=~"4..|5.."}')) > 0"              # sources hitting errors
-q "sum by (status, host) ($(r '{client_ip="203.0.113.7"}')) > 0"     # one source
-q "sum by (entrypoint) ($(r))"                                       # public vs private total
+r() { local m="traefik_client_requests_total$1"; echo "(($m - $m offset $RANGE >= 0) or $m)"; }
 ```
 
-Hourly totals across the same range, from Traefik's own counters (no client address):
+`r` counts each source's requests in the range, optionally narrowed by a label selector.
+Never use `increase()` on this counter: a source's series starts at its first request, and
+`increase()` drops everything before its second scrape, so a short scan reads as zero.
+
+Every source, busiest first:
 
 ```bash
-curl -sG "$P/api/v1/query_range" \
-  --data-urlencode 'query=sum by (entrypoint, code) (increase(traefik_entrypoint_requests_total[1h]))' \
-  --data-urlencode "start=$START" --data-urlencode "end=$END" --data-urlencode step=3600 | jq
+q "sort_desc(sum by (client_ip) ($(r)) > 0)"
 ```
 
-Keep a range under 48 hours and within the last 30 days: the exporter drops a source after 48
-idle hours, and Prometheus keeps 30 days. Counts are a lower bound across a Vector restart.
-Paths and User-Agents are not in Prometheus; for those, read Traefik's log while it lasts.
+What each source did:
+
+```bash
+q "sum by (client_ip, host, method, status) ($(r)) > 0"
+```
+
+Sources that got 4xx or 5xx:
+
+```bash
+q "sum by (client_ip) ($(r '{status=~"4..|5.."}')) > 0"
+```
+
+One source:
+
+```bash
+q "sum by (status, host) ($(r '{client_ip="203.0.113.7"}')) > 0"
+```
+
+Public against private:
+
+```bash
+q "sum by (entrypoint) ($(r))"
+```
+
+Hourly totals across the range, from Traefik's own counters (no client address). `START`
+must be `END` minus `RANGE`:
+
+```bash
+START=2026-11-09T00:00:00Z
+curl -sG "$P/api/v1/query_range" --data-urlencode 'query=sum by (entrypoint, code) (increase(traefik_entrypoint_requests_total[1h]))' --data-urlencode "start=$START" --data-urlencode "end=$END" --data-urlencode step=1h | jq
+```
+
+Keep `RANGE` under 48 hours and the range within the last 30 days: the exporter drops a
+source after 48 idle hours, and Prometheus keeps 30 days. Counts are a lower bound across a
+Vector restart. Paths and User-Agents are not in Prometheus; for those, read Traefik's log
+while it lasts.
 
 ## How it works
 
