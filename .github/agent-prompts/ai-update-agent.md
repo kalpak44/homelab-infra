@@ -503,6 +503,9 @@ For an LXC or VM service, check the thing itself answers:
 curl -sk -o /dev/null -w '%{http_code}\n' --max-time 20 https://<host>.internal.pavel-usanli.online/
 ```
 
+Vault answers on `/v1/sys/health` and Prometheus on `/-/healthy`; their `/` does not
+answer, so a `000` there is not an outage.
+
 And the whole homelab, after the OS sweep:
 
 ```
@@ -518,8 +521,9 @@ for h in home.internal.pavel-usanli.online songradar.internal.pavel-usanli.onlin
 done
 ```
 
-2xx and 3xx are healthy; the apex and `proklinator.online` answer 301 by design. Compare
-against what each answered before you started.
+2xx and 3xx are healthy; `crowdsec.internal` answers 404 at `/` because only `/metrics` is
+routed, and the apex and `proklinator.online` answer 301 by design. Compare against what
+each answered before you started.
 
 ## 10. When something breaks
 
