@@ -144,6 +144,44 @@ exports `traefik_client_requests_total{client_ip,host,method,status,entrypoint}`
 9598. Prometheus scrapes both and keeps 30 days, which is what lets the nightly security agent
 see a full day of sources after the log itself has rotated.
 
+### Querying requests for a time range
+
+Set the range once. `@` takes Unix seconds; on macOS use
+`date -u -j -f '%Y-%m-%d %H:%M' '2026-11-09 00:00' +%s` instead of `date -d`.
+
+```bash
+P=https://prometheus.internal.pavel-usanli.online:9090
+START=$(date -u -d '2026-11-09 00:00' +%s)
+END=$(date -u -d '2026-11-10 00:00' +%s)
+q() { curl -sG "$P/api/v1/query" --data-urlencode "query=$1" --data-urlencode "time=$END" | jq; }
+
+# Requests per source over [START, END], optionally narrowed by a label selector. Do not
+# use increase() here: a source's series starts at its first request, and increase()
+# drops everything before its second scrape.
+r() {
+  local m="traefik_client_requests_total$1"
+  echo "(($m @ $END - $m @ $START >= 0) or $m @ $END)"
+}
+
+q "sort_desc(sum by (client_ip) ($(r)) > 0)"                        # every source, busiest first
+q "sum by (client_ip, host, method, status) ($(r)) > 0"              # what each source did
+q "sum by (client_ip) ($(r '{status=~"4..|5.."}')) > 0"              # sources hitting errors
+q "sum by (status, host) ($(r '{client_ip="203.0.113.7"}')) > 0"     # one source
+q "sum by (entrypoint) ($(r))"                                       # public vs private total
+```
+
+Hourly totals across the same range, from Traefik's own counters (no client address):
+
+```bash
+curl -sG "$P/api/v1/query_range" \
+  --data-urlencode 'query=sum by (entrypoint, code) (increase(traefik_entrypoint_requests_total[1h]))' \
+  --data-urlencode "start=$START" --data-urlencode "end=$END" --data-urlencode step=3600 | jq
+```
+
+Keep a range under 48 hours and within the last 30 days: the exporter drops a source after 48
+idle hours, and Prometheus keeps 30 days. Counts are a lower bound across a Vector restart.
+Paths and User-Agents are not in Prometheus; for those, read Traefik's log while it lasts.
+
 ## How it works
 
 ```
