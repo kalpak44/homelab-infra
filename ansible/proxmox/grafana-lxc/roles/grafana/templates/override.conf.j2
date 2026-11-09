@@ -1,0 +1,5 @@
+# Lets the unprivileged grafana user bind 443, so the URL needs no port and nothing
+# runs as root.
+[Service]
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE

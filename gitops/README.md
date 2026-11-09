@@ -29,7 +29,6 @@ gitops/clusters/homelab/
     └── private/
         ├── private-home-page/               # Internal services dashboard
         ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
-        ├── grafana/                         # Grafana dashboards (Prometheus datasource, CrowdSec board)
         └── workspaced-ai/                   # workspaced-ai web app at the root, API under /api/v1/ (workspaced-ai.internal.pavel-usanli.online)
 ```
 
@@ -66,6 +65,9 @@ vault kv put secret/crowdsec-secrets \
 |---|---|
 | `admin-user` | Grafana admin login |
 | `admin-password` | Grafana admin password |
+
+Read by `ansible/proxmox/grafana-lxc` at configure time; the admin login applies only when
+Grafana creates its database.
 
 ```bash
 vault kv put secret/grafana-secrets \
@@ -122,18 +124,6 @@ Used by Traefik for Cloudflare DNS-01 Let's Encrypt challenges. Created by the k
 | `api-token` | Cloudflare API token with `Zone:DNS:Edit` permission |
 
 Generate at [dash.cloudflare.com](https://dash.cloudflare.com) → My Profile → API Tokens → Create Token → **Edit zone DNS** template.
-
-## CrowdSec metrics
-
-CrowdSec is watched from Grafana, not from a UI of its own. The engine already serves its
-own `/metrics`, so the only in-cluster piece is `infrastructure/crowdsec/metrics-ingressroute.yaml`,
-which publishes that one path at `crowdsec.internal.pavel-usanli.online` — the LAPI's API on the
-same service stays unreachable from outside.
-
-Prometheus runs on its own LXC and polls it; the scrape job lives in
-`ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. The board is
-`apps/private/grafana/dashboards/crowdsec.json`, loaded by Grafana's sidecar from a labelled
-ConfigMap, at `grafana.internal.pavel-usanli.online/d/crowdsec`.
 
 ## Traefik request metrics
 

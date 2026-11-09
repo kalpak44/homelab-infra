@@ -10,7 +10,6 @@ on:
         options:
           - dns/private/acestream
           - dns/private/adguard
-          - dns/private/crowdsec
           - dns/private/grafana
           - dns/private/headlamp
           - dns/private/nfs

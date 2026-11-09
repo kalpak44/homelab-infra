@@ -190,8 +190,8 @@ being there — so a genuinely expired one needs `certbot renew --force-renewal`
 
 **In the cluster** Traefik resolves certificates itself through its `cloudflare` resolver,
 storing them in `acme.json` on its volume. The in-cluster hostnames are `home`, `headlamp`,
-`workspaced-ai`, `crowdsec`, `grafana`, `songradar` and `traefik`; check those through
-192.168.1.121. `vault` and `prometheus` terminate on their own hosts above, so probing them
+`workspaced-ai`, `crowdsec`, `songradar` and `traefik`; check those through
+192.168.1.121. `vault`, `prometheus` and `grafana` terminate on their own hosts above, so probing them
 through the ingress returns Traefik's default certificate, not a fault. Read Traefik's log
 for ACME errors — it retries forever and reports nothing else:
 
@@ -222,7 +222,6 @@ Two kinds of pin live under `gitops/clusters/homelab/`, and they move differentl
 | `infrastructure/nfs-provisioner` | `4.*` |
 | `infrastructure/trivy-operator` | `0.38.x` |
 | `infrastructure/request-metrics` | `0.61.x` |
-| `apps/private/grafana` | `10.5.x` |
 
 The wildcard already tracks patches on its own, so Flux has them without you. Your job is
 the **minor**: when the repository offers a newer one, widen the pin to it. Read what is
@@ -245,14 +244,10 @@ the migration they describe; never simply widen the pin and hope.
 | `dgraziotin/nginx-webdav-nononsense` | `apps/private/song-radar/webdav-deployment.yaml` |
 | `sablierapp/sablier` | `infrastructure/sablier/deployment.yaml` |
 | `nginx` | `apps/private/private-home-page/deployment.yaml` |
-| `grafana/grafana` | `apps/private/grafana/helmrelease.yaml`, `image.tag` |
-| `busybox` | same file, `initChownData.image.tag` |
-| `kiwigrid/k8s-sidecar` | same file, `sidecar.image.tag` |
 | `crowdsecurity/crowdsec` | `infrastructure/crowdsec/helmrelease.yaml` (`image.tag` only when it lags the chart) |
 
-`apps/private/grafana` and `apps/private/song-radar` are commented out of
-`apps/private/kustomization.yaml`, so keep their files current but expect no workload from
-them until they are re-enabled.
+`apps/private/song-radar` is commented out of `apps/private/kustomization.yaml`, so keep
+its files current but expect no workload from it until it is re-enabled.
 
 Move these to the newest release of the same major. Keep `nginx` pinned to a concrete
 `1.x.y-alpine`; a floating tag looks current and is not, because nothing re-pulls it.
@@ -319,6 +314,7 @@ These are version variables in role defaults. Bump the number, then apply that o
 | `prometheus_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` | `prometheus/prometheus` releases |
 | `node_exporter_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` and `ansible/maintenance/roles/node_exporter/defaults/main.yml` | `prometheus/node_exporter` releases |
 | `vault_version` | `ansible/proxmox/vault-lxc/roles/vault/defaults/main.yml` | the HashiCorp apt repo |
+| `grafana_version` | `ansible/proxmox/grafana-lxc/roles/grafana/defaults/main.yml` | the Grafana apt repo (`apt.grafana.com`) |
 | `k3s_version` | `ansible/proxmox/k3s-cluster/group_vars/k3s.yml` | `https://update.k3s.io/v1-release/channels` |
 
 HashiCorp rotates its apt signing key. The Vault role must refresh the keyring before
@@ -513,16 +509,15 @@ kubectl get nodes
 for h in pavel-usanli.online planner.pavel-usanli.online proklinator.online; do
   curl -s -o /dev/null -w "$h %{http_code}\n" --max-time 20 "https://$h/"
 done
-# `songradar` and `grafana` are currently commented out of apps/private, so a 404 from
-# those hostnames is expected; `home` is the one that must answer until they are enabled.
+# `songradar` is currently commented out of apps/private, so a 404 from it is expected;
+# `home` is the one that must answer until it is enabled.
 for h in home.internal.pavel-usanli.online songradar.internal.pavel-usanli.online; do
   curl -sk -o /dev/null -w "$h %{http_code}\n" --max-time 20 \
     --resolve "$h:443:192.168.1.121" "https://$h/"
 done
 ```
 
-2xx and 3xx are healthy; `crowdsec.internal` answers 404 at `/` because only `/metrics` is
-routed, and the apex and `proklinator.online` answer 301 by design. Compare against what
+2xx and 3xx are healthy; the apex and `proklinator.online` answer 301 by design. Compare against what
 each answered before you started.
 
 ## 10. When something breaks
@@ -556,7 +551,7 @@ Stop here when `DRY_RUN` is `true`. Write the report and exit 0.
 
 Commit per layer, not per package: one commit for the gitops bumps, one for the ansible
 pins. The OS sweep changes no files and so commits nothing. Each message is a single short
-imperative line with no body — `bump grafana chart to 10.6.x`,
+imperative line with no body — `bump crowdsec chart to 0.25.x`,
 `bump adguard and prometheus`.
 
 Push to `$DEFAULT_BRANCH` after each. If the push is rejected because the branch moved,

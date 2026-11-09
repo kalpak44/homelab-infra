@@ -1,0 +1,23 @@
+# Managed by ansible/proxmox/grafana-lxc — edits here are lost on the next
+# `just configure grafana-lxc`.
+
+[server]
+protocol = https
+http_port = {{ grafana_port }}
+domain = {{ grafana_domain }}
+root_url = https://{{ grafana_domain }}
+cert_file = {{ grafana_tls_dir }}/cert.pem
+cert_key = {{ grafana_tls_dir }}/key.pem
+
+# Applied only when the database is first created; later password changes go through
+# the UI or `grafana cli admin reset-admin-password`.
+[security]
+admin_user = {{ grafana_admin_user }}
+admin_password = {{ grafana_admin_password }}
+
+[users]
+allow_sign_up = false
+
+[analytics]
+reporting_enabled = false
+check_for_updates = false

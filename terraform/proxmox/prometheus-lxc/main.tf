@@ -10,7 +10,7 @@ module "lxc" {
   gateway    = "192.168.1.1"
 
   cpu_cores = 2
-  memory_mb = 1024
+  memory_mb = 384
 
   # The TSDB sits on its own volume, so a root disk that fills with logs or an
   # upgrade cannot take the samples with it. Its size caps retention — the

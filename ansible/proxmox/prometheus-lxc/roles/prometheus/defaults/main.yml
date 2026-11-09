@@ -25,11 +25,6 @@ prometheus_key_path: "/etc/prometheus/tls/key.pem"
 # scheme and metrics_path. The server and its own node_exporter are scraped
 # unconditionally.
 prometheus_extra_scrape_jobs:
-  # Reached through the cluster's ingress rather than the pod, because this host sits
-  # outside k3s. The route serves /metrics only.
-  - name: crowdsec
-    scheme: https
-    targets: ["crowdsec.internal.pavel-usanli.online"]
   # Status, method and latency per entryPoint, router and service. No client address:
   # that comes from traefik-requests below.
   - name: traefik
@@ -40,6 +35,6 @@ prometheus_extra_scrape_jobs:
   - name: traefik-requests
     targets: ["192.168.1.110:9598", "192.168.1.111:9598"]
 
-# Scraped as the `hosts` job, one target per inventory host, labelled with its name.
+# Scraped as the `hosts` job, one target per inventory host, labeled with its name.
 # Must match the hosts ansible/maintenance/node-exporter.yml installs on.
 node_exporter_scrape_hosts: "{{ (groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"

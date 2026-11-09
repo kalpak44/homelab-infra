@@ -144,6 +144,7 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | NocoBase                   | LXC        | 192.168.1.5   | `proxmox/nocobase-lxc`                 | -                                           |
 | Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
 | Prometheus                 | LXC        | 192.168.1.11  | `proxmox/prometheus-lxc`               | `proxmox/prometheus-lxc`                    |
+| Grafana                    | LXC        | 192.168.1.12  | `proxmox/grafana-lxc`                  | `proxmox/grafana-lxc`                       |
 | NFS server (k3s PVs)       | VM         | 192.168.1.108 | `proxmox/nfs-vm`                       | `proxmox/nfs-vm`                            |
 | k3s control plane          | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                  | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
 | k3s worker                 | VM         | 192.168.1.111 | `proxmox/k3s-cluster`                  | (same)                                      |
@@ -180,6 +181,11 @@ certificate issued by certbot over DNS-01. The TSDB lives on a dedicated 20G vol
 appending to `prometheus_extra_scrape_jobs` in
 `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. Both binaries come from upstream tarballs — Ubuntu
 noble's `prometheus` package is a 2.x that never moves — so bumping a version is editing that same file.
+
+**Grafana** – `https://grafana.internal.pavel-usanli.online`, on 443 with a certbot certificate. The Prometheus
+datasource and the alert rules are provisioned from `ansible/proxmox/grafana-lxc/roles/grafana/`. Dashboards are built
+in the UI, or kept as JSON in that role's `files/dashboards/`. The admin login is read from Vault
+(`secret/grafana-secrets`) at configure time, so the role needs no CI secret of its own.
 
 **NocoBase** – LAN-isolated: the Proxmox firewall drops all outbound traffic to `192.168.0.0/16` on the
 container's veth, except PostgreSQL (`192.168.1.4:5432`) and Redis (`192.168.1.6:6379`). Internet access and

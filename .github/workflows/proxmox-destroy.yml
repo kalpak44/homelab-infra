@@ -17,6 +17,7 @@ on:
           - nocobase-lxc
           - mihal-lxc
           - prometheus-lxc
+          - grafana-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster

@@ -5,7 +5,7 @@ data "cloudflare_zone" "this" {
 resource "cloudflare_record" "grafana" {
   zone_id = data.cloudflare_zone.this.id
   name    = "grafana.internal"
-  content = "192.168.1.121"
+  content = "192.168.1.12"
   type    = "A"
   proxied = false
 }

@@ -1,0 +1,9 @@
+# Provisioned rather than clicked in, so a rebuilt container comes back identical.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: {{ grafana_prometheus_url }}
+    isDefault: true
