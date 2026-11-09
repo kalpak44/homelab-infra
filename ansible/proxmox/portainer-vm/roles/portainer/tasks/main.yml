@@ -41,12 +41,15 @@
     state: mounted
   when: data_mountpoint.rc != 0
 
+# Stacks bind-mount directories here as whatever uid their image runs as. The runtime
+# directory is pruned: it holds image layers whose modes must not change.
 - name: Ensure /mnt/data is writable by all recursively
-  ansible.builtin.file:
-    path: /mnt/data
-    mode: "0777"
-    recurse: true
-    state: directory
+  ansible.builtin.shell:
+    cmd: >-
+      find /mnt/data -path {{ portainer_runtime_dir }} -prune -o
+      ! -perm 0777 -print -exec chmod 0777 {} +
+  register: data_chmod
+  changed_when: data_chmod.stdout | length > 0
 
 - name: Install Docker dependencies
   ansible.builtin.apt:
@@ -74,11 +77,104 @@
     state: present
     update_cache: true
 
-- name: Ensure Docker is running
+# --- Container storage on the data disk ------------------------------------
+
+- name: Install rsync
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+
+- name: Create the container runtime directory
+  ansible.builtin.file:
+    path: "{{ portainer_runtime_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0711"
+
+- name: Check whether containerd already keeps its data there
+  ansible.builtin.command:
+    cmd: grep -qx 'root = "{{ portainer_runtime_dir }}/containerd"' /etc/containerd/config.toml
+  register: runtime_moved
+  changed_when: false
+  failed_when: false
+
+- name: Count the running containers before moving their storage
+  ansible.builtin.shell:
+    cmd: docker ps -q | wc -l
+  register: running_before
+  changed_when: false
+  when: runtime_moved.rc != 0
+
+# One-off move of what is already on the root disk. The copy keeps hard links, xattrs and
+# device files: overlay layers record deletions as whiteout devices and opaque xattrs, and
+# a copy without them resurrects files the image deleted.
+- name: Move existing container storage to the data disk
+  when: runtime_moved.rc != 0
+  block:
+    - name: Stop Docker and containerd
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: [docker.socket, docker, containerd]
+
+    - name: Copy containerd and Docker data
+      ansible.builtin.command:
+        cmd: "rsync -aHAX --numeric-ids /var/lib/{{ item }}/ {{ portainer_runtime_dir }}/{{ item }}/"
+      loop: [containerd, docker]
+
+- name: Deploy the containerd configuration
+  ansible.builtin.copy:
+    dest: /etc/containerd/config.toml
+    content: |
+      # Managed by ansible/proxmox/portainer-vm.
+      disabled_plugins = ["cri"]
+      root = "{{ portainer_runtime_dir }}/containerd"
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Deploy the Docker daemon configuration
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ {'data-root': portainer_runtime_dir ~ '/docker', 'insecure-registries': portainer_insecure_registries} | to_nice_json }}\n"
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Ensure containerd and Docker are running
   ansible.builtin.systemd:
-    name: docker
+    name: "{{ item }}"
     state: started
     enabled: true
+  loop: [containerd, docker]
+
+- name: Flush handlers to apply the runtime configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Confirm Docker reads its data from the data disk
+  ansible.builtin.command:
+    cmd: "docker info --format '{% raw %}{{.DockerRootDir}}{% endraw %}'"
+  register: docker_root
+  changed_when: false
+  failed_when: docker_root.stdout != portainer_runtime_dir ~ '/docker'
+
+# Every container restarts on its own restart policy. Until they all have, the old copy
+# is the only known-good one.
+- name: Wait for every container to come back
+  ansible.builtin.shell:
+    cmd: docker ps -q | wc -l
+  register: running_after
+  until: running_after.stdout | int >= running_before.stdout | int
+  retries: 24
+  delay: 5
+  changed_when: false
+  when: runtime_moved.rc != 0
+
+- name: Remove the old container storage from the root disk
+  ansible.builtin.file:
+    path: "/var/lib/{{ item }}"
+    state: absent
+  loop: [containerd, docker]
+  when: runtime_moved.rc != 0
 
 - name: Install certbot and Cloudflare DNS plugin
   ansible.builtin.apt:

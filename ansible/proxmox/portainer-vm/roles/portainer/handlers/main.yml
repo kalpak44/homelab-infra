@@ -1,4 +1,12 @@
 ---
+# containerd first: Docker's image store lives in it.
+- name: Restart Docker
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  loop: [containerd, docker]
+
 - name: Restart nginx
   ansible.builtin.systemd:
     name: nginx

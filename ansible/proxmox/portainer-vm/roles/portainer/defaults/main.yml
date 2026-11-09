@@ -2,6 +2,14 @@
 # A reboot can make the root disk sdb, which then aliases the data disk.
 portainer_data_disk: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
 portainer_data_volume: portainer_data
+
+# Docker's and containerd's storage, on the data disk: images and container layers
+# filled the 20 GB root disk. Kept out of the recursive chmod on /mnt/data, which would
+# rewrite the permissions of every file in every image.
+portainer_runtime_dir: /mnt/data/runtime
+
+# The registry stack on this VM serves plain HTTP.
+portainer_insecure_registries: ["192.168.1.7:5000"]
 portainer_internal_port: 9000
 portainer_tls_enabled: true
 portainer_tls_domain: "portainer.internal.pavel-usanli.online"
