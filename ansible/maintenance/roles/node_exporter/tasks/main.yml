@@ -42,6 +42,18 @@
     path: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64"
     state: absent
 
+- name: Create the textfile collector directory
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Collect thin pool usage on the Proxmox node
+  ansible.builtin.import_tasks: lvm-thin.yml
+  when: "'proxmox_host' in group_names"
+
 - name: Deploy the node_exporter systemd unit
   ansible.builtin.template:
     src: node_exporter.service.j2

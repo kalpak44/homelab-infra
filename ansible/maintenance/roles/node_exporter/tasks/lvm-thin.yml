@@ -1,0 +1,51 @@
+---
+# The Proxmox node only: it holds the LVM-thin pool every guest's disk lives in. Snapshots
+# grow it unseen, and a full pool wedges the node.
+
+- name: Install the thin pool metrics script
+  ansible.builtin.copy:
+    src: lvm-thin-metrics.sh
+    dest: /usr/local/bin/lvm-thin-metrics
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the thin pool metrics units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    mode: "0644"
+  loop:
+    - name: lvm-thin-metrics.service
+      content: |
+        [Unit]
+        Description=Write LVM-thin pool usage for node_exporter
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/bin/lvm-thin-metrics {{ node_exporter_textfile_dir }}
+    - name: lvm-thin-metrics.timer
+      content: |
+        [Unit]
+        Description=Write LVM-thin pool usage for node_exporter every minute
+
+        [Timer]
+        OnBootSec=30s
+        OnUnitActiveSec=1min
+
+        [Install]
+        WantedBy=timers.target
+  register: lvm_thin_units
+
+- name: Enable the thin pool metrics timer
+  ansible.builtin.systemd:
+    name: lvm-thin-metrics.timer
+    state: started
+    enabled: true
+    daemon_reload: "{{ lvm_thin_units.changed }}"
+
+# Written once now, so the first scrape after this run already has the pool.
+- name: Write the thin pool metrics
+  ansible.builtin.command:
+    cmd: "/usr/local/bin/lvm-thin-metrics {{ node_exporter_textfile_dir }}"
+  changed_when: false

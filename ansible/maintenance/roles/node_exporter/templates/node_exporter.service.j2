@@ -10,7 +10,8 @@ Group=node_exporter
 # other than the Prometheus LXC has a reason to reach it.
 ExecStart=/usr/local/bin/node_exporter \
   --web.listen-address={{ ansible_host }}:{{ node_exporter_port }} \
-  --collector.filesystem.mount-points-exclude={{ node_exporter_mount_points_exclude }}
+  --collector.filesystem.mount-points-exclude={{ node_exporter_mount_points_exclude }} \
+  --collector.textfile.directory={{ node_exporter_textfile_dir }}
 Restart=always
 RestartSec=5
 

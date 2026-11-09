@@ -2,6 +2,10 @@
 node_exporter_version: "1.12.1"
 node_exporter_port: 9100
 
+# Read by the textfile collector. Empty on every host but the Proxmox node, which writes
+# its thin pool usage here.
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+
 # Container and pod mounts are excluded: on the k3s nodes and the Docker host they come
 # and go with every workload, and each one would mint a filesystem series per pod.
 node_exporter_mount_points_exclude: "^/(dev|proc|sys|run/credentials/.+|run/k3s/.+|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+|var/lib/containers/storage/.+)($|/)"
