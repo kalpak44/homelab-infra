@@ -8,3 +8,11 @@ providers:
     allowUiUpdates: false
     options:
       path: /var/lib/grafana/dashboards
+  # One board per inventory host, written by the role. Kept apart so the overview is not
+  # lost among them.
+  - name: hosts
+    folder: Hosts
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards-hosts

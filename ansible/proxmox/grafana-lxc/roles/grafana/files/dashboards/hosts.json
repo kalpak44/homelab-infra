@@ -16,65 +16,40 @@
     "to": "now"
   },
   "templating": {
-    "list": [
-      {
-        "name": "host",
-        "label": "Host",
-        "type": "query",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "query": {
-          "query": "label_values(node_uname_info{job=~\"hosts|node\"}, host)",
-          "refId": "host"
-        },
-        "definition": "label_values(node_uname_info{job=~\"hosts|node\"}, host)",
-        "refresh": 2,
-        "sort": 1,
-        "multi": true,
-        "includeAll": true,
-        "allValue": ".*",
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        }
-      }
-    ]
+    "list": []
   },
+  "links": [
+    {
+      "title": "Hosts",
+      "type": "dashboards",
+      "tags": [
+        "host"
+      ],
+      "asDropdown": true,
+      "icon": "external link"
+    }
+  ],
   "panels": [
     {
-      "id": 1,
       "type": "row",
-      "title": "Overview",
+      "title": "Hosts",
       "collapsed": false,
+      "panels": [],
+      "id": 1,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 0
-      },
-      "panels": []
+      }
     },
     {
-      "id": 2,
       "type": "table",
       "title": "Hosts",
-      "description": "Every LXC and VM and the Proxmox node. CPUs and RAM are what each guest is given, not the node's: lxcfs reports the container's own limits. Disk sums every real filesystem on the host; the table below splits them by mount. CPU % is the last 5 minutes.",
+      "description": "Click a host for its own dashboard. CPUs and RAM are what each guest is given, not the node's: lxcfs reports a container's own limits. Disk sums every real filesystem on the host. CPU % is the last 5 minutes.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 14,
-        "w": 24,
-        "x": 0,
-        "y": 1
       },
       "targets": [
         {
@@ -82,7 +57,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (host, kind) (node_uname_info{job=~\"hosts|node\",host=~\"$host\",kind!=\"\"})",
+          "expr": "max by (host, kind) (node_uname_info{job=~\"hosts|node\",kind!=\"\"})",
           "refId": "A",
           "editorMode": "code",
           "instant": true,
@@ -94,7 +69,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count by (host) (node_cpu_seconds_total{job=~\"hosts|node\",host=~\"$host\",mode=\"idle\"})",
+          "expr": "count by (host) (node_cpu_seconds_total{job=~\"hosts|node\",mode=\"idle\"})",
           "refId": "B",
           "editorMode": "code",
           "instant": true,
@@ -106,7 +81,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - avg by (host) (rate(node_cpu_seconds_total{job=~\"hosts|node\",host=~\"$host\",mode=\"idle\"}[5m])))",
+          "expr": "100 * (1 - avg by (host) (rate(node_cpu_seconds_total{job=~\"hosts|node\",mode=\"idle\"}[5m])))",
           "refId": "C",
           "editorMode": "code",
           "instant": true,
@@ -118,7 +93,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (host) (node_memory_MemTotal_bytes{job=~\"hosts|node\",host=~\"$host\"})",
+          "expr": "max by (host) (node_memory_MemTotal_bytes{job=~\"hosts|node\"})",
           "refId": "D",
           "editorMode": "code",
           "instant": true,
@@ -130,7 +105,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - max by (host) (node_memory_MemAvailable_bytes{job=~\"hosts|node\",host=~\"$host\"}) / max by (host) (node_memory_MemTotal_bytes{job=~\"hosts|node\",host=~\"$host\"}))",
+          "expr": "100 * (1 - max by (host) (node_memory_MemAvailable_bytes{job=~\"hosts|node\"}) / max by (host) (node_memory_MemTotal_bytes{job=~\"hosts|node\"}))",
           "refId": "E",
           "editorMode": "code",
           "instant": true,
@@ -142,7 +117,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (host) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
+          "expr": "sum by (host) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
           "refId": "F",
           "editorMode": "code",
           "instant": true,
@@ -154,7 +129,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (host) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"} - node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
+          "expr": "sum by (host) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"} - node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
           "refId": "G",
           "editorMode": "code",
           "instant": true,
@@ -166,7 +141,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (host) (node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
+          "expr": "sum by (host) (node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
           "refId": "H",
           "editorMode": "code",
           "instant": true,
@@ -178,7 +153,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - sum by (host) (node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}) / sum by (host) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}))",
+          "expr": "100 * (1 - sum by (host) (node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}) / sum by (host) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}))",
           "refId": "I",
           "editorMode": "code",
           "instant": true,
@@ -201,7 +176,6 @@
             "renameByName": {
               "host": "Host",
               "kind": "Kind",
-              "Value #A": "",
               "Value #B": "CPUs",
               "Value #C": "CPU %",
               "Value #D": "RAM total",
@@ -221,8 +195,7 @@
               "Value #F": 6,
               "Value #G": 7,
               "Value #H": 8,
-              "Value #I": 9,
-              "Value #A": 10
+              "Value #I": 9
             }
           }
         }
@@ -248,6 +221,23 @@
           }
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Host"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open ${__value.raw}",
+                    "url": "/d/host-${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -485,22 +475,22 @@
             ]
           }
         ]
+      },
+      "id": 2,
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 1
       }
     },
     {
-      "id": 3,
       "type": "table",
       "title": "Filesystems",
-      "description": "One row per real filesystem. Free is what an unprivileged process can still write, so it already excludes the space ext4 reserves for root.",
+      "description": "One row per real filesystem, fullest first.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 15
       },
       "targets": [
         {
@@ -508,7 +498,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
+          "expr": "max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
           "refId": "A",
           "editorMode": "code",
           "instant": true,
@@ -520,7 +510,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"} - node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
+          "expr": "max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"} - node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
           "refId": "B",
           "editorMode": "code",
           "instant": true,
@@ -532,7 +522,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (host, mountpoint) (node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
+          "expr": "max by (host, mountpoint) (node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
           "refId": "C",
           "editorMode": "code",
           "instant": true,
@@ -544,7 +534,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - max by (host, mountpoint) (node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}) / max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}))",
+          "expr": "100 * (1 - max by (host, mountpoint) (node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}) / max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}))",
           "refId": "D",
           "editorMode": "code",
           "instant": true,
@@ -603,6 +593,23 @@
           }
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Host"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open ${__value.raw}",
+                    "url": "/d/host-${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -704,34 +711,34 @@
             ]
           }
         ]
+      },
+      "id": 3,
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 15
       }
     },
     {
-      "id": 4,
       "type": "row",
-      "title": "Proxmox storage pool (local-lvm)",
+      "title": "Storage pool (local-lvm)",
       "collapsed": false,
+      "panels": [],
+      "id": 4,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 27
-      },
-      "panels": []
+      }
     },
     {
-      "id": 5,
       "type": "gauge",
-      "title": "Data used",
+      "title": "Pool data used",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 0,
-        "y": 28
       },
       "targets": [
         {
@@ -781,23 +788,24 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "showThresholdMarkers": true
       },
-      "description": "Every guest disk lives in this pool. When it fills, every guest writing to it stalls at once."
-    },
-    {
-      "id": 6,
-      "type": "gauge",
-      "title": "Metadata used",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "description": "Every guest disk lives in this pool. When it fills, every guest writing to it stalls at once.",
+      "id": 5,
       "gridPos": {
         "h": 6,
         "w": 6,
-        "x": 6,
+        "x": 0,
         "y": 28
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Pool metadata used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -847,23 +855,24 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "showThresholdMarkers": true
       },
-      "description": "The pool also stops when its metadata fills, however much data space is left. Snapshots consume it fastest."
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Free",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "description": "The pool also stops when its metadata fills, however much data space is left. Snapshots consume it fastest.",
+      "id": 6,
       "gridPos": {
         "h": 6,
         "w": 6,
-        "x": 12,
+        "x": 6,
         "y": 28
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Pool free",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -903,23 +912,24 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "showThresholdMarkers": true
       },
-      "description": "Data space not yet written to by any guest."
+      "description": "Data space not yet written to by any guest.",
+      "id": 7,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 28
+      }
     },
     {
-      "id": 8,
       "type": "stat",
       "title": "Provisioned to guests",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 18,
-        "y": 28
       },
       "targets": [
         {
@@ -967,23 +977,24 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "showThresholdMarkers": true
       },
-      "description": "Sum of the guests' virtual disk sizes against the pool. Above 100% the pool is overcommitted: it can fill while every guest still reports free space."
+      "description": "Sum of the guests' virtual disk sizes against the pool. Above 100% the pool is overcommitted: it can fill while every guest still reports free space.",
+      "id": 8,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 28
+      }
     },
     {
-      "id": 9,
       "type": "timeseries",
       "title": "Pool usage",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 34
       },
       "targets": [
         {
@@ -1026,7 +1037,7 @@
       "options": {
         "legend": {
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "calcs": [
             "lastNotNull",
             "max"
@@ -1036,42 +1047,42 @@
           "mode": "multi",
           "sort": "desc"
         }
+      },
+      "id": 9,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 34
       }
     },
     {
-      "id": 10,
       "type": "row",
       "title": "All hosts over time",
       "collapsed": false,
+      "panels": [],
+      "id": 10,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 41
-      },
-      "panels": []
+      }
     },
     {
-      "id": 11,
       "type": "timeseries",
       "title": "CPU busy",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 0,
-        "y": 42
-      },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - avg by (host) (rate(node_cpu_seconds_total{job=~\"hosts|node\",host=~\"$host\",mode=\"idle\"}[$__rate_interval])))",
+          "expr": "100 * (1 - avg by (host) (rate(node_cpu_seconds_total{job=~\"hosts|node\",mode=\"idle\"}[$__rate_interval])))",
           "refId": "A",
           "editorMode": "code",
           "legendFormat": "{{host}}"
@@ -1096,7 +1107,7 @@
       "options": {
         "legend": {
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "calcs": [
             "lastNotNull",
             "max"
@@ -1106,29 +1117,29 @@
           "mode": "multi",
           "sort": "desc"
         }
+      },
+      "id": 11,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 42
       }
     },
     {
-      "id": 12,
       "type": "timeseries",
       "title": "Memory used",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 8,
-        "y": 42
-      },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - max by (host) (node_memory_MemAvailable_bytes{job=~\"hosts|node\",host=~\"$host\"}) / max by (host) (node_memory_MemTotal_bytes{job=~\"hosts|node\",host=~\"$host\"}))",
+          "expr": "100 * (1 - max by (host) (node_memory_MemAvailable_bytes{job=~\"hosts|node\"}) / max by (host) (node_memory_MemTotal_bytes{job=~\"hosts|node\"}))",
           "refId": "A",
           "editorMode": "code",
           "legendFormat": "{{host}}"
@@ -1153,7 +1164,7 @@
       "options": {
         "legend": {
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "calcs": [
             "lastNotNull",
             "max"
@@ -1163,21 +1174,21 @@
           "mode": "multi",
           "sort": "desc"
         }
+      },
+      "id": 12,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 42
       }
     },
     {
-      "id": 13,
       "type": "timeseries",
       "title": "Disk used",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 16,
-        "y": 42
       },
       "targets": [
         {
@@ -1185,7 +1196,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - max by (host, mountpoint) (node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}) / max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}))",
+          "expr": "100 * (1 - max by (host, mountpoint) (node_filesystem_avail_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}) / max by (host, mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"}))",
           "refId": "A",
           "editorMode": "code",
           "legendFormat": "{{host}} {{mountpoint}}"
@@ -1210,7 +1221,7 @@
       "options": {
         "legend": {
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "calcs": [
             "lastNotNull",
             "max"
@@ -1220,275 +1231,14 @@
           "mode": "multi",
           "sort": "desc"
         }
+      },
+      "id": 13,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 42
       }
-    },
-    {
-      "id": 14,
-      "type": "row",
-      "title": "$host",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 51
-      },
-      "panels": [],
-      "repeat": "host"
-    },
-    {
-      "id": 15,
-      "type": "timeseries",
-      "title": "CPU",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 0,
-        "y": 52
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "100 * sum by (mode) (rate(node_cpu_seconds_total{job=~\"hosts|node\",host=~\"$host\",mode!=\"idle\"}[$__rate_interval])) / scalar(count(node_cpu_seconds_total{job=~\"hosts|node\",host=~\"$host\",mode=\"idle\"}))",
-          "refId": "A",
-          "editorMode": "code",
-          "legendFormat": "{{mode}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "normal"
-            }
-          },
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "description": "Share of this host's CPUs, by what they were busy with."
-    },
-    {
-      "id": 16,
-      "type": "timeseries",
-      "title": "Memory",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 52
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(node_memory_MemTotal_bytes{job=~\"hosts|node\",host=~\"$host\"}) - max(node_memory_MemAvailable_bytes{job=~\"hosts|node\",host=~\"$host\"})",
-          "refId": "A",
-          "editorMode": "code",
-          "legendFormat": "used"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(node_memory_MemTotal_bytes{job=~\"hosts|node\",host=~\"$host\"})",
-          "refId": "B",
-          "editorMode": "code",
-          "legendFormat": "total"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 17,
-      "type": "timeseries",
-      "title": "Disk",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 52
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max by (mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"} - node_filesystem_avail_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
-          "refId": "A",
-          "editorMode": "code",
-          "legendFormat": "{{mountpoint}} used"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max by (mountpoint) (node_filesystem_size_bytes{job=~\"hosts|node\",host=~\"$host\",fstype=~\"ext4|xfs|btrfs|zfs\",mountpoint!~\"/boot.*\"})",
-          "refId": "B",
-          "editorMode": "code",
-          "legendFormat": "{{mountpoint}} size"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Network",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 18,
-        "y": 52
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(node_network_receive_bytes_total{job=~\"hosts|node\",host=~\"$host\",device!~\"lo|veth.*|fwbr.*|fwln.*|fwpr.*|tap.*|cni.*|flannel.*|docker.*|br-.*\"}[$__rate_interval]))",
-          "refId": "A",
-          "editorMode": "code",
-          "legendFormat": "in"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "-sum(rate(node_network_transmit_bytes_total{job=~\"hosts|node\",host=~\"$host\",device!~\"lo|veth.*|fwbr.*|fwln.*|fwpr.*|tap.*|cni.*|flannel.*|docker.*|br-.*\"}[$__rate_interval]))",
-          "refId": "B",
-          "editorMode": "code",
-          "legendFormat": "out"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "description": "Physical and bridge interfaces only; container and pod veths would count the same bytes twice. Out is drawn below zero."
     }
   ]
 }

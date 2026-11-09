@@ -184,7 +184,9 @@ noble's `prometheus` package is a 2.x that never moves — so bumping a version 
 
 **Grafana** – `https://grafana.internal.pavel-usanli.online`, on 443 with a certbot certificate. The Prometheus
 datasource and the alert rules are provisioned from `ansible/proxmox/grafana-lxc/roles/grafana/`. Dashboards are built
-in the UI, or kept as JSON in that role's `files/dashboards/`. The admin login is read from Vault
+in the UI, or kept as JSON in that role's `files/`, which `ansible/proxmox/grafana-lxc/generate-dashboards.py`
+writes — edit the script, never the JSON. Every inventory host gets its own board in the Hosts folder, and
+*Homelab hosts* links to each. The admin login is read from Vault
 (`secret/grafana-secrets`) at configure time, so the role needs no CI secret of its own.
 
 **NocoBase** – LAN-isolated: the Proxmox firewall drops all outbound traffic to `192.168.0.0/16` on the

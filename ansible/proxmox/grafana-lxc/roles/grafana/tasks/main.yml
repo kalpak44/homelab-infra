@@ -36,9 +36,10 @@
 # --- Package --------------------------------------------------------------
 # Grafana's own apt repository: Ubuntu does not package Grafana at all.
 
+# python3-debian is what deb822_repository below needs to write the source file.
 - name: Install apt prerequisites
   ansible.builtin.apt:
-    name: [apt-transport-https, ca-certificates]
+    name: [apt-transport-https, ca-certificates, python3-debian]
     state: present
     update_cache: true
 
@@ -49,10 +50,20 @@
     mode: "0644"
 
 - name: Add the Grafana apt repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main"
-    filename: grafana
-    state: present
+  ansible.builtin.deb822_repository:
+    name: grafana
+    types: deb
+    uris: https://apt.grafana.com
+    suites: stable
+    components: main
+    signed_by: /etc/apt/keyrings/grafana.asc
+
+# Left by the one-line format this role used before; apt warns on a repository defined
+# twice.
+- name: Remove the old one-line Grafana source
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/grafana.list
+    state: absent
 
 - name: Install Grafana
   ansible.builtin.apt:
@@ -185,6 +196,44 @@
     group: grafana
     mode: "0640"
   with_fileglob: "dashboards/*.json"
+
+- name: Create the host dashboards directory
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards-hosts
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+
+# A lookup and replace rather than a template: the JSON is full of Grafana's own {{ }}
+# legend syntax, which Jinja would try to render.
+- name: Deploy one dashboard per host
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('ansible.builtin.file',
+                'host-dashboards/' ~ ('host-proxmox.json' if item in groups['proxmox_host'] else 'host.json'))
+         | replace('__HOST__', item) }}
+    dest: "/var/lib/grafana/dashboards-hosts/{{ item }}.json"
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  loop: "{{ grafana_host_dashboards }}"
+
+- name: Find host dashboards on disk
+  ansible.builtin.find:
+    paths: /var/lib/grafana/dashboards-hosts
+    patterns: "*.json"
+  register: grafana_host_dashboard_files
+
+# A host gone from the inventory would otherwise keep a board showing No data for ever.
+- name: Remove dashboards of hosts no longer in the inventory
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ grafana_host_dashboard_files.files }}"
+  when: (item.path | basename | splitext | first) not in grafana_host_dashboards
+  loop_control:
+    label: "{{ item.path | basename }}"
 
 - name: Create the systemd drop-in directory
   ansible.builtin.file:

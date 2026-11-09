@@ -13,3 +13,7 @@ grafana_prometheus_url: "https://prometheus.internal.pavel-usanli.online:9090"
 # login the vault-lxc role creates.
 grafana_vault_addr: "https://vault.internal.pavel-usanli.online:8200"
 grafana_vault_admin_secret: grafana-secrets
+
+# One dashboard each, from files/host-dashboards/. Every host node_exporter runs on,
+# the Prometheus LXC included.
+grafana_host_dashboards: "{{ (groups['proxmox_host'] + groups['lxc'] + groups['k3s'] + groups['vm']) | sort }}"
