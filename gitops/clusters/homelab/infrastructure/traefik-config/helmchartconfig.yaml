@@ -15,7 +15,6 @@ spec:
     providers:
       kubernetesCRD:
         enabled: true
-        allowCrossNamespace: true
       kubernetesIngress:
         enabled: true
 
@@ -34,13 +33,45 @@ spec:
           annotations:
             metallb.universe.tf/address-pool: homelab
 
+    # Every entryPoint sets both options below, because Traefik warns on each one left
+    # unset.
+    #
+    # aliasHeadersStrategy: delete drops headers such as X_Auth_User, which nginx and
+    # CGI-style backends read as X-Auth-User, so a client could spoof a header Traefik
+    # manages.
+    #
+    # encodedCharacters: rejected wherever the internet can reach, because a backend that
+    # decodes %2F or %5C differently from Traefik routes a path Traefik never matched.
+    # Allowed on the private entryPoints, where the admin UIs may legitimately encode
+    # them.
     ports:
       web:
         expose:
           default: false
+        http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: &reject-encoded
+            allowEncodedSlash: false
+            allowEncodedBackSlash: false
+            allowEncodedNullCharacter: false
+            allowEncodedSemicolon: false
+            allowEncodedPercent: false
+            allowEncodedQuestionMark: false
+            allowEncodedHash: false
       websecure:
         expose:
           default: false
+        http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: *reject-encoded
+      traefik:
+        http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: *reject-encoded
+      metrics:
+        http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: *reject-encoded
       public-web:
         port: 8001
         expose:
@@ -48,6 +79,8 @@ spec:
           private: false
         exposedPort: 80
         http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: *reject-encoded
           redirections:
             entryPoint:
               to: public-web-secure
@@ -85,6 +118,8 @@ spec:
             - 2a06:98c0::/29
             - 2c0f:f248::/32
         http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: *reject-encoded
           tls:
             enabled: true
             certResolver: cloudflare
@@ -97,6 +132,15 @@ spec:
           private: true
         exposedPort: 80
         http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: &allow-encoded
+            allowEncodedSlash: true
+            allowEncodedBackSlash: true
+            allowEncodedNullCharacter: true
+            allowEncodedSemicolon: true
+            allowEncodedPercent: true
+            allowEncodedQuestionMark: true
+            allowEncodedHash: true
           redirections:
             entryPoint:
               to: private-web-secure
@@ -109,6 +153,8 @@ spec:
           private: true
         exposedPort: 443
         http:
+          aliasHeadersStrategy: delete
+          encodedCharacters: *allow-encoded
           tls:
             enabled: true
             certResolver: cloudflare
@@ -177,6 +223,9 @@ spec:
 
     additionalArguments:
       - "--accesslog.fields.defaultmode=drop"
+      # The chart renders safeNaming only when true. True renames every generated
+      # router and middleware, which breaks crowdsec-bouncer@kubernetescrd above.
+      - "--providers.kubernetescrd.safeNaming=false"
 
     experimental:
       plugins:
