@@ -113,35 +113,36 @@ spec:
             enabled: true
             certResolver: cloudflare
 
-    logs:
-      general:
-        level: INFO
-      access:
-        enabled: true
-        format: json
-        fields:
-          general:
-            defaultMode: drop
-            names:
-              ClientHost: keep
-              RequestHost: keep
-              RequestMethod: keep
-              RequestPath: keep
-              RequestScheme: keep
-              DownstreamStatus: keep
-              # CrowdSec's traefik parser reads these three unconditionally. Dropping
-              # them still parses the line, but costs three expression warnings per
-              # request, which buries real errors in the agent log.
-              ClientAddr: keep
-              RequestProtocol: keep
-              Duration: keep
-              # infrastructure/request-metrics labels each source's counters with it,
-              # which is what splits public from private traffic there.
-              EntryPointName: keep
-          headers:
-            defaultMode: drop
-            names:
-              User-Agent: keep
+    # Top-level `log` and `accessLog`, not `logs.general` and `logs.access`: the chart
+    # renamed them, and it ignores the old keys without an error, so Traefik silently
+    # stops writing the access log CrowdSec and request-metrics read.
+    log:
+      level: INFO
+    accessLog:
+      enabled: true
+      format: json
+      fields:
+        defaultMode: drop
+        names:
+          ClientHost: keep
+          RequestHost: keep
+          RequestMethod: keep
+          RequestPath: keep
+          RequestScheme: keep
+          DownstreamStatus: keep
+          # CrowdSec's traefik parser reads these three unconditionally. Dropping
+          # them still parses the line, but costs three expression warnings per
+          # request, which buries real errors in the agent log.
+          ClientAddr: keep
+          RequestProtocol: keep
+          Duration: keep
+          # infrastructure/request-metrics labels each source's counters with it,
+          # which is what splits public from private traffic there.
+          EntryPointName: keep
+        headers:
+          defaultMode: drop
+          names:
+            User-Agent: keep
 
     # Served through metrics-ingressroute.yaml rather than the metrics entryPoint, which
     # no Service exposes and Prometheus, outside the cluster, could not reach.
