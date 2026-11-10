@@ -33,8 +33,11 @@ prometheus_extra_scrape_jobs:
   # Per-source request counters from gitops/.../infrastructure/request-metrics. One
   # target per k3s node, on its hostPort: a pod only has data on the node running Traefik.
   - name: traefik-requests
-    targets: ["192.168.1.110:9598", "192.168.1.111:9598"]
+    targets: ["k3s-1.internal.pavel-usanli.online:9598", "k3s-2.internal.pavel-usanli.online:9598"]
 
 # Scraped as the `hosts` job, one target per inventory host, labeled with its name.
 # Must match the hosts ansible/maintenance/node-exporter.yml installs on.
+# Each host is scraped as <inventory name>.<this>, so each needs a record under
+# terraform/cloudflare/dns/private/ or its target fails to resolve.
+node_exporter_scrape_domain: internal.pavel-usanli.online
 node_exporter_scrape_hosts: "{{ (groups['proxmox_host'] + groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"

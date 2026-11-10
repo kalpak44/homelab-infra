@@ -26,7 +26,7 @@ scrape_configs:
   - job_name: hosts
     static_configs:
 {% for h in node_exporter_scrape_hosts %}
-      - targets: ["{{ hostvars[h].ansible_host }}:{{ node_exporter_port }}"]
+      - targets: ["{{ h }}.{{ node_exporter_scrape_domain }}:{{ node_exporter_port }}"]
         labels:
           host: {{ h }}
           kind: {{ 'proxmox' if h in groups['proxmox_host'] else 'lxc' if h in groups['lxc'] else 'vm' }}

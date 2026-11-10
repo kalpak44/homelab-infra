@@ -23,6 +23,11 @@ on:
           - dns/private/redis
           - dns/private/traefik
           - dns/private/vault
+          - dns/private/cloudflared
+          - dns/private/github-runner
+          - dns/private/k3s
+          - dns/private/mihal
+          - dns/private/nocobase
           - shared/cloudflare-email
           - shared/mihal-lxc-warp
           - shared/zero-trust
