@@ -21,7 +21,9 @@ configMapGenerator:
 
   # Read by helmrelease.yaml's valuesFrom. The watch label makes helm-controller upgrade as
   # soon as one changes, instead of at its next interval.
-  - name: crowdsec-config-files
+  # The src- prefix is load-bearing: the chart renders its own ConfigMaps from these values
+  # under the unprefixed names, and two controllers owning one object fight over it.
+  - name: crowdsec-src-config-files
     namespace: crowdsec
     options:
       labels:
@@ -29,7 +31,7 @@ configMapGenerator:
     files:
       - config/config.yaml.local
       - config/profiles.yaml
-  - name: crowdsec-parsers
+  - name: crowdsec-src-parsers
     namespace: crowdsec
     options:
       labels:
@@ -37,7 +39,7 @@ configMapGenerator:
     files:
       - parsers/cloudflare-whitelist.yaml
       - parsers/trusted-clients.yaml
-  - name: crowdsec-scenarios
+  - name: crowdsec-src-scenarios
     namespace: crowdsec
     options:
       labels:
@@ -53,7 +55,7 @@ configMapGenerator:
       - scenarios/http-error-burst.yaml
       - scenarios/actuator-probing.yaml
       - scenarios/http-error-threshold.yaml
-  - name: crowdsec-appsec-rules
+  - name: crowdsec-src-appsec-rules
     namespace: crowdsec
     options:
       labels:
@@ -63,7 +65,7 @@ configMapGenerator:
       - appsec-rules/block-cms-admin.yaml
       - appsec-rules/block-secret-files.yaml
       - appsec-rules/block-laravel-ignition.yaml
-  - name: crowdsec-appsec-configs
+  - name: crowdsec-src-appsec-configs
     namespace: crowdsec
     options:
       labels:

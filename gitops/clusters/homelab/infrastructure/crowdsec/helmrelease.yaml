@@ -22,102 +22,102 @@ spec:
   # needs an entry there and one here, or it never reaches the chart.
   valuesFrom:
     - kind: ConfigMap
-      name: crowdsec-config-files
+      name: crowdsec-src-config-files
       valuesKey: config.yaml.local
       targetPath: 'config.config\.yaml\.local'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-config-files
+      name: crowdsec-src-config-files
       valuesKey: profiles.yaml
       targetPath: 'config.profiles\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-parsers
+      name: crowdsec-src-parsers
       valuesKey: cloudflare-whitelist.yaml
       targetPath: 'config.parsers.s02-enrich.cloudflare-whitelist\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-parsers
+      name: crowdsec-src-parsers
       valuesKey: trusted-clients.yaml
       targetPath: 'config.parsers.s02-enrich.trusted-clients\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: manual-blocklist.yaml
       targetPath: 'config.scenarios.manual-blocklist\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: mcp-auth-failure.yaml
       targetPath: 'config.scenarios.mcp-auth-failure\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: mcp-surface-probing.yaml
       targetPath: 'config.scenarios.mcp-surface-probing\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: public-mcp-probing.yaml
       targetPath: 'config.scenarios.public-mcp-probing\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: proklinator-api-probing.yaml
       targetPath: 'config.scenarios.proklinator-api-probing\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: checkout-session-abuse.yaml
       targetPath: 'config.scenarios.checkout-session-abuse\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: checkout-payload-rejected.yaml
       targetPath: 'config.scenarios.checkout-payload-rejected\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: http-error-burst.yaml
       targetPath: 'config.scenarios.http-error-burst\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: actuator-probing.yaml
       targetPath: 'config.scenarios.actuator-probing\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-scenarios
+      name: crowdsec-src-scenarios
       valuesKey: http-error-threshold.yaml
       targetPath: 'config.scenarios.http-error-threshold\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-appsec-rules
+      name: crowdsec-src-appsec-rules
       valuesKey: block-php.yaml
       targetPath: 'appsec.rules.block-php\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-appsec-rules
+      name: crowdsec-src-appsec-rules
       valuesKey: block-cms-admin.yaml
       targetPath: 'appsec.rules.block-cms-admin\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-appsec-rules
+      name: crowdsec-src-appsec-rules
       valuesKey: block-secret-files.yaml
       targetPath: 'appsec.rules.block-secret-files\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-appsec-rules
+      name: crowdsec-src-appsec-rules
       valuesKey: block-laravel-ignition.yaml
       targetPath: 'appsec.rules.block-laravel-ignition\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-appsec-configs
+      name: crowdsec-src-appsec-configs
       valuesKey: app-surface.yaml
       targetPath: 'appsec.configs.app-surface\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-appsec-configs
+      name: crowdsec-src-appsec-configs
       valuesKey: crs-observe.yaml
       targetPath: 'appsec.configs.crs-observe\.yaml'
       literal: true
