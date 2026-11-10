@@ -376,6 +376,43 @@ def services():
                      b.panels, ["homelab", "blackbox"])
 
 
+# --- Traffic ------------------------------------------------------------------------------
+
+REQ = 'traefik_client_requests_total{job="traefik-requests"}'
+ERR = 'traefik_client_requests_total{job="traefik-requests",status=~"[45].."}'
+
+
+def top_table(title, by, field, desc):
+    return table(title, [target(f"sort_desc(sum by ({by}) (increase({REQ}[$__range])))", "A",
+                                instant=True, fmt="table")],
+                 {by: field, "Value": "Requests"}, {by: 0, "Value": 1},
+                 [unit_cell("Requests", "short", 0)], desc,
+                 [{"displayName": "Requests", "desc": True}])
+
+
+def traffic():
+    rate = f"rate({REQ}[$__rate_interval])"
+    b = Board()
+    b.add(series("Requests by domain", [target(f"sum by (host) ({rate})", "A", "{{host}}")],
+                 "reqps", stack=True, fill=30,
+                 desc="Every request Traefik served, stacked by the Host header. A spike shows "
+                      "which domain it landed on."), 24, 10, newline=True)
+    b.add(series("Public and private", [target(f"sum by (entrypoint) ({rate})", "A",
+                                               "{{entrypoint}}")], "reqps"), 12, 8, 0)
+    b.add(series("Errors by domain", [target(f"sum by (host) (rate({ERR}[$__rate_interval]))",
+                                             "A", "{{host}}")], "reqps",
+                 desc="4xx and 5xx only. Scanners show up here as 403s and 404s."), 12, 8, 12,
+          newline=True)
+    b.add(top_table("Top domains", "host", "Domain", "Requests per domain over the time range."),
+          12, 10, 0)
+    b.add(top_table("Top clients", "client_ip", "Client",
+                    "Requests per source address over the time range. Public traffic arrives "
+                    "through the tunnel with the visitor's address."), 12, 10, 12, newline=True)
+    return dashboard("homelab-traffic", "Traffic",
+                     "Requests through Traefik by domain, entrypoint, status and client.",
+                     b.panels, ["homelab", "traefik"])
+
+
 def write(path, board):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(board, indent=2) + "\n")
@@ -384,5 +421,6 @@ def write(path, board):
 
 write(OUT / "dashboards/hosts.json", overview())
 write(OUT / "dashboards/services.json", services())
+write(OUT / "dashboards/traffic.json", traffic())
 write(OUT / "host-dashboards/host.json", host_board(proxmox=False))
 write(OUT / "host-dashboards/host-proxmox.json", host_board(proxmox=True))
