@@ -31,6 +31,26 @@ scrape_configs:
           host: {{ h }}
           kind: {{ 'proxmox' if h in groups['proxmox_host'] else 'lxc' if h in groups['lxc'] else 'vm' }}
 {% endfor %}
+
+  # Each target is handed to blackbox_exporter as ?target=, so the instance label keeps the
+  # probed address rather than the exporter's.
+  - job_name: probes
+    metrics_path: /probe
+    static_configs:
+{% for p in prometheus_probes %}
+      - targets: ["{{ p.target }}"]
+        labels:
+          service: {{ p.service }}
+          probe: {{ p.module }}
+          __param_module: {{ p.module }}
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__address__]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:{{ blackbox_exporter_port }}
 {% for job in prometheus_extra_scrape_jobs %}
 
   - job_name: {{ job.name }}

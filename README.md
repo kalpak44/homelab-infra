@@ -175,8 +175,10 @@ redis-lxc` upgrades to the newest upstream release on every run.
 certificate issued by certbot over DNS-01. The TSDB lives on a dedicated 20G volume at `/var/lib/prometheus`, capped at
 30 days or 15GB, whichever comes first. It scrapes itself and a loopback-bound `node_exporter`; add a target by
 appending to `prometheus_extra_scrape_jobs` in
-`ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. Both binaries come from upstream tarballs — Ubuntu
-noble's `prometheus` package is a 2.x that never moves — so bumping a version is editing that same file.
+`ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. A loopback-bound `blackbox_exporter` probes
+each entry in `prometheus_probes` in that file (HTTPS with certificate checks, DNS), and Grafana's **Service health**
+dashboard draws one timeline per service. All three binaries come from upstream tarballs — Ubuntu noble's `prometheus`
+package is a 2.x that never moves — so bumping a version is editing that same file.
 
 **Grafana** – `https://grafana.internal.pavel-usanli.online`, on 443 with a certbot certificate. The Prometheus
 datasource and the alert rules are provisioned from `ansible/proxmox/grafana-lxc/roles/grafana/`. Dashboards are built

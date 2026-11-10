@@ -1,6 +1,6 @@
 ---
 # --- Users and directories ------------------------------------------------
-# Both daemons run as their own unprivileged system user; neither needs a login
+# Every daemon runs as their own unprivileged system user; neither needs a login
 # shell or a home.
 
 - name: Create the prometheus system user
@@ -13,6 +13,13 @@
 - name: Create the node_exporter system user
   ansible.builtin.user:
     name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create the blackbox_exporter system user
+  ansible.builtin.user:
+    name: blackbox_exporter
     system: true
     shell: /usr/sbin/nologin
     create_home: false
@@ -107,6 +114,40 @@
 - name: Remove the unpacked node_exporter archive
   ansible.builtin.file:
     path: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64"
+    state: absent
+
+- name: Read the installed blackbox_exporter version
+  ansible.builtin.command:
+    cmd: /usr/local/bin/blackbox_exporter --version
+  register: blackbox_exporter_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and unpack blackbox_exporter
+  ansible.builtin.unarchive:
+    src: >-
+      https://github.com/prometheus/blackbox_exporter/releases/download/v{{ blackbox_exporter_version }}/blackbox_exporter-{{ blackbox_exporter_version }}.linux-amd64.tar.gz
+    dest: /opt
+    remote_src: true
+    owner: root
+    group: root
+  when: blackbox_exporter_version not in (blackbox_exporter_installed.stdout | default('')) + (blackbox_exporter_installed.stderr | default(''))
+  register: blackbox_exporter_unpacked
+
+- name: Install the blackbox_exporter binary
+  ansible.builtin.copy:
+    src: "/opt/blackbox_exporter-{{ blackbox_exporter_version }}.linux-amd64/blackbox_exporter"
+    dest: /usr/local/bin/blackbox_exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  when: blackbox_exporter_unpacked.changed
+  notify: Restart blackbox_exporter
+
+- name: Remove the unpacked blackbox_exporter archive
+  ansible.builtin.file:
+    path: "/opt/blackbox_exporter-{{ blackbox_exporter_version }}.linux-amd64"
     state: absent
 
 # --- TLS ------------------------------------------------------------------
@@ -229,12 +270,44 @@
     mode: "0644"
   notify: Restart node_exporter
 
+# Not under prometheus_config_dir: that is closed to every user but prometheus.
+- name: Create the blackbox_exporter config directory
+  ansible.builtin.file:
+    path: "{{ blackbox_exporter_config_dir }}"
+    state: directory
+    owner: root
+    group: blackbox_exporter
+    mode: "0750"
+
+- name: Deploy the blackbox_exporter configuration
+  ansible.builtin.copy:
+    src: blackbox.yml
+    dest: "{{ blackbox_exporter_config_dir }}/blackbox.yml"
+    owner: root
+    group: blackbox_exporter
+    mode: "0640"
+  notify: Restart blackbox_exporter
+
+- name: Deploy the blackbox_exporter systemd unit
+  ansible.builtin.template:
+    src: blackbox_exporter.service.j2
+    dest: /etc/systemd/system/blackbox_exporter.service
+    mode: "0644"
+  notify: Restart blackbox_exporter
+
 - name: Flush handlers to apply the configuration
   ansible.builtin.meta: flush_handlers
 
 - name: Ensure node_exporter is running
   ansible.builtin.systemd:
     name: node_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Ensure blackbox_exporter is running
+  ansible.builtin.systemd:
+    name: blackbox_exporter
     state: started
     enabled: true
     daemon_reload: true

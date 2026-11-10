@@ -313,6 +313,7 @@ These are version variables in role defaults. Bump the number, then apply that o
 | `adguard_version` | `ansible/proxmox/adguard-lxc/roles/adguard/defaults/main.yml` | `AdguardTeam/AdGuardHome` releases |
 | `prometheus_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` | `prometheus/prometheus` releases |
 | `node_exporter_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` and `ansible/maintenance/roles/node_exporter/defaults/main.yml` | `prometheus/node_exporter` releases |
+| `blackbox_exporter_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` | `prometheus/blackbox_exporter` releases |
 | `vault_version` | `ansible/proxmox/vault-lxc/roles/vault/defaults/main.yml` | the HashiCorp apt repo |
 | `grafana_version` | `ansible/proxmox/grafana-lxc/roles/grafana/defaults/main.yml` | the Grafana apt repo (`apt.grafana.com`) |
 | `k3s_version` | `ansible/proxmox/k3s-cluster/group_vars/k3s.yml` | `https://update.k3s.io/v1-release/channels` |

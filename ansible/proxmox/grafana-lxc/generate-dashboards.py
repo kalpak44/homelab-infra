@@ -329,6 +329,53 @@ def overview():
                              "asDropdown": True, "icon": "external link"}])
 
 
+# --- Service health ---------------------------------------------------------------------
+
+UP_DOWN = [{"type": "value", "options": {
+    "1": {"text": "UP", "color": "green", "index": 0},
+    "0": {"text": "DOWN", "color": "red", "index": 1}}}]
+
+
+def timeline(title, expr, legend, desc):
+    return {"type": "state-timeline", "title": title, "description": desc, "datasource": DS,
+            "targets": [target(expr, "A", legend)],
+            "fieldConfig": {"defaults": {"mappings": UP_DOWN, "color": {"mode": "thresholds"},
+                                         "thresholds": {"mode": "absolute", "steps": [
+                                             {"color": "red", "value": None},
+                                             {"color": "green", "value": 1}]},
+                                         "custom": {"fillOpacity": 80, "lineWidth": 0}},
+                            "overrides": []},
+            "options": {"showValue": "never", "mergeValues": True, "rowHeight": 0.8,
+                        "alignValue": "left", "legend": {"showLegend": False},
+                        "tooltip": {"mode": "single"}}}
+
+
+def services():
+    b = Board()
+    b.add(timeline("Services", "min by (service) (probe_success{job=\"probes\"})", "{{service}}",
+                   "One row per service, down while any of its checks fails."),
+          24, 8, newline=True)
+    b.add(timeline("Checks", "probe_success{job=\"probes\"}", "{{service}} {{probe}} {{instance}}",
+                   "Every check on its own row, to see which one took a service down."),
+          24, 8, newline=True)
+    cert = stat("Certificate expires in",
+                "min by (service, instance) ((probe_ssl_earliest_cert_expiry{job=\"probes\"} "
+                "- time()) / 86400)", "d", {"mode": "absolute", "steps": [
+                    {"color": "red", "value": None}, {"color": "orange", "value": 7},
+                    {"color": "green", "value": 14}]},
+                "Days until the earliest certificate in the chain expires. certbot renews at "
+                "30 days, so anything under that means renewal is failing.", decimals=0)
+    cert["targets"][0]["legendFormat"] = "{{instance}}"
+    cert["options"]["textMode"] = "value_and_name"
+    b.add(cert, 8, 8, 0)
+    b.add(series("Response time", [target("probe_duration_seconds{job=\"probes\"}", "A",
+                                          "{{service}} {{probe}}")], "s"), 16, 8, 8,
+          newline=True)
+    return dashboard("homelab-services", "Service health",
+                     "Whether each service answers, probed from Prometheus by blackbox_exporter.",
+                     b.panels, ["homelab", "blackbox"])
+
+
 def write(path, board):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(board, indent=2) + "\n")
@@ -336,5 +383,6 @@ def write(path, board):
 
 
 write(OUT / "dashboards/hosts.json", overview())
+write(OUT / "dashboards/services.json", services())
 write(OUT / "host-dashboards/host.json", host_board(proxmox=False))
 write(OUT / "host-dashboards/host-proxmox.json", host_board(proxmox=True))

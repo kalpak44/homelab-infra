@@ -1,10 +1,13 @@
 ---
 prometheus_version: "3.16.0"
 node_exporter_version: "1.12.1"
+blackbox_exporter_version: "0.29.1"
 
 prometheus_port: 9090
 node_exporter_port: 9100
+blackbox_exporter_port: 9115
 prometheus_config_dir: /etc/prometheus
+blackbox_exporter_config_dir: /etc/blackbox_exporter
 # Matches data_disk_path in terraform/proxmox/prometheus-lxc/main.tf — the TSDB
 # is the only thing on that volume.
 prometheus_data_dir: /var/lib/prometheus
@@ -41,3 +44,14 @@ prometheus_extra_scrape_jobs:
 # terraform/cloudflare/dns/private/ or its target fails to resolve.
 node_exporter_scrape_domain: internal.pavel-usanli.online
 node_exporter_scrape_hosts: "{{ (groups['proxmox_host'] + groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"
+
+# Probed through blackbox_exporter as the `probes` job. Entries sharing a service form one
+# timeline on the Service health dashboard, down when any of them fails. An https target
+# also fails on an expired or untrusted certificate.
+prometheus_probes:
+  - service: adguard
+    module: http_2xx
+    target: https://adguard.internal.pavel-usanli.online
+  - service: adguard
+    module: dns_udp
+    target: adguard.internal.pavel-usanli.online:53
