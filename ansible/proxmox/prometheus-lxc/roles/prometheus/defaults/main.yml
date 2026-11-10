@@ -55,3 +55,6 @@ prometheus_probes:
   - service: adguard
     module: dns_udp
     target: adguard.internal.pavel-usanli.online:53
+  - service: traefik
+    module: http_2xx
+    target: https://traefik.internal.pavel-usanli.online/
