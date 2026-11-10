@@ -58,3 +58,16 @@ prometheus_probes:
   - service: traefik
     module: http_2xx
     target: https://traefik.internal.pavel-usanli.online/
+  - service: portainer
+    module: http_2xx
+    target: https://portainer.internal.pavel-usanli.online/api/system/status
+  # 200 only while initialised, unsealed and active: a sealed Vault answers 503.
+  - service: vault
+    module: http_2xx
+    target: https://vault.internal.pavel-usanli.online:8200/v1/sys/health
+  - service: pgadmin
+    module: http_2xx
+    target: https://pgadmin.internal.pavel-usanli.online/pgadmin4/misc/ping
+  - service: postgres
+    module: tcp_connect
+    target: postgres.internal.pavel-usanli.online:5432

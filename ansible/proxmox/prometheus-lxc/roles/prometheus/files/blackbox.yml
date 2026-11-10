@@ -20,3 +20,12 @@ modules:
       valid_rcodes: [NOERROR]
       validate_answer_rrs:
         fail_if_none_matches_regexp: ['.*\tIN\tA\t.*']
+
+  # Connect and hang up without a byte, which PostgreSQL does not log. Anything sent
+  # draws a FATAL line on every probe: blackbox appends a newline to each send, and
+  # Postgres reads it as a malformed message.
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4
