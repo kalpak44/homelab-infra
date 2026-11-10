@@ -120,7 +120,7 @@ delete any `preupgrade-*` older than a day whose upgrade clearly completed — b
 delete one belonging to a guest you are about to touch:
 
 ```
-ssh_host 192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211; do pct listsnapshot \$i; done"
+ssh_host 192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211 212; do pct listsnapshot \$i; done"
 ssh_host 192.168.1.50 "for i in 110 111 301 302; do qm listsnapshot \$i; done"
 ```
 
@@ -148,6 +148,7 @@ one the **proxy** is serving, on the port it actually listens on:
 | `portainer.internal.pavel-usanli.online` | 443 |
 | `vault.internal.pavel-usanli.online` | 8200 |
 | `prometheus.internal.pavel-usanli.online` | 9090 |
+| `grafana.internal.pavel-usanli.online` | 443 |
 | `proxmox.internal.pavel-usanli.online` | 8006 |
 
 The two Postgres hostnames share one SAN certificate and the pgAdmin
@@ -218,7 +219,7 @@ Two kinds of pin live under `gitops/clusters/homelab/`, and they move differentl
 |---|---|
 | `infrastructure/crowdsec` | `0.24.x` |
 | `infrastructure/metallb` | `0.16.*` |
-| `infrastructure/external-secrets` | `2.14.x` |
+| `infrastructure/external-secrets` | `2.15.x` |
 | `infrastructure/nfs-provisioner` | `4.*` |
 | `infrastructure/trivy-operator` | `0.38.x` |
 | `infrastructure/request-metrics` | `0.61.x` |
@@ -388,7 +389,7 @@ no majors this run: report that and move on.
 | redis | 204 | | k3s-2 | 111 |
 | rabbitmq | 205 | | nfs | 301 |
 | nocobase | 207 | | portainer | 302 |
-| mihal | 208 | | | |
+| mihal | 208 | | grafana | 212 |
 
 `pct` for the LXCs, `qm` for the VMs:
 
@@ -464,6 +465,11 @@ prove the repaired boot before treating the host as healthy.
 Vault can still be `activating` when the immediate post-reboot health check runs because it
 is unsealing. Inspect its status and health before treating that as a failure, and do not
 resume or re-run the sweep just to test the host.
+
+Vault's LXC runs with 256 MiB and no swap, so a dist-upgrade can be OOM-killed with exit
+137 while Vault itself stays healthy, leaving a partial package transaction. Stop the
+sweep, then check `dpkg --audit` and `apt-get check`; do not retry the host. Resizing the
+guest is a Terraform change, not an OS fix.
 
 `k3s-agent` and `k3s` can be `activating` just after the node returns; the server's SSH
 and API can also stay unavailable for several minutes while containerd and pods settle.
