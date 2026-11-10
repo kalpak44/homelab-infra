@@ -71,3 +71,8 @@ prometheus_probes:
   - service: postgres
     module: tcp_connect
     target: postgres.internal.pavel-usanli.online:5432
+  # Out through Cloudflare and back in over the tunnel, so it covers the whole public path.
+  # The certificate checked is Cloudflare's edge certificate, not the origin's.
+  - service: personal-web-page
+    module: http_2xx
+    target: https://www.pavel-usanli.online/
