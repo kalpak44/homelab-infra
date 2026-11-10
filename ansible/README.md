@@ -19,7 +19,7 @@ ansible/
     ├── postgres-lxc/
     │   ├── playbook.yml           # runs both roles
     │   └── roles/{postgresql,pgadmin}/
-    ├── redis-lxc/, rabbitmq-lxc/, nfs-vm/, portainer-vm/
+    ├── redis-lxc/, nfs-vm/, portainer-vm/
     └── k3s-cluster/
         ├── cluster-setup.yml      # 3-phase k3s bootstrap
         ├── flux-install.yml       # Flux CD bootstrap on the k3s cluster
@@ -61,5 +61,4 @@ list works for every service:
 | `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_DB`            | postgres-lxc (postgresql role)                                         |
 | `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`                                  | postgres-lxc (pgadmin role)                                            |
 | `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | redis-lxc                                                              |
-| `RABBITMQ_USER`, `RABBITMQ_PASSWORD`                                 | rabbitmq-lxc                                                           |
 | `FLUX_GITHUB_TOKEN`                                                  | k3s-cluster/flux                                                       |

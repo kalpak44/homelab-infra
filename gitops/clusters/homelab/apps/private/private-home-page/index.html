@@ -222,27 +222,6 @@
             </div>
         </div>
 
-        <!-- RabbitMQ -->
-        <div class="relative overflow-hidden group rounded-2xl border border-slate-800 bg-card/80 hover:border-accent/70 hover:bg-card-soft/90 transition p-5 shadow-md">
-            <div class="space-y-4 transition duration-200 group-hover:blur-sm group-hover:opacity-40 pointer-events-none select-none">
-                <div class="flex items-start gap-3">
-                    <div class="h-12 w-12 rounded-xl bg-slate-900/80 border border-slate-700 flex justify-center items-center text-2xl">🐰</div>
-                    <div>
-                        <h3 class="font-semibold">RabbitMQ</h3>
-                        <p class="text-xs text-slate-400">Message broker</p>
-                    </div>
-                </div>
-                <p class="text-xs text-slate-400">Manage queues, exchanges, and message routing.</p>
-                <div class="text-[11px] text-slate-400">rabbitmq.internal.pavel-usanli.online</div>
-            </div>
-            <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition duration-200">
-                <a href="https://rabbitmq.internal.pavel-usanli.online/" target="_blank"
-                   class="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-medium transition">Open ↗</a>
-                <button onclick="showModal('rabbitmq')"
-                        class="px-5 py-2 rounded-xl border border-slate-600 hover:border-sky-500 text-slate-300 hover:text-sky-400 text-sm transition">Connect ℹ</button>
-            </div>
-        </div>
-
         <!-- Prometheus -->
         <div class="relative overflow-hidden group rounded-2xl border border-slate-800 bg-card/80 hover:border-accent/70 hover:bg-card-soft/90 transition p-5 shadow-md">
             <div class="space-y-4 transition duration-200 group-hover:blur-sm group-hover:opacity-40 pointer-events-none select-none">
@@ -328,35 +307,6 @@
             <div class="space-y-2">
                 <p class="text-slate-500 uppercase tracking-wider text-[10px]">Connection URL</p>
                 <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto">redis://:&lt;password&gt;@redis.internal.pavel-usanli.online:6379</pre>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div id="modal-rabbitmq" class="modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center" style="display:none">
-    <div class="bg-[#0f172a] border border-slate-700 rounded-2xl p-6 max-w-lg w-full mx-4 space-y-4 shadow-2xl">
-        <div class="flex justify-between items-center">
-            <div class="flex items-center gap-2">
-                <span class="text-xl">🐰</span>
-                <h3 class="text-base font-semibold">RabbitMQ - Connection</h3>
-            </div>
-            <button onclick="closeModal('rabbitmq')" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
-        </div>
-        <div class="space-y-3 text-xs">
-            <div class="grid grid-cols-[80px_1fr] gap-y-1 text-slate-300">
-                <span class="text-slate-500">Host</span><span class="font-mono">rabbitmq.internal.pavel-usanli.online</span>
-                <span class="text-slate-500">AMQP</span><span class="font-mono">5672</span>
-                <span class="text-slate-500">Mgmt UI</span><span class="font-mono">https :443 (nginx)</span>
-            </div>
-            <div class="space-y-2">
-                <p class="text-slate-500 uppercase tracking-wider text-[10px]">AMQP URL</p>
-                <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto">amqp://&lt;user&gt;:&lt;pass&gt;@rabbitmq.internal.pavel-usanli.online:5672/</pre>
-            </div>
-            <div class="space-y-2">
-                <p class="text-slate-500 uppercase tracking-wider text-[10px]">rabbitmqadmin CLI</p>
-                <pre class="bg-black/50 rounded-lg px-4 py-3 font-mono text-slate-200 overflow-x-auto">rabbitmqadmin --host=rabbitmq.internal.pavel-usanli.online \
-              --username=&lt;user&gt; --password=&lt;pass&gt; \
-              list queues</pre>
             </div>
         </div>
     </div>

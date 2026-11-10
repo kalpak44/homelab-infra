@@ -97,7 +97,6 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`            | Postgres bootstrap creds                                                                                     |
 | `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`                                  | pgAdmin admin creds                                                                                          |
 | `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | Redis + Commander UI creds                                                                                   |
-| `RABBITMQ_USER`, `RABBITMQ_PASSWORD`                                 | RabbitMQ admin creds                                                                                         |
 | `FLUX_GITHUB_TOKEN`                                                  | GitHub PAT with `repo` scope – Flux CD bootstrap                                                             |
 | `CLOUDFLARE_TUNNEL_TOKEN`                                            | Token from `terraform output -raw tunnel_token` after deploying `cloudflare/shared/zero-trust`               |
 | `GH_ADMIN_TOKEN`                                                     | PAT used by the `github/` Terraform layer – see [Managed GitHub repos](#managed-github-repos)                |
@@ -140,7 +139,6 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | PostgreSQL + pgAdmin       | LXC        | 192.168.1.4   | `proxmox/postgres-lxc`                 | `proxmox/postgres-lxc`                      |
 | Redis + Commander          | LXC        | 192.168.1.6   | `proxmox/redis-lxc`                    | `proxmox/redis-lxc`                         |
 | Portainer                  | VM         | 192.168.1.7   | `proxmox/portainer-vm`                 | `proxmox/portainer-vm`                      |
-| RabbitMQ                   | LXC        | 192.168.1.8   | `proxmox/rabbitmq-lxc`                 | `proxmox/rabbitmq-lxc`                      |
 | NocoBase                   | LXC        | 192.168.1.5   | `proxmox/nocobase-lxc`                 | -                                           |
 | Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
 | Prometheus                 | LXC        | 192.168.1.11  | `proxmox/prometheus-lxc`               | `proxmox/prometheus-lxc`                    |
@@ -172,8 +170,6 @@ with password auth (scram-sha-256).
 **Redis** – Redis on `192.168.1.6:6379`, Commander UI at `http://redis.internal.pavel-usanli.online:8081`.
 Installed from `packages.redis.io`, not Ubuntu universe, which never moves off 7.0.15; `just configure
 redis-lxc` upgrades to the newest upstream release on every run.
-
-**RabbitMQ** – AMQP on `192.168.1.8:5672`. Management UI at `https://rabbitmq.internal.pavel-usanli.online`.
 
 **Prometheus** – UI and API at `https://prometheus.internal.pavel-usanli.online:9090`, served with a Let's Encrypt
 certificate issued by certbot over DNS-01. The TSDB lives on a dedicated 20G volume at `/var/lib/prometheus`, capped at

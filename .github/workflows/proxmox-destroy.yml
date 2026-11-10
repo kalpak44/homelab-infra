@@ -12,7 +12,6 @@ on:
           - vault-lxc
           - postgres-lxc
           - redis-lxc
-          - rabbitmq-lxc
           - cloudflared-lxc
           - nocobase-lxc
           - mihal-lxc

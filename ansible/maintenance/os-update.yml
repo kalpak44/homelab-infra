@@ -11,7 +11,7 @@
 # Narrow a run with `--limit`; never reorder these plays to make one host go first.
 
 - name: Patch application hosts
-  hosts: portainer:prometheus:grafana:mihal:nocobase:rabbitmq:redis:postgres:vault
+  hosts: portainer:prometheus:grafana:mihal:nocobase:redis:postgres:vault
   serial: 1
   become: true
   gather_facts: false
@@ -56,7 +56,6 @@
       grafana: [grafana-server, node_exporter]
       mihal: [cloudflared]
       nocobase: [nginx]
-      rabbitmq: [rabbitmq-server, nginx]
       redis: [redis-server, redis-commander]
       postgres: [postgresql@18-main, apache2]
       vault: [vault]

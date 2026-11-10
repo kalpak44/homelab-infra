@@ -85,8 +85,6 @@ jobs:
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
       REDIS_COMMANDER_USER: ${{ secrets.REDIS_COMMANDER_USER }}
       REDIS_COMMANDER_PASSWORD: ${{ secrets.REDIS_COMMANDER_PASSWORD }}
-      RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
-      RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
       FLUX_GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
 
       REPO: ${{ github.repository }}

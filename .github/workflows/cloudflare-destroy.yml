@@ -20,7 +20,6 @@ on:
           - dns/private/workspaced-ai
           - dns/private/prometheus
           - dns/private/proxmox
-          - dns/private/rabbitmq
           - dns/private/redis
           - dns/private/traefik
           - dns/private/vault

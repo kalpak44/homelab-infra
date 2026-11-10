@@ -44,7 +44,7 @@ updates** — pods, reconciliation, failed units, disk headroom on the shared th
 snapshots a previous run left behind — because a fault inherited at the start gets blamed
 on the bump and reverting does not clear it. It **keeps TLS valid**: certbot renewal is
 tested with `--dry-run` rather than trusted, since `certbot.timer` reports success whether
-or not the renewal worked — `rabbitmq.internal` was found expired for two months behind a
+or not the renewal worked — one host's certificate was found expired for two months behind a
 healthy timer, because a rotated Cloudflare token had been left stale in
 `/etc/letsencrypt/cloudflare.ini`. And it **maintains its own prompt**, which is the one
 file under `.github/` it may edit: every table in it is a snapshot of a homelab that
@@ -103,16 +103,16 @@ flags which error):
 | `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`                                                                                                                                                                                                                                  |
 | `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`, `TF_VAR_host_password`                                                                                                                                                       |
 | `github-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `GH_ADMIN_TOKEN`, `GH_OWNER`, `DEEPSEEK_APIKEY`, `SONAR_TOKEN`, `ANDROID_KEYSTORE_BASE64` (secret names can't start with `GITHUB_`)                                                                                           |
-| `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `RABBITMQ_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
+| `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns
 
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
-- `cloudflare-*.yml`: 19 entries (16 private DNS + 3 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
-- `proxmox-*.yml`: 10 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `rabbitmq-lxc`,
-  `cloudflared-lxc`, `nocobase-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
-- `ansible-configure.yml`: 12 entries (the 10 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml`, and `node-exporter`, which maps to `maintenance/node-exporter.yml` in
+- `cloudflare-*.yml`: 18 entries (15 private DNS + 3 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
+- `proxmox-*.yml`: 12 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `cloudflared-lxc`,
+  `nocobase-lxc`, `mihal-lxc`, `prometheus-lxc`, `grafana-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
+- `ansible-configure.yml`: 14 entries (the 12 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml`, and `node-exporter`, which maps to `maintenance/node-exporter.yml` in
   the Justfile).
 - `github-*.yml`: one entry per dir under `terraform/github/` (see `github-repos.md`).
 

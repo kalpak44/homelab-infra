@@ -120,7 +120,7 @@ delete any `preupgrade-*` older than a day whose upgrade clearly completed — b
 delete one belonging to a guest you are about to touch:
 
 ```
-ssh_host 192.168.1.50 "for i in 200 201 202 204 205 207 208 210 211 212; do pct listsnapshot \$i; done"
+ssh_host 192.168.1.50 "for i in 200 201 202 204 207 208 210 211 212; do pct listsnapshot \$i; done"
 ssh_host 192.168.1.50 "for i in 110 111 301 302; do qm listsnapshot \$i; done"
 ```
 
@@ -144,7 +144,6 @@ one the **proxy** is serving, on the port it actually listens on:
 |---|---|
 | `adguard.internal.pavel-usanli.online` | 443 |
 | `postgres.internal.pavel-usanli.online` and `pgadmin.internal.pavel-usanli.online` | 443 |
-| `rabbitmq.internal.pavel-usanli.online` | 443 |
 | `portainer.internal.pavel-usanli.online` | 443 |
 | `vault.internal.pavel-usanli.online` | 8200 |
 | `prometheus.internal.pavel-usanli.online` | 9090 |
@@ -351,7 +350,7 @@ an apt upgrade; without that the package moves while the old process keeps runni
 database rather than a playbook re-run. It is in scope; section 7 is how.
 
 Everything else on these hosts updates by running its playbook, because the role already
-asks for the newest: postgres and pgAdmin, redis and redis-commander, rabbitmq,
+asks for the newest: postgres and pgAdmin, redis and redis-commander,
 cloudflared on both tunnel hosts, node_exporter on every host, and portainer's
 `portainer-ce:latest`. Re-running is how they move, so run them even when no pin changed.
 
@@ -387,9 +386,9 @@ no majors this run: report that and move on.
 | vault | 201 | | prometheus | 211 |
 | postgres | 202 | | k3s-1 | 110 |
 | redis | 204 | | k3s-2 | 111 |
-| rabbitmq | 205 | | nfs | 301 |
-| nocobase | 207 | | portainer | 302 |
-| mihal | 208 | | grafana | 212 |
+| nocobase | 207 | | nfs | 301 |
+| mihal | 208 | | portainer | 302 |
+| | | | grafana | 212 |
 
 `pct` for the LXCs, `qm` for the VMs:
 

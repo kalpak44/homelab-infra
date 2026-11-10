@@ -5,7 +5,7 @@
 #
 # This exists because `certbot certonly` is guarded on the certificate file existing, so
 # once a certificate is present no role task ever touches it again. A rotated Cloudflare
-# token left `rabbitmq.internal` expired for two months behind a daily timer that kept
+# token left one host's certificate expired for two months behind a daily timer that kept
 # reporting success; re-running the playbook rewrote the credentials and still renewed
 # nothing. Repairing that has to be a task here, or the repo cannot fix its own hosts.
 #

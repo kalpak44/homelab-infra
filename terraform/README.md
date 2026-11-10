@@ -22,7 +22,6 @@ terraform/
 │   ├── vault-lxc/
 │   ├── postgres-lxc/
 │   ├── redis-lxc/
-│   ├── rabbitmq-lxc/
 │   ├── cloudflared-lxc/     # Cloudflare Tunnel connector (LXC 210)
 │   ├── nfs-vm/
 │   ├── portainer-vm/

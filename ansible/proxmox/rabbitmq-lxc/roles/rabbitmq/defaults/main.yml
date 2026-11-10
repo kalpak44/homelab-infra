@@ -1,4 +1,0 @@
-rabbitmq_user: "admin"
-rabbitmq_password: ""
-rabbitmq_vhost: "/"
-rabbitmq_domain: "rabbitmq.internal.pavel-usanli.online"
