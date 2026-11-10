@@ -185,11 +185,13 @@
           - gh
           - qemu-guest-agent
           # .github/workflows/ai-security-agent.yml reads the cluster with kubectl, runs
-          # the Codex CLI on node, and reaches the k3s server through sshpass. That
-          # workflow reinstalls any that are missing, so an older runner still works.
+          # the Codex CLI on node, reaches the k3s server through sshpass, and validates
+          # CrowdSec files with python3-yaml. That workflow reinstalls any that are
+          # missing, so an older runner still works.
           - kubectl
           - nodejs
           - sshpass
+          - python3-yaml
         state: present
         update_cache: true
 

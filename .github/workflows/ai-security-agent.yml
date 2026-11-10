@@ -110,7 +110,7 @@ jobs:
       - name: Ensure runner tooling
         # The runner is long-lived, so this both installs what a fresh one lacks and moves
         # what an old one has already drifted on. ansible/bootstrap/03-runner-vm.yml
-        # installs the same three; this is what keeps them current between bootstraps.
+        # installs the same packages; this is what keeps them current between bootstraps.
         run: |
           set -euo pipefail
 
@@ -136,7 +136,7 @@ jobs:
           fi
 
           sudo_apt update -qq
-          sudo_apt install -y kubectl nodejs sshpass
+          sudo_apt install -y kubectl nodejs sshpass python3-yaml
 
           # Pinned, and --ignore-scripts because the package declares none: an unpinned
           # global install takes whatever the registry served that night.

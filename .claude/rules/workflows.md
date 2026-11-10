@@ -34,6 +34,16 @@ because each zone allows one WAF ruleset and a second one would delete the first
 list is a ConfigMap mount, which a running pod does not reload, so the `blocked-ips-sha256` pod annotation in
 `helmrelease.yaml` has to move with it or the DaemonSet silently keeps the old list.
 
+**Every CrowdSec scenario, parser, profile and AppSec rule is its own file**, under `scenarios/`, `parsers/`,
+`config/`, `appsec-rules/` and `appsec-configs/` beside the HelmRelease. Flux hands each one to the chart through a
+`valuesFrom` entry with `literal: true` and an escaped `targetPath`, so a file must be listed in both
+`kustomization.yaml` and `valuesFrom`, and missing either fails nowhere — `check.py` in that directory is what catches
+it. The generated ConfigMaps are named `crowdsec-src-*` because the chart renders its own under the unprefixed names:
+the first version reused those, and when they were renamed Flux pruned the chart's copies despite a live
+`prune: disabled` annotation, which left new pods unable to start until a forced Helm upgrade recreated them.
+`profiles.yaml` stays one file because CrowdSec reads a single profiles file in order, and `valuesFrom` can replace a
+value but not concatenate several.
+
 `ai-update-agent.yml` is the other. It runs at 06:00 UTC and keeps third-party software current across all three
 layers: the chart and image pins in `gitops/`, the version variables in the Ansible role defaults, and the OS packages
 on every LXC and VM. Its policy is `.github/agent-prompts/ai-update-agent.md`, and it reads the cluster through the

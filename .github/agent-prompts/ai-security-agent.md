@@ -205,17 +205,12 @@ Then work out which of these fits, in this order. Prefer a rule over a ban: a ru
 the next source too, a ban catches one.
 
 **An existing scenario should have caught it but did not.** Tune that scenario's threshold
-or filter in its file under `scenarios/`. Say in the report what the old and new values are.
+or filter in place — recipe A below. Say in the report what the old and new values are.
 
-**Nothing covers the pattern.** Add a new scenario file under `scenarios/`, following the
-shape of the ones already there: a `leaky` bucket keyed on `evt.Meta.source_ip`, with a
-filter narrow enough that legitimate traffic cannot reach it, and a matching entry in
-`config/profiles.yaml` naming it. A scenario with no profile creates no decision, so adding
-one without the other does nothing at all.
+**Nothing covers the pattern.** Add a scenario — recipe B below.
 
-**The pattern is a request shape that should never be served at all.** Add an AppSec rule
-file under `appsec-rules/` and list it in `appsec-configs/app-surface.yaml`'s inband rules —
-that blocks the request itself rather than waiting for a bucket to fill.
+**The pattern is a request shape that should never be served at all.** Add an AppSec rule —
+recipe C below. That blocks the request itself rather than waiting for a bucket to fill.
 
 **The source is unambiguously hostile and the pattern is not generalisable.** Ban it. See
 below.
@@ -223,6 +218,84 @@ below.
 **Nothing happened.** This is the normal outcome on a quiet night. Commit nothing and say
 so. Do not invent work to look useful; a run that changes nothing and explains the traffic
 it saw is a successful run.
+
+### How the CrowdSec rules are laid out
+
+Every rule is its own plain YAML file under
+`gitops/clusters/homelab/infrastructure/crowdsec/`, one file per scenario, parser or AppSec
+rule. Paths below are relative to that directory.
+
+| Directory | Holds | Chart value it becomes |
+|---|---|---|
+| `scenarios/` | one log-fed scenario per file | `config.scenarios.<file>` |
+| `appsec-rules/` | one AppSec rule per file | `appsec.rules.<file>` |
+| `appsec-configs/` | which AppSec rules run, and how | `appsec.configs.<file>` |
+| `parsers/` | `s02-enrich` whitelists | `config.parsers.s02-enrich.<file>` |
+| `config/profiles.yaml` | every profile, in evaluation order | `config.profiles.yaml` |
+| `config/config.yaml.local` | LAPI and database settings | `config.config.yaml.local` |
+
+A file reaches the chart only when it is registered in **two** places. Miss either one and
+nothing fails: kustomize builds, Flux reports success, and the rule is never loaded.
+
+1. **`kustomization.yaml`**: listed under the `configMapGenerator` entry for its directory
+   (`crowdsec-src-scenarios`, `crowdsec-src-appsec-rules`, and so on).
+2. **`helmrelease.yaml`**: one `valuesFrom` entry naming that ConfigMap and the file:
+
+   ```yaml
+   - kind: ConfigMap
+     name: crowdsec-src-scenarios
+     valuesKey: <file>.yaml
+     targetPath: 'config.scenarios.<file>\.yaml'
+     literal: true
+   ```
+
+   Copy a neighbouring entry and change only the file name in `valuesKey` and `targetPath`.
+   Keep the single quotes, the `\.` before the extension, and `literal: true`. Without the
+   escape, Helm reads the dot as a nested key, and without `literal` it parses the file's
+   commas and brackets as `--set` syntax.
+
+**Keep the `src-` prefix on every ConfigMap name.** The chart renders its own ConfigMaps
+from these values under the unprefixed names (`crowdsec-scenarios`, `crowdsec-appsec-rules`
+and so on). A generator using one of those names makes Flux and Helm fight over one object,
+and pruning it deletes the chart's copy, so the next pod fails to start.
+
+**`config/profiles.yaml` stays one file, and its order is the logic.** Profiles are
+evaluated top to bottom, and each ends on `on_success: break`, so the first one that matches
+decides the ban. Put a new profile above any broader profile that would match the same
+alert first. `manual_blocklist_ban` stays first.
+
+Write the reason for a rule as a `#` comment at the top of its file: what it catches, and
+why legitimate traffic cannot reach it. Never add an address to any of these files —
+addresses go in `blocked-ips.txt` (section 7).
+
+**Recipe A — tune an existing scenario.** Edit its file under `scenarios/`. Nothing else
+changes. Its name must stay the same, because `config/profiles.yaml` matches on it.
+
+**Recipe B — add a scenario.** Four edits, all in one commit:
+
+1. `scenarios/<name>.yaml`: a `leaky` bucket shaped like its neighbours, keyed on
+   `evt.Meta.source_ip`, with `name: custom/<name>`, a filter narrow enough that
+   legitimate traffic cannot reach it, and `labels.remediation: true`.
+2. `config/profiles.yaml`: add `"custom/<name>"` to an existing profile's scenario list
+   when the ban duration fits, or add a profile of its own in the right position. A
+   scenario no profile names raises alerts and never a decision.
+3. `kustomization.yaml`: list `scenarios/<name>.yaml` under `crowdsec-src-scenarios`.
+4. `helmrelease.yaml`: add its `valuesFrom` entry.
+
+**Recipe C — add an AppSec rule.** Four edits, all in one commit:
+
+1. `appsec-rules/block-<name>.yaml`: shaped like its neighbours, with
+   `name: custom/block-<name>`. The `custom/block-` prefix is what `custom_appsec_ban` in
+   `config/profiles.yaml` matches, so no profile edit is needed.
+2. `appsec-configs/app-surface.yaml`: add `custom/block-<name>` to `inband_rules`. A rule
+   no config lists is loaded and never evaluated.
+3. `kustomization.yaml`: list the file under `crowdsec-src-appsec-rules`.
+4. `helmrelease.yaml`: add its `valuesFrom` entry, with targetPath
+   `'appsec.rules.block-<name>\.yaml'`.
+
+A scenario change rolls the agent DaemonSet, an AppSec change rolls the appsec Deployment,
+and a profile change rolls the LAPI. Flux applies each within a minute of the push, because
+every `crowdsec-src-*` ConfigMap carries the `reconcile.fluxcd.io/watch` label.
 
 ## 7. Where a ban is written
 
@@ -321,22 +394,28 @@ terraform -chdir=/tmp/tf-validate init -backend=false -input=false
 terraform -chdir=/tmp/tf-validate validate
 ```
 
-**A new CrowdSec file needs two registrations, or it never loads.** Every file under
-`config/`, `parsers/`, `scenarios/`, `appsec-rules/` and `appsec-configs/` is listed in the
-directory's `kustomization.yaml` (its ConfigMap) and in `helmrelease.yaml`'s `valuesFrom`
-(where the chart receives it). Copy an existing entry in both. Kustomize does not parse
-the files' contents, so parse each one you edited with a YAML parser before committing.
-
-If you touched either list, prove both halves of it:
+Then run the CrowdSec check. It must print `ok` before you commit anything under
+`infrastructure/crowdsec/`:
 
 ```
-sha256sum gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt
-grep blocked-ips-sha256 gitops/clusters/homelab/infrastructure/crowdsec/helmrelease.yaml
+python3 gitops/clusters/homelab/infrastructure/crowdsec/check.py
 ```
 
-The two must match. Every non-comment line in either file must be a bare address with
-nothing else on it — a trailing comment there is read as part of the address, and in the
-Terraform list that produces an expression Cloudflare rejects.
+Kustomize passing proves none of this, and the check exists for that reason. It fails on:
+
+- a file not registered in both `kustomization.yaml` and `valuesFrom`, or registered and
+  missing
+- a `valuesFrom` entry without the escaped `targetPath` or `literal: true`
+- a file that does not parse as YAML
+- a scenario no profile names, or an AppSec rule no config lists
+- a `blocked-ips-sha256` annotation that does not match `blocked-ips.txt`
+- a line in `blocked-ips.txt` that is not a bare address
+
+Fix what it names and run it again. Never edit `check.py` to make it pass: a failure there
+is a rule that would silently never load. The Cloudflare list has no such check, so read
+it yourself. Every non-comment line must be a bare address with nothing else on it,
+because a trailing comment is read as part of the address, and Terraform then produces an
+expression Cloudflare rejects.
 
 Check `git diff` and confirm it touches only the files you meant to. If the diff reaches
 anything under `gitops/clusters/homelab/apps/`, `ansible/`, or any Terraform directory
@@ -487,9 +566,12 @@ fenced block rather than a table.
   the worst ones and reporting the rest as unactioned.
 - Never remove an existing scenario, profile, AppSec rule or allowlist entry. You add and
   you tune; retiring a defense is a human decision.
-- Never widen `trusted_ips`, the Cloudflare whitelist parser, or any `skip` rule.
-- Never put an address into `helmrelease.yaml` or `waf-blocked-ips.tf`. The two
-  `blocked-ips.txt` files are the only place a ban is written.
+- Never widen `trusted_ips`, `parsers/cloudflare-whitelist.yaml`,
+  `parsers/trusted-clients.yaml`, or any `skip` rule.
+- Never put an address into a scenario, parser, profile, AppSec file, `helmrelease.yaml` or
+  `waf-blocked-ips.tf`. The two `blocked-ips.txt` files are the only place a ban is written.
+- Never rename or reorder the existing `valuesFrom` entries or `crowdsec-src-*` ConfigMaps.
+  Add yours beside them.
 - Never edit anything outside `gitops/clusters/homelab/infrastructure/crowdsec/` and
   `terraform/cloudflare/shared/zero-trust/`. Applications, Ansible, and every other
   Terraform directory are out of scope even when the evidence points at them — report it
