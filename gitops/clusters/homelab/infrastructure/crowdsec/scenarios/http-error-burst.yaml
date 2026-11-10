@@ -1,0 +1,14 @@
+type: leaky
+name: custom/http-error-burst
+description: "Block IP after 20 4xx/5xx HTTP responses within 10 seconds (automated/brute-force detection)"
+# 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
+# and counting them bans a visitor who merely followed a redirect and missed a favicon.
+filter: "evt.Meta.service == 'http' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
+groupby: evt.Meta.source_ip
+capacity: 20
+leakspeed: "500ms"
+blackhole: 24h
+labels:
+  service: http
+  type: http-error-burst
+  remediation: true

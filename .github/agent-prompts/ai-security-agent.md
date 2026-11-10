@@ -169,9 +169,10 @@ service off the air, and the symptom is indistinguishable from a DNS or certific
   and the cluster itself.
 - Cloudflare's published ranges. They are the tunnel's own hops; the
   `crowdsecurity/cloudflare-whitelist` parser in
-  `gitops/clusters/homelab/infrastructure/crowdsec/helmrelease.yaml` lists every one of
-  them, and anything in that list is infrastructure, never a client.
-- Any address already in the `trusted_ips` allowlist in that same file's LAPI `postStart`.
+  `gitops/clusters/homelab/infrastructure/crowdsec/parsers/cloudflare-whitelist.yaml` lists
+  every one of them, and anything in that list is infrastructure, never a client.
+- Any address already in the `trusted_ips` allowlist in the LAPI `postStart` of that
+  directory's `helmrelease.yaml`, or in `parsers/trusted-clients.yaml`.
 - Verified search-engine crawlers, where the address reverse-resolves to the operator's
   own domain and resolves forward again. A User-Agent claiming to be Googlebot proves
   nothing on its own.
@@ -193,7 +194,7 @@ make the list harder to read. Two checks, both from evidence you already gathere
   earlier ban expired, or the automatic ban is far shorter than what you are seeing
   warrants. Say in the report that you saw it and why you left it.
 - **The pattern already matches a loaded scenario or AppSec rule.** Read
-  `cscli scenarios list` and the `appsec.rules` in the HelmRelease before proposing
+  `cscli scenarios list` and the files in `appsec-rules/` before proposing
   anything new. A near-duplicate rule splits the evidence across two buckets and makes
   both fire later than either would alone — tune the existing one instead.
 
@@ -204,16 +205,16 @@ Then work out which of these fits, in this order. Prefer a rule over a ban: a ru
 the next source too, a ban catches one.
 
 **An existing scenario should have caught it but did not.** Tune that scenario's threshold
-or filter in `helmrelease.yaml`. Say in the report what the old and new values are.
+or filter in its file under `scenarios/`. Say in the report what the old and new values are.
 
-**Nothing covers the pattern.** Add a new scenario under `config.scenarios`, following the
+**Nothing covers the pattern.** Add a new scenario file under `scenarios/`, following the
 shape of the ones already there: a `leaky` bucket keyed on `evt.Meta.source_ip`, with a
 filter narrow enough that legitimate traffic cannot reach it, and a matching entry in
-`profiles.yaml` naming it. A scenario with no profile creates no decision, so adding one
-without the other does nothing at all.
+`config/profiles.yaml` naming it. A scenario with no profile creates no decision, so adding
+one without the other does nothing at all.
 
 **The pattern is a request shape that should never be served at all.** Add an AppSec rule
-under `appsec.rules` and list it in `appsec.configs`' `custom/app-surface` inband rules —
+file under `appsec-rules/` and list it in `appsec-configs/app-surface.yaml`'s inband rules —
 that blocks the request itself rather than waiting for a bucket to fill.
 
 **The source is unambiguously hostile and the pattern is not generalisable.** Ban it. See
@@ -320,8 +321,11 @@ terraform -chdir=/tmp/tf-validate init -backend=false -input=false
 terraform -chdir=/tmp/tf-validate validate
 ```
 
-The CrowdSec scenarios are YAML embedded in a YAML string, so `kustomize` passing does not
-prove they parse. Extract each block you edited and parse it on its own before committing.
+**A new CrowdSec file needs two registrations, or it never loads.** Every file under
+`config/`, `parsers/`, `scenarios/`, `appsec-rules/` and `appsec-configs/` is listed in the
+directory's `kustomization.yaml` (its ConfigMap) and in `helmrelease.yaml`'s `valuesFrom`
+(where the chart receives it). Copy an existing entry in both. Kustomize does not parse
+the files' contents, so parse each one you edited with a YAML parser before committing.
 
 If you touched either list, prove both halves of it:
 

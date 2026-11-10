@@ -1,0 +1,15 @@
+# Every POST here opens a live Stripe Checkout Session against the production
+# key. A buyer retries a handful of times; ten in under two minutes is a bot
+# spending our Stripe rate limit.
+type: leaky
+name: custom/checkout-session-abuse
+description: "Flood of Stripe Checkout Session creations"
+filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path == '/api/checkout/session' && evt.Meta.http_verb == 'POST'"
+groupby: evt.Meta.source_ip
+capacity: 9
+leakspeed: "10s"
+blackhole: 1h
+labels:
+  service: http
+  type: checkout-abuse
+  remediation: true

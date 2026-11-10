@@ -1,0 +1,9 @@
+name: custom/crs-observe
+# The CRS was already being downloaded by APPSEC_RULES and never evaluated,
+# because no loaded config named it. Out-of-band runs it after the response is
+# released, and no profile matches its alerts, so it reports without blocking.
+# Promoting it means moving it to inband_rules *and* adding a profile - it is
+# the one ruleset here written against generic traffic rather than our apps,
+# so measure its false positives before either.
+outofband_rules:
+  - crowdsecurity/crs

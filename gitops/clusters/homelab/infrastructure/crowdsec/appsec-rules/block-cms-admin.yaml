@@ -1,0 +1,17 @@
+name: custom/block-cms-admin
+description: "Request for a CMS admin path none of these apps serve"
+rules:
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: "(^|/)(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail|wordpress|wp)([?/]|$)"
+labels:
+  type: scan
+  service: http
+  behavior: "http:scan"
+  confidence: 3
+  spoofable: 0
+  label: "CMS admin path probing"

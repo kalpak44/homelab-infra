@@ -1,0 +1,15 @@
+# The MCP host serves exactly /health and /mcp; everything else is a 404. A 404
+# on /mcp itself means an unknown session, which the rule above already covers,
+# so excluding it keeps this one to pure surface discovery.
+type: leaky
+name: custom/mcp-surface-probing
+description: "Requests for paths the MCP server does not serve"
+filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'mite-assistant.pavel-usanli.online' && evt.Meta.http_status == '404' && evt.Meta.http_path not in ['/mcp', '/health']"
+groupby: evt.Meta.source_ip
+capacity: 2
+leakspeed: "1m"
+blackhole: 6h
+labels:
+  service: http
+  type: mcp-surface-probe
+  remediation: true

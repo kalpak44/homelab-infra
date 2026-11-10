@@ -1,6 +1,6 @@
 # Addresses the security agent has judged abusive, newest last, one per line.
 # Mounted into the agent pods at /var/lib/crowdsec/data/blocked-ips.txt and read by the
-# custom/manual-blocklist scenario in helmrelease.yaml.
+# custom/manual-blocklist scenario in scenarios/manual-blocklist.yaml.
 #
 # A comment is never a valid source address, so it can never match — keep the evidence
 # beside the entry. An address with no date and no behaviour is one nobody can retire.

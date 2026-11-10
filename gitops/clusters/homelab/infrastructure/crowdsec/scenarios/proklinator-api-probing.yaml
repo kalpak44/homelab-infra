@@ -1,0 +1,14 @@
+# The API defines three routes and a catch-all 404. Nothing a browser loads from
+# the site sits under /api, so a 404 there is never an ordinary missing asset.
+type: leaky
+name: custom/proklinator-api-probing
+description: "404 under /api, where only three routes exist"
+filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path startsWith '/api' && evt.Meta.http_status == '404'"
+groupby: evt.Meta.source_ip
+capacity: 2
+leakspeed: "1m"
+blackhole: 6h
+labels:
+  service: http
+  type: api-surface-probe
+  remediation: true

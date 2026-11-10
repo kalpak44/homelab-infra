@@ -1,0 +1,15 @@
+# The MCP server answers 401 only when the bearer header is missing, malformed,
+# or rejected by Mite - including a request replaying another client's session
+# id. Repeats from one IP are key stuffing, not a misconfigured client.
+type: leaky
+name: custom/mcp-auth-failure
+description: "Repeated bearer rejections on the MCP endpoint"
+filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'mite-assistant.pavel-usanli.online' && evt.Meta.http_status == '401'"
+groupby: evt.Meta.source_ip
+capacity: 4
+leakspeed: "2m"
+blackhole: 1h
+labels:
+  service: http
+  type: mcp-auth-failure
+  remediation: true

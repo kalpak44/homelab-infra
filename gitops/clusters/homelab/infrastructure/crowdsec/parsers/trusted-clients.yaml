@@ -1,0 +1,9 @@
+# `cscli allowlists` is fetched only by the appsec pods, so a log-fed scenario still
+# bans an allowlisted address. This one is the homelab's own egress IP, and banning it
+# locks the LAN out of every public hostname.
+name: custom/trusted-clients
+description: "Whitelist the homelab's own egress address"
+whitelist:
+  reason: "Trusted client IP"
+  cidr:
+    - "46.10.211.21/32"

@@ -1,0 +1,17 @@
+name: custom/block-php
+description: "Request for a .php path"
+rules:
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: "\\.php([?/]|$)"
+labels:
+  type: exploit
+  service: http
+  behavior: "http:exploit"
+  confidence: 3
+  spoofable: 0
+  label: "PHP file probing"

@@ -1,0 +1,13 @@
+# No application here uses Spring Actuator, so two probes in a minute are enough.
+type: leaky
+name: custom/actuator-probing
+description: "Block IPs probing Spring Boot Actuator endpoints"
+filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator'"
+groupby: evt.Meta.source_ip
+capacity: 1
+leakspeed: "1m"
+blackhole: 24h
+labels:
+  service: http
+  type: actuator-probe
+  remediation: true

@@ -17,350 +17,112 @@ spec:
     crds: Create
   upgrade:
     crds: CreateReplace
+  # Every CrowdSec config, parser, scenario and AppSec rule is its own file in the
+  # directory beside this one, turned into a ConfigMap by kustomization.yaml. A new file
+  # needs an entry there and one here, or it never reaches the chart.
+  valuesFrom:
+    - kind: ConfigMap
+      name: crowdsec-config-files
+      valuesKey: config.yaml.local
+      targetPath: 'config.config\.yaml\.local'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-config-files
+      valuesKey: profiles.yaml
+      targetPath: 'config.profiles\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-parsers
+      valuesKey: cloudflare-whitelist.yaml
+      targetPath: 'config.parsers.s02-enrich.cloudflare-whitelist\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-parsers
+      valuesKey: trusted-clients.yaml
+      targetPath: 'config.parsers.s02-enrich.trusted-clients\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: manual-blocklist.yaml
+      targetPath: 'config.scenarios.manual-blocklist\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: mcp-auth-failure.yaml
+      targetPath: 'config.scenarios.mcp-auth-failure\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: mcp-surface-probing.yaml
+      targetPath: 'config.scenarios.mcp-surface-probing\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: public-mcp-probing.yaml
+      targetPath: 'config.scenarios.public-mcp-probing\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: proklinator-api-probing.yaml
+      targetPath: 'config.scenarios.proklinator-api-probing\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: checkout-session-abuse.yaml
+      targetPath: 'config.scenarios.checkout-session-abuse\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: checkout-payload-rejected.yaml
+      targetPath: 'config.scenarios.checkout-payload-rejected\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: http-error-burst.yaml
+      targetPath: 'config.scenarios.http-error-burst\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: actuator-probing.yaml
+      targetPath: 'config.scenarios.actuator-probing\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-scenarios
+      valuesKey: http-error-threshold.yaml
+      targetPath: 'config.scenarios.http-error-threshold\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-appsec-rules
+      valuesKey: block-php.yaml
+      targetPath: 'appsec.rules.block-php\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-appsec-rules
+      valuesKey: block-cms-admin.yaml
+      targetPath: 'appsec.rules.block-cms-admin\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-appsec-rules
+      valuesKey: block-secret-files.yaml
+      targetPath: 'appsec.rules.block-secret-files\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-appsec-rules
+      valuesKey: block-laravel-ignition.yaml
+      targetPath: 'appsec.rules.block-laravel-ignition\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-appsec-configs
+      valuesKey: app-surface.yaml
+      targetPath: 'appsec.configs.app-surface\.yaml'
+      literal: true
+    - kind: ConfigMap
+      name: crowdsec-appsec-configs
+      valuesKey: crs-observe.yaml
+      targetPath: 'appsec.configs.crs-observe\.yaml'
+      literal: true
   values:
     container_runtime: containerd
-
-    config:
-      config.yaml.local: |
-        # AppSec writes one alert per blocked request, so the 5000-item default is
-        # reached in about three days and everything older is flushed - which silently
-        # truncates the Grafana history to the same three days.
-        db_config:
-          flush:
-            max_items: 50000
-            max_age: 30d
-        api:
-          server:
-            trusted_ips:
-              - 127.0.0.1
-              - ::1
-              - 10.42.0.0/16
-              - 10.43.0.0/16
-            auto_registration:
-              enabled: true
-              token: "${REGISTRATION_TOKEN}"
-              allowed_ranges:
-                - "127.0.0.1/32"
-                - "192.168.1.0/16"
-                - "10.0.0.0/8"
-                - "172.16.0.0/12"
-
-      parsers:
-        s02-enrich:
-          cloudflare-whitelist.yaml: |
-            name: crowdsecurity/cloudflare-whitelist
-            description: "Whitelist Cloudflare IP ranges"
-            whitelist:
-              reason: "Cloudflare IP"
-              cidr:
-                - "103.21.244.0/22"
-                - "103.22.200.0/22"
-                - "103.31.4.0/22"
-                - "104.16.0.0/13"
-                - "104.24.0.0/14"
-                - "108.162.192.0/18"
-                - "131.0.72.0/22"
-                - "141.101.64.0/18"
-                - "162.158.0.0/15"
-                - "172.64.0.0/13"
-                - "173.245.48.0/20"
-                - "188.114.96.0/20"
-                - "190.93.240.0/20"
-                - "197.234.240.0/22"
-                - "198.41.128.0/17"
-                - "2400:cb00::/32"
-                - "2606:4700::/32"
-                - "2803:f800::/32"
-                - "2405:b500::/32"
-                - "2405:8100::/32"
-                - "2a06:98c0::/29"
-                - "2c0f:f248::/32"
-
-          # `cscli allowlists` is fetched only by the appsec pods, so a log-fed scenario still
-          # bans an allowlisted address. This one is the homelab's own egress IP, and banning it
-          # locks the LAN out of every public hostname.
-          trusted-clients.yaml: |
-            name: custom/trusted-clients
-            description: "Whitelist the homelab's own egress address"
-            whitelist:
-              reason: "Trusted client IP"
-              cidr:
-                - "46.10.211.21/32"
-
-      scenarios:
-        # Addresses .github/workflows/ai-security-agent.yml has judged abusive. The list is
-        # blocked-ips.txt beside this file, mounted into the agent pods — kept out of here
-        # so a night's bans do not grow the HelmRelease.
-        #
-        # An unreadable or missing file fails the scenario at load, so the ConfigMap mount
-        # below is what keeps it loading. An empty one is fine: File() returns no lines.
-        manual-blocklist.yaml: |
-          type: trigger
-          name: custom/manual-blocklist
-          description: "Source address on the reviewed blocklist"
-          # File() only sees files declared in this block; it does not scan the data
-          # directory. Without this the filter errors and the list is never enforced.
-          data:
-            - dest_file: blocked-ips.txt
-              type: string
-          filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in File('blocked-ips.txt')"
-          groupby: evt.Meta.source_ip
-          labels:
-            service: http
-            type: manual-blocklist
-            remediation: true
-
-        # The MCP server answers 401 only when the bearer header is missing, malformed,
-        # or rejected by Mite - including a request replaying another client's session
-        # id. Repeats from one IP are key stuffing, not a misconfigured client.
-        mcp-auth-failure.yaml: |
-          type: leaky
-          name: custom/mcp-auth-failure
-          description: "Repeated bearer rejections on the MCP endpoint"
-          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'mite-assistant.pavel-usanli.online' && evt.Meta.http_status == '401'"
-          groupby: evt.Meta.source_ip
-          capacity: 4
-          leakspeed: "2m"
-          blackhole: 1h
-          labels:
-            service: http
-            type: mcp-auth-failure
-            remediation: true
-
-        # The MCP host serves exactly /health and /mcp; everything else is a 404. A 404
-        # on /mcp itself means an unknown session, which the rule above already covers,
-        # so excluding it keeps this one to pure surface discovery.
-        mcp-surface-probing.yaml: |
-          type: leaky
-          name: custom/mcp-surface-probing
-          description: "Requests for paths the MCP server does not serve"
-          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'mite-assistant.pavel-usanli.online' && evt.Meta.http_status == '404' && evt.Meta.http_path not in ['/mcp', '/health']"
-          groupby: evt.Meta.source_ip
-          capacity: 2
-          leakspeed: "1m"
-          blackhole: 6h
-          labels:
-            service: http
-            type: mcp-surface-probe
-            remediation: true
-
-        # www is a static site: it does not serve MCP or JSON-RPC and rejects POSTs
-        # with 405. A browser has no reason to retry those paths, so repeats are a
-        # client or scanner looking for an API that is not there.
-        public-mcp-probing.yaml: |
-          type: leaky
-          name: custom/public-mcp-probing
-          description: "Repeated POSTs to MCP-shaped paths on the public site"
-          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn == 'www.pavel-usanli.online' && evt.Meta.http_verb == 'POST' && evt.Meta.http_status == '405' && evt.Meta.http_path in ['/', '/mcp', '/jsonrpc']"
-          groupby: evt.Meta.source_ip
-          capacity: 1
-          leakspeed: "5m"
-          blackhole: 6h
-          labels:
-            service: http
-            type: public-mcp-probe
-            remediation: true
-
-        # The API defines three routes and a catch-all 404. Nothing a browser loads from
-        # the site sits under /api, so a 404 there is never an ordinary missing asset.
-        proklinator-api-probing.yaml: |
-          type: leaky
-          name: custom/proklinator-api-probing
-          description: "404 under /api, where only three routes exist"
-          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path startsWith '/api' && evt.Meta.http_status == '404'"
-          groupby: evt.Meta.source_ip
-          capacity: 2
-          leakspeed: "1m"
-          blackhole: 6h
-          labels:
-            service: http
-            type: api-surface-probe
-            remediation: true
-
-        # Every POST here opens a live Stripe Checkout Session against the production
-        # key. A buyer retries a handful of times; ten in under two minutes is a bot
-        # spending our Stripe rate limit.
-        checkout-session-abuse.yaml: |
-          type: leaky
-          name: custom/checkout-session-abuse
-          description: "Flood of Stripe Checkout Session creations"
-          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path == '/api/checkout/session' && evt.Meta.http_verb == 'POST'"
-          groupby: evt.Meta.source_ip
-          capacity: 9
-          leakspeed: "10s"
-          blackhole: 1h
-          labels:
-            service: http
-            type: checkout-abuse
-            remediation: true
-
-        # A 400 here means the cart named a curse or option the backend catalog does not
-        # hold. The site only ever submits ids it was served, so this is price or id
-        # tampering rather than a client bug.
-        checkout-payload-rejected.yaml: |
-          type: leaky
-          name: custom/checkout-payload-rejected
-          description: "Repeated carts naming ids outside the catalog"
-          filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path == '/api/checkout/session' && evt.Meta.http_status == '400'"
-          groupby: evt.Meta.source_ip
-          capacity: 2
-          leakspeed: "5m"
-          blackhole: 6h
-          labels:
-            service: http
-            type: checkout-tampering
-            remediation: true
-
-        http-error-burst.yaml: |
-          type: leaky
-          name: custom/http-error-burst
-          description: "Block IP after 20 4xx/5xx HTTP responses within 10 seconds (automated/brute-force detection)"
-          # 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
-          # and counting them bans a visitor who merely followed a redirect and missed a favicon.
-          filter: "evt.Meta.service == 'http' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
-          groupby: evt.Meta.source_ip
-          capacity: 20
-          leakspeed: "500ms"
-          blackhole: 24h
-          labels:
-            service: http
-            type: http-error-burst
-            remediation: true
-
-        # No application here uses Spring Actuator, so two probes in a minute are enough.
-        actuator-probing.yaml: |
-          type: leaky
-          name: custom/actuator-probing
-          description: "Block IPs probing Spring Boot Actuator endpoints"
-          filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator'"
-          groupby: evt.Meta.source_ip
-          capacity: 1
-          leakspeed: "1m"
-          blackhole: 24h
-          labels:
-            service: http
-            type: actuator-probe
-            remediation: true
-
-        http-error-threshold.yaml: |
-          type: leaky
-          name: custom/http-error-threshold
-          description: "Block IP after 5 4xx/5xx HTTP responses, regardless of rate"
-
-          # 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
-          # and counting them bans a visitor who merely followed a redirect and missed a favicon.
-          filter: "evt.Meta.service == 'http' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
-
-          # Group events by source IP - each IP gets its own bucket
-          groupby: evt.Meta.source_ip
-
-          # capacity 4 + 1 overflow event = 5 4xx/5xx responses trigger a ban
-          capacity: 4
-
-          # leakspeed 6h → effective window = 4 × 6h = 24h (long enough to catch slow, spread-out probing)
-          leakspeed: "6h"
-
-          # After firing once, suppress further alerts for this IP for 1 hour (avoid alert spam)
-          blackhole: 1h
-
-          labels:
-            service: http
-            type: http-error
-            remediation: true
-
-      profiles.yaml: |
-        # First, because every profile below ends on `break`: reached later, the reviewed
-        # ban would be pre-empted by whatever short automatic ban fired on the same alert.
-        name: manual_blocklist_ban
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() == "custom/manual-blocklist"
-        decisions:
-          - type: ban
-            duration: 720h
-        on_success: break
-        ---
-        name: repeat_offender
-        filters:
-          - Alert.Remediation == true && Alert.GetScope() == "Ip" && GetDecisionsCount(Alert.GetValue()) >= 3
-        decisions:
-          - type: ban
-            duration: 24h
-        on_success: break
-        ---
-        name: http_error_burst_ban
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-burst"
-        decisions:
-          - type: ban
-            duration: 24h
-        on_success: break
-        ---
-        name: http_error_ban
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-threshold"
-        decisions:
-          - type: ban
-            duration: 1h
-        on_success: break
-        ---
-        name: actuator_probe_ban
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() == "custom/actuator-probing"
-        decisions:
-          - type: ban
-            duration: 24h
-        on_success: break
-        ---
-        name: app_surface_ban
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() in ["custom/mcp-auth-failure", "custom/mcp-surface-probing", "custom/public-mcp-probing", "custom/proklinator-api-probing", "custom/checkout-payload-rejected"]
-        decisions:
-          - type: ban
-            duration: 24h
-        on_success: break
-        ---
-        name: checkout_abuse_ban
-        # Shorter than the other app bans: this one fires on successful requests, so a
-        # shared egress IP behind a burst of real buyers is the one plausible way to
-        # reach it without being a bot.
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() == "custom/checkout-session-abuse"
-        decisions:
-          - type: ban
-            duration: 4h
-        on_success: break
-        ---
-        name: custom_appsec_ban
-        # No Alert.Remediation check: AppSec builds its alerts without ever
-        # setting that field, so "Alert.Remediation == true" never matches a
-        # waf-kind alert and the ban would silently never be created.
-        filters:
-          - Alert.GetScenario() startsWith "custom/block-"
-        decisions:
-          - type: ban
-            duration: 24h
-        on_success: break
-        ---
-        name: appsec_vpatch_ban
-        # Virtual-patching hits are waf-kind alerts, so they never reach
-        # default_ip_remediation below (it requires Alert.Remediation, which
-        # AppSec never sets). Without this they only ever get a per-request
-        # 403, and a scan that finishes in seconds would be free to return
-        # the same day once four hours had passed.
-        filters:
-          - Alert.GetScenario() startsWith "crowdsecurity/vpatch-"
-        decisions:
-          - type: ban
-            duration: 24h
-        on_success: break
-        ---
-        name: default_ip_remediation
-        filters:
-          - Alert.Remediation == true && Alert.GetScenario() contains "crowdsecurity/"
-        decisions:
-          - type: ban
-            duration: 4h
-        on_success: break
 
     lapi:
       replicas: 1
@@ -427,7 +189,7 @@ spec:
       # when only the list does — without this the DaemonSet keeps serving the old one.
       # sha256 of blocked-ips.txt; update both in the same commit.
       podAnnotations:
-        homelab.pavel-usanli.online/blocked-ips-sha256: "2a95b483a4856bff01599ddc93bbf0ac0c271b87c0e82f372adb57989f808a54"
+        homelab.pavel-usanli.online/blocked-ips-sha256: "c47d9f950bc0b999b58f1c18fcfd73829507afada566f954ac3fef5a3a57e426"
 
       # subPath, so the mount adds one file instead of masking the data directory the hub
       # downloads its pattern files into.
@@ -498,111 +260,6 @@ spec:
             - custom/crs-observe
           labels:
             type: appsec
-
-      rules:
-        block-php.yaml: |
-          name: custom/block-php
-          description: "Request for a .php path"
-          rules:
-            - zones:
-                - URI
-              transform:
-                - lowercase
-              match:
-                type: regex
-                value: "\\.php([?/]|$)"
-          labels:
-            type: exploit
-            service: http
-            behavior: "http:exploit"
-            confidence: 3
-            spoofable: 0
-            label: "PHP file probing"
-
-        block-cms-admin.yaml: |
-          name: custom/block-cms-admin
-          description: "Request for a CMS admin path none of these apps serve"
-          rules:
-            - zones:
-                - URI
-              transform:
-                - lowercase
-              match:
-                type: regex
-                value: "(^|/)(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail|wordpress|wp)([?/]|$)"
-          labels:
-            type: scan
-            service: http
-            behavior: "http:scan"
-            confidence: 3
-            spoofable: 0
-            label: "CMS admin path probing"
-
-        block-secret-files.yaml: |
-          name: custom/block-secret-files
-          description: "Request for a credential, state or VCS file"
-          # Build-tool state and hosted-platform config are never served, so a
-          # request for them is a scan rather than a missing asset.
-          rules:
-            - zones:
-                - URI
-              transform:
-                - lowercase
-              match:
-                type: regex
-                value: "(^|/)(\\.env([.~_-][^/]*)?([?#/]|$)|[^/]*\\.env([?#/]|$)|\\.aws/(credentials|config)|\\.ssh/id_[a-z0-9]+|id_rsa|\\.npmrc|\\.netrc|\\.htpasswd|\\.htaccess|\\.dockercfg|\\.docker/config\\.json|\\.git-credentials|\\.git/|\\.gitmodules|\\.lfsconfig|\\.gitlab-ci\\.yml|\\.github/|\\.kube/config|\\.svn/|\\.hg/|\\.bzr/|\\.boto|\\.s3cfg|\\.amplifyrc|\\.pypirc|\\.cursor/mcp\\.json|\\.claude/settings[^/]*|\\.streamlit/secrets\\.toml|auth\\.json|credentials\\.json|credentials\\.ini([?#/]|$)|secrets?\\.json([?#/]|$)|keys?\\.json([?#/]|$)|service[-_]?account\\.json([?#/]|$)|gcp-credentials\\.json([?#/]|$)|sentry\\.properties([?#/]|$)|database\\.sql([?#/]|$)|application\\.ya?ml([?#/]|$)|config\\.ya?ml([?#/]|$)|aws-exports\\.js|firebase-(admin|service-account)[^/]*\\.json|appsettings([.][^/]*)?\\.json|app\\.config\\.js|local_settings\\.py|secrets\\.(env|ya?ml)|docker-compose\\.ya?ml|terraform\\.tfstate|terraform\\.tfvars|\\.terraform/|backup\\.sql|dump\\.sql|db\\.sql|next\\.config\\.[a-z]+([?#/]|$)|nuxt\\.config\\.[a-z]+([?#/]|$)|\\.next/|\\.output/|\\.netlify/|\\.turbo/|\\.vercel/|wrangler\\.toml([?#/]|$)|vercel\\.json([?#/]|$)|railway\\.toml([?#/]|$)|supabase/config\\.toml([?#/]|$)|serverless\\.ya?ml([?#/]|$)|settings\\.py([?#/]|$)|serviceaccountkey\\.json([?#/]|$)|localhost\\.key([?#/]|$)|server\\.key([?#/]|$)|proc/self/environ([?#/]|$)|serviceaccount/token([?#/]|$)|telescope/|laravel\\.log([?#/]|$))"
-          labels:
-            type: exploit
-            service: http
-            behavior: "http:exploit"
-            confidence: 3
-            spoofable: 0
-            label: "Secret file probing"
-
-        block-laravel-ignition.yaml: |
-          name: custom/block-laravel-ignition
-          description: "Request for the Laravel Ignition execution endpoint"
-          rules:
-            - zones:
-                - URI
-              transform:
-                - lowercase
-              match:
-                type: regex
-                value: "(^|/)_ignition(/|$)"
-          labels:
-            type: exploit
-            service: http
-            behavior: "http:exploit"
-            confidence: 3
-            spoofable: 0
-            label: "Laravel Ignition probing"
-
-      configs:
-        app-surface.yaml: |
-          name: custom/app-surface
-          default_remediation: ban
-          # Unscoped on purpose. Every hostname that reaches Traefik is one of ours and
-          # none of them runs PHP or a CMS; Cloudflare-for-SaaS customer domains are
-          # sent straight at nocobase-lxc by terraform/cloudflare/shared/zero-trust and
-          # never pass through here. Routing a customer through Traefik means putting a
-          # host filter back, because their site may legitimately serve these paths.
-          inband_rules:
-            - custom/block-php
-            - custom/block-cms-admin
-            - custom/block-secret-files
-            - custom/block-laravel-ignition
-
-        crs-observe.yaml: |
-          name: custom/crs-observe
-          # The CRS was already being downloaded by APPSEC_RULES and never evaluated,
-          # because no loaded config named it. Out-of-band runs it after the response is
-          # released, and no profile matches its alerts, so it reports without blocking.
-          # Promoting it means moving it to inband_rules *and* adding a profile - it is
-          # the one ruleset here written against generic traffic rather than our apps,
-          # so measure its false positives before either.
-          outofband_rules:
-            - crowdsecurity/crs
 
       env:
         - name: COLLECTIONS

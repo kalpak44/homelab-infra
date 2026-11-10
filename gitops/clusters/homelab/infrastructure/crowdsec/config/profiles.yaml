@@ -1,0 +1,92 @@
+# First, because every profile below ends on `break`: reached later, the reviewed
+# ban would be pre-empted by whatever short automatic ban fired on the same alert.
+name: manual_blocklist_ban
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() == "custom/manual-blocklist"
+decisions:
+  - type: ban
+    duration: 720h
+on_success: break
+---
+name: repeat_offender
+filters:
+  - Alert.Remediation == true && Alert.GetScope() == "Ip" && GetDecisionsCount(Alert.GetValue()) >= 3
+decisions:
+  - type: ban
+    duration: 24h
+on_success: break
+---
+name: http_error_burst_ban
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-burst"
+decisions:
+  - type: ban
+    duration: 24h
+on_success: break
+---
+name: http_error_ban
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-threshold"
+decisions:
+  - type: ban
+    duration: 1h
+on_success: break
+---
+name: actuator_probe_ban
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() == "custom/actuator-probing"
+decisions:
+  - type: ban
+    duration: 24h
+on_success: break
+---
+name: app_surface_ban
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() in ["custom/mcp-auth-failure", "custom/mcp-surface-probing", "custom/public-mcp-probing", "custom/proklinator-api-probing", "custom/checkout-payload-rejected"]
+decisions:
+  - type: ban
+    duration: 24h
+on_success: break
+---
+name: checkout_abuse_ban
+# Shorter than the other app bans: this one fires on successful requests, so a
+# shared egress IP behind a burst of real buyers is the one plausible way to
+# reach it without being a bot.
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() == "custom/checkout-session-abuse"
+decisions:
+  - type: ban
+    duration: 4h
+on_success: break
+---
+name: custom_appsec_ban
+# No Alert.Remediation check: AppSec builds its alerts without ever
+# setting that field, so "Alert.Remediation == true" never matches a
+# waf-kind alert and the ban would silently never be created.
+filters:
+  - Alert.GetScenario() startsWith "custom/block-"
+decisions:
+  - type: ban
+    duration: 24h
+on_success: break
+---
+name: appsec_vpatch_ban
+# Virtual-patching hits are waf-kind alerts, so they never reach
+# default_ip_remediation below (it requires Alert.Remediation, which
+# AppSec never sets). Without this they only ever get a per-request
+# 403, and a scan that finishes in seconds would be free to return
+# the same day once four hours had passed.
+filters:
+  - Alert.GetScenario() startsWith "crowdsecurity/vpatch-"
+decisions:
+  - type: ban
+    duration: 24h
+on_success: break
+---
+name: default_ip_remediation
+filters:
+  - Alert.Remediation == true && Alert.GetScenario() contains "crowdsecurity/"
+decisions:
+  - type: ban
+    duration: 4h
+on_success: break

@@ -1,0 +1,21 @@
+# Addresses .github/workflows/ai-security-agent.yml has judged abusive. The list is
+# ../blocked-ips.txt, mounted into the agent pods — kept out of here so a night's bans
+# do not grow this file.
+#
+# An unreadable or missing file fails the scenario at load, so the agent's ConfigMap
+# mount in helmrelease.yaml is what keeps it loading. An empty one is fine: File()
+# returns no lines.
+type: trigger
+name: custom/manual-blocklist
+description: "Source address on the reviewed blocklist"
+# File() only sees files declared in this block; it does not scan the data
+# directory. Without this the filter errors and the list is never enforced.
+data:
+  - dest_file: blocked-ips.txt
+    type: string
+filter: "evt.Meta.service == 'http' && evt.Meta.source_ip in File('blocked-ips.txt')"
+groupby: evt.Meta.source_ip
+labels:
+  service: http
+  type: manual-blocklist
+  remediation: true

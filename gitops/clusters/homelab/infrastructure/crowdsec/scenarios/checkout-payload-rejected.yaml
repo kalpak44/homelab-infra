@@ -1,0 +1,15 @@
+# A 400 here means the cart named a curse or option the backend catalog does not
+# hold. The site only ever submits ids it was served, so this is price or id
+# tampering rather than a client bug.
+type: leaky
+name: custom/checkout-payload-rejected
+description: "Repeated carts naming ids outside the catalog"
+filter: "evt.Meta.service == 'http' && evt.Meta.target_fqdn in ['proklinator.online', 'www.proklinator.online'] && evt.Meta.http_path == '/api/checkout/session' && evt.Meta.http_status == '400'"
+groupby: evt.Meta.source_ip
+capacity: 2
+leakspeed: "5m"
+blackhole: 6h
+labels:
+  service: http
+  type: checkout-tampering
+  remediation: true

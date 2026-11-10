@@ -1,0 +1,12 @@
+name: custom/app-surface
+default_remediation: ban
+# Unscoped on purpose. Every hostname that reaches Traefik is one of ours and
+# none of them runs PHP or a CMS; Cloudflare-for-SaaS customer domains are
+# sent straight at nocobase-lxc by terraform/cloudflare/shared/zero-trust and
+# never pass through here. Routing a customer through Traefik means putting a
+# host filter back, because their site may legitimately serve these paths.
+inband_rules:
+  - custom/block-php
+  - custom/block-cms-admin
+  - custom/block-secret-files
+  - custom/block-laravel-ignition

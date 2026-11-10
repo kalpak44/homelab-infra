@@ -9,14 +9,68 @@ resources:
   - appsec-service.yaml
   - agent-rbac.yaml
 
-# Named without a hash suffix so helmrelease.yaml can mount it by name — Kustomize does not
-# rewrite references inside a HelmRelease's free-form values. The pod roll comes from the
-# blocked-ips-sha256 annotation there instead.
+# Named without a hash suffix so helmrelease.yaml can refer to them by name — Kustomize
+# does not rewrite references inside a HelmRelease.
 configMapGenerator:
+  # Mounted into the agent pods, which do not reload it. The pod roll comes from the
+  # blocked-ips-sha256 annotation in helmrelease.yaml.
   - name: crowdsec-blocked-ips
     namespace: crowdsec
     files:
       - blocked-ips.txt
+
+  # Read by helmrelease.yaml's valuesFrom. The watch label makes helm-controller upgrade as
+  # soon as one changes, instead of at its next interval.
+  - name: crowdsec-config-files
+    namespace: crowdsec
+    options:
+      labels:
+        reconcile.fluxcd.io/watch: Enabled
+    files:
+      - config/config.yaml.local
+      - config/profiles.yaml
+  - name: crowdsec-parsers
+    namespace: crowdsec
+    options:
+      labels:
+        reconcile.fluxcd.io/watch: Enabled
+    files:
+      - parsers/cloudflare-whitelist.yaml
+      - parsers/trusted-clients.yaml
+  - name: crowdsec-scenarios
+    namespace: crowdsec
+    options:
+      labels:
+        reconcile.fluxcd.io/watch: Enabled
+    files:
+      - scenarios/manual-blocklist.yaml
+      - scenarios/mcp-auth-failure.yaml
+      - scenarios/mcp-surface-probing.yaml
+      - scenarios/public-mcp-probing.yaml
+      - scenarios/proklinator-api-probing.yaml
+      - scenarios/checkout-session-abuse.yaml
+      - scenarios/checkout-payload-rejected.yaml
+      - scenarios/http-error-burst.yaml
+      - scenarios/actuator-probing.yaml
+      - scenarios/http-error-threshold.yaml
+  - name: crowdsec-appsec-rules
+    namespace: crowdsec
+    options:
+      labels:
+        reconcile.fluxcd.io/watch: Enabled
+    files:
+      - appsec-rules/block-php.yaml
+      - appsec-rules/block-cms-admin.yaml
+      - appsec-rules/block-secret-files.yaml
+      - appsec-rules/block-laravel-ignition.yaml
+  - name: crowdsec-appsec-configs
+    namespace: crowdsec
+    options:
+      labels:
+        reconcile.fluxcd.io/watch: Enabled
+    files:
+      - appsec-configs/app-surface.yaml
+      - appsec-configs/crs-observe.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
