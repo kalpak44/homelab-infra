@@ -4,7 +4,9 @@ description: "Block IP after 5 4xx/5xx HTTP responses, regardless of rate"
 
 # 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
 # and counting them bans a visitor who merely followed a redirect and missed a favicon.
-filter: "evt.Meta.service == 'http' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
+# Static assets are excluded too: a stale browser asking for an old hashed bundle (or a
+# source map) produces a burst of 404s that says nothing about intent.
+filter: "evt.Meta.service == 'http' && evt.Parsed.static_ressource == 'false' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
 
 # Group events by source IP - each IP gets its own bucket
 groupby: evt.Meta.source_ip

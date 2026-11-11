@@ -10,3 +10,4 @@ inband_rules:
   - custom/block-cms-admin
   - custom/block-secret-files
   - custom/block-laravel-ignition
+  - custom/block-recon-artifacts

@@ -65,6 +65,7 @@ configMapGenerator:
       - appsec-rules/block-cms-admin.yaml
       - appsec-rules/block-secret-files.yaml
       - appsec-rules/block-laravel-ignition.yaml
+      - appsec-rules/block-recon-artifacts.yaml
   - name: crowdsec-src-appsec-configs
     namespace: crowdsec
     options:

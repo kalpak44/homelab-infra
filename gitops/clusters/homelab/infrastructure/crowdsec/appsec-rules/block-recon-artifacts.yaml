@@ -1,0 +1,22 @@
+# Scanner paths for software, build artifacts and developer state that this homelab does
+# not serve. The static sites answer every unknown path with index.html, so these probes
+# return 200 and the 4xx scenarios never see them; they are still never legitimate here.
+# The existing block-secret-files rule already covers .env/.aws/.ssh/VCS paths, so this
+# rule deliberately does not repeat them.
+name: custom/block-recon-artifacts
+description: "Request for an artifact or software surface that is not deployed"
+rules:
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '^/(config|settings|tokens)\.json([?#/]|$)|^/config/config\.json([?#/]|$)|^/credentials([?#/]|$)|^/package(-lock)?\.json([?#/]|$)|(^|/)(sa|gcp-key|gcp-sa|google-credentials|google-key)\.json([?#/]|$)|(^|/)phpinfo([?#/]|$)|(^|/)actuator([?#/]|$)|(^|/)composer\.(json|lock)([?#/]|$)|(^|/)web\.config([?#/]|$)|(^|/)server-(info|status)([?#/]|$)|(^|/)cgi-bin([?#/]|$)|(^|/)magento_version([?#/]|$)|(^|/)containers/json([?#/]|$)|(^|/)_catalog([?#/]|$)|(^|/)dockerfile([?#/]|$)|(^|/)docker-compose\.[^/]+\.ya?ml([?#/]|$)|(^|/)compose\.ya?ml([?#/]|$)|(^|/)netlify\.toml([?#/]|$)|(^|/)\.travis\.ya?ml([?#/]|$)|(^|/)config\.toml([?#/]|$)|(^|/)app\.db([?#/]|$)|(^|/)wp-config\.txt([?#/]|$)|(^|/)client_secrets\.json([?#/]|$)|(^|/)credentials\.ya?ml([?#/]|$)|(^|/)parameters\.ya?ml([?#/]|$)|(^|/)config/aws\.ya?ml([?#/]|$)|(^|/)\.config/app\.ya?ml([?#/]|$)|(^|/)\.cargo/credentials\.toml([?#/]|$)|(^|/)\.gem/credentials([?#/]|$)|(^|/)\.ds_store([?#/]|$)|(^|/)env([?#/]|$)|(^|/)environment([?#/]|$)|(^|/)env\.txt([?#/]|$)|(^|/)(vendor/composer/|\.config/gcloud/|\.azure/|\.dbeaver/|\.anthropic/|\.continue/|\.codeium/|\.llm/|\.config/llm/)'
+labels:
+  type: scan
+  service: http
+  behavior: "http:scan"
+  confidence: 3
+  spoofable: 0
+  label: "Reconnaissance for undeployed software and developer artifacts"

@@ -112,6 +112,11 @@ spec:
       targetPath: 'appsec.rules.block-laravel-ignition\.yaml'
       literal: true
     - kind: ConfigMap
+      name: crowdsec-src-appsec-rules
+      valuesKey: block-recon-artifacts.yaml
+      targetPath: 'appsec.rules.block-recon-artifacts\.yaml'
+      literal: true
+    - kind: ConfigMap
       name: crowdsec-src-appsec-configs
       valuesKey: app-surface.yaml
       targetPath: 'appsec.configs.app-surface\.yaml'
