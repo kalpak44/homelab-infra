@@ -526,6 +526,10 @@ done
 2xx and 3xx are healthy; the apex and `proklinator.online` answer 301 by design. Compare against what
 each answered before you started.
 
+Some Cloudflare edge addresses can be unreachable from the runner while the zone is healthy.
+Retry a timed-out public hostname against another Cloudflare IP and check Traefik directly
+before treating it as an outage.
+
 ## 10. When something breaks
 
 **A gitops change is reversible: revert it.**
