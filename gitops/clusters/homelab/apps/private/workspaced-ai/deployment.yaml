@@ -49,6 +49,12 @@ spec:
             # API, and bumped with the API's own tag, because both come from one commit.
             - name: WORKSPACED_WORKSPACE_IMAGE
               value: ghcr.io/kalpak44/workspaced-ai-harness:276c6f3
+            # Workspace backups. Each workspace uploads and downloads its own archive through
+            # URLs the API signs, so the pods must reach this host as well as the API.
+            - name: WORKSPACED_BACKUP_ENDPOINT
+              value: https://rustfs.internal.pavel-usanli.online
+            - name: WORKSPACED_BACKUP_BUCKET
+              value: workspace-backups
           ports:
             - name: http
               containerPort: 8080
