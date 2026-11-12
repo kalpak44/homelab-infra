@@ -194,7 +194,7 @@ spec:
       # when only the list does — without this the DaemonSet keeps serving the old one.
       # sha256 of blocked-ips.txt; update both in the same commit.
       podAnnotations:
-        homelab.pavel-usanli.online/blocked-ips-sha256: "c47d9f950bc0b999b58f1c18fcfd73829507afada566f954ac3fef5a3a57e426"
+        homelab.pavel-usanli.online/blocked-ips-sha256: "43d561df357e45fe2a06e8e345619d1fea6a15be70ef5db679146b7b53b8847b"
 
       # subPath, so the mount adds one file instead of masking the data directory the hub
       # downloads its pattern files into.

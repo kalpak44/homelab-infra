@@ -48,3 +48,6 @@
 # 2026-11-06 .env probing on mite-assistant at 05:29 and noco-google-connector at
 # 10:21, returning 52m after its automatic 4h ban expired
 45.138.12.216
+# 2026-11-12 Root-only 403 probes with rotating spoofed mobile UAs on www, returning
+# after a 1h automatic ban expired; 8 requests in four bursts over 12h
+91.184.244.208

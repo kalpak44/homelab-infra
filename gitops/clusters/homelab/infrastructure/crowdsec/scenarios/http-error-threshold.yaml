@@ -6,7 +6,11 @@ description: "Block IP after 5 4xx/5xx HTTP responses, regardless of rate"
 # and counting them bans a visitor who merely followed a redirect and missed a favicon.
 # Static assets are excluded too: a stale browser asking for an old hashed bundle (or a
 # source map) produces a burst of 404s that says nothing about intent.
-filter: "evt.Meta.service == 'http' && evt.Parsed.static_ressource == 'false' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5')"
+#
+# MCP clients probe GET/DELETE session handling and retry POST during negotiation; 405
+# and 400 are normal protocol outcomes there. The MCP-specific auth and surface scenarios
+# judge those requests, so a sparse run of negotation errors must not become a 24h ban.
+filter: "evt.Meta.service == 'http' && evt.Parsed.static_ressource == 'false' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5') && (evt.Meta.target_fqdn != 'mite-assistant.pavel-usanli.online' || evt.Meta.http_path != '/mcp' || evt.Meta.http_status not in ['400', '405'])"
 
 # Group events by source IP - each IP gets its own bucket
 groupby: evt.Meta.source_ip

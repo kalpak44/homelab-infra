@@ -7,7 +7,7 @@ rules:
       - lowercase
     match:
       type: regex
-      value: "\\.php([?/]|$)"
+      value: "\\.php([?/]|$|[.~_-])"
 labels:
   type: exploit
   service: http
