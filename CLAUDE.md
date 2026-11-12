@@ -55,6 +55,7 @@ See `gitops/README.md` for the in-cluster service list.
 @.claude/rules/commits.md
 @.claude/rules/comments.md
 @.claude/rules/secrets.md
+@.claude/rules/rustfs.md
 
 ---
 
