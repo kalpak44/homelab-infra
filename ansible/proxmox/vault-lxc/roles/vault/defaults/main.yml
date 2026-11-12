@@ -1,5 +1,5 @@
 ---
-vault_version: "2.2.1"
+vault_version: "2.2.2"
 vault_install_dir: /opt/vault
 vault_data_dir: /opt/vault/data
 vault_config_dir: /etc/vault.d

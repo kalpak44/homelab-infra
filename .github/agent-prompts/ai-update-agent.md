@@ -25,8 +25,9 @@ that mechanism. Leave every one of them alone.
 | `SUMMARY_FILE` | Where your report must be written |
 | `DEFAULT_BRANCH` | The branch you commit to |
 
-The service credentials `just configure` needs are already in the environment. The working
-directory is a clean checkout on the default branch.
+The credentials needed to reach Vault are already in the environment. Service logins live in
+Vault and roles read them through `ansible/proxmox/_shared/vault-secret.yml`; see
+`.claude/rules/secrets.md`. The working directory is a clean checkout on the default branch.
 
 `KUBECONFIG` is read-only and narrower than a cluster-admin credential; reads of
 `HelmChart`, `Ingress`, and `ExternalSecret` are denied. Use the manifests in this
@@ -110,7 +111,8 @@ ssh_host <ip> "df -h /"
 
 Check the guest filesystems as well as the pool: they are separate numbers and the guest
 fills first. A thin volume reads near-full long after the guest has freed the space, so
-compare the two rather than trusting either alone.
+compare the two rather than trusting either alone. A successful `fstrim` in a VM does not
+guarantee Proxmox's thin data percentage drops; report the allocation if it does not.
 
 Report anything over 80% and stop before taking a snapshot if the pool is over 85% — a
 snapshot on a nearly full thin pool is how you lose the node rather than one guest.
@@ -308,6 +310,10 @@ move k3s across its minor first; otherwise the normal gitops-first order is safe
 ## 6. Layer two — ansible
 
 These are version variables in role defaults. Bump the number, then apply that one service.
+Service logins are stored at `secret/<service>-secrets` and imported by the shared Vault
+task, so the run needs `VAULT_USERNAME` and `VAULT_PASSWORD`. A missing secret the role may
+generate is created on first run; one it may not generate fails and names the `vault kv put`
+command to run.
 
 | Variable | File | Upstream |
 |---|---|---|
@@ -354,7 +360,9 @@ version whose asset is missing or renamed fails the download rather than install
 
 `cloudflared` on both tunnel hosts, and the NFS server packages, carry no pin at all —
 they move when their playbook or the OS sweep runs. The roles restart `cloudflared` after
-an apt upgrade; without that the package moves while the old process keeps running.
+their own apt upgrade, but the OS sweep does not. After either moves the package, check
+`/proc/$(systemctl show -p MainPID --value cloudflared)/exe` and restart the service if the
+link is marked `(deleted)`; otherwise the package moves and the old process keeps running.
 
 `postgresql_version` is a **major** pin, and moving it is a `pg_upgradecluster` on a live
 database rather than a playbook re-run. It is in scope; section 7 is how.
@@ -478,7 +486,9 @@ resume or re-run the sweep just to test the host.
 Vault's LXC runs with 256 MiB and no swap, so a dist-upgrade can be OOM-killed with exit
 137 while Vault itself stays healthy, leaving a partial package transaction. Stop the
 sweep, then check `dpkg --audit` and `apt-get check`; do not retry the host. Resizing the
-guest is a Terraform change, not an OS fix.
+guest is a Terraform change, not an OS fix. A routine `just configure vault-lxc` can hit the
+same OOM: if the package is complete and only the restart was skipped, restart it once,
+unseal if needed, and confirm the server version; do not rerun the playbook.
 
 `k3s-agent` and `k3s` can be `activating` just after the node returns; the server's SSH
 and API can also stay unavailable for several minutes while containerd and pods settle.

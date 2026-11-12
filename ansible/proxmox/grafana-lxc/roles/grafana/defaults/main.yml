@@ -1,5 +1,5 @@
 ---
-grafana_version: "13.3.0"
+grafana_version: "13.3.1"
 
 # Served on 443 directly, so the URL carries no port. The unit gets
 # CAP_NET_BIND_SERVICE for it rather than running as root.
