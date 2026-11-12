@@ -84,9 +84,11 @@ spec:
               cpu: 50m
               memory: 256Mi
               ephemeral-storage: 64Mi
+            # The JVM sizes its heap from what is left of this after its fixed reservations,
+            # and 512Mi left too little for the API to start.
             limits:
               cpu: "1"
-              memory: 512Mi
+              memory: 768Mi
               ephemeral-storage: 256Mi
       volumes:
         - name: tmp
