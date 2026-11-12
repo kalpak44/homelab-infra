@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/kalpak44/workspaced-ai-api:d269746
+          image: ghcr.io/kalpak44/workspaced-ai-api:71e4417
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -48,7 +48,7 @@ spec:
             # The harness every workspace pod runs. Pinned here rather than baked into the
             # API, and bumped with the API's own tag, because both come from one commit.
             - name: WORKSPACED_WORKSPACE_IMAGE
-              value: ghcr.io/kalpak44/workspaced-ai-harness:d269746
+              value: ghcr.io/kalpak44/workspaced-ai-harness:71e4417
             # Workspace backups. Each workspace uploads and downloads its own archive through
             # URLs the API signs, so the pods must reach this host as well as the API.
             - name: WORKSPACED_BACKUP_ENDPOINT
