@@ -54,6 +54,7 @@ See `gitops/README.md` for the in-cluster service list.
 @.claude/rules/workflows.md
 @.claude/rules/commits.md
 @.claude/rules/comments.md
+@.claude/rules/secrets.md
 
 ---
 
@@ -128,7 +129,8 @@ homelab-infra/
 - **Public apps** go in `gitops/clusters/homelab/apps/public/<name>/`; private apps in `.../apps/private/<name>/`.
 - **TLS**: in-cluster via Traefik + cert-manager (DNS-01); standalone VMs/LXCs via certbot with Cloudflare DNS plugin (
   Ansible roles).
-- **Secrets flow**: Vault → External Secrets Operator → Kubernetes Secret → app.
+- **Secrets flow**: Vault → External Secrets Operator → Kubernetes Secret → app. LXC/VM roles read theirs from
+  Vault at configure time through `ansible/proxmox/_shared/vault-secret.yml` — see `.claude/rules/secrets.md`.
 - **Self-hosted runner** lives at VM 101 on the Proxmox node.
 - **VM 9000 (ubuntu-2404-template) and the Ubuntu LXC template are unmanaged by Terraform** - created manually or by
   `ansible/bootstrap/`. Deleting a proxmox/ state won't touch them.

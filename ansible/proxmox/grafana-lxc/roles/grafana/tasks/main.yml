@@ -1,36 +1,18 @@
 ---
 # --- Secrets --------------------------------------------------------------
-# Read from Vault on the controller rather than passed in as more CI secrets. The
-# userpass login is the one every configure run already carries.
 
-- name: Log in to Vault
-  ansible.builtin.uri:
-    url: "{{ grafana_vault_addr }}/v1/auth/userpass/login/{{ vault_username }}"
-    method: POST
-    body_format: json
-    body:
-      password: "{{ vault_password }}"
-  register: grafana_vault_login
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
-
-- name: Read the Grafana admin secret
-  ansible.builtin.uri:
-    url: "{{ grafana_vault_addr }}/v1/secret/data/{{ grafana_vault_admin_secret }}"
-    headers:
-      X-Vault-Token: "{{ grafana_vault_login.json.auth.client_token }}"
-  register: grafana_vault_secret
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
+- name: Read the Grafana admin secret from Vault
+  ansible.builtin.import_tasks: ../../../_shared/vault-secret.yml
+  vars:
+    vault_secret: "{{ grafana_vault_admin_secret }}"
+    vault_secret_generate:
+      admin-user: admin
+      admin-password: ""
 
 - name: Keep the values this role uses
   ansible.builtin.set_fact:
-    grafana_admin_user: "{{ grafana_vault_secret.json.data.data['admin-user'] }}"
-    grafana_admin_password: "{{ grafana_vault_secret.json.data.data['admin-password'] }}"
+    grafana_admin_user: "{{ vault_secret_data['admin-user'] }}"
+    grafana_admin_password: "{{ vault_secret_data['admin-password'] }}"
   no_log: true
 
 # --- Package --------------------------------------------------------------

@@ -9,9 +9,7 @@ grafana_tls_dir: /etc/grafana/tls
 
 grafana_prometheus_url: "https://prometheus.internal.pavel-usanli.online:9090"
 
-# The admin login is read from this Vault secret at configure time, with the userpass
-# login the vault-lxc role creates.
-grafana_vault_addr: "https://vault.internal.pavel-usanli.online:8200"
+# The admin login lives in this Vault secret, generated on the first run if absent.
 grafana_vault_admin_secret: grafana-secrets
 
 # One dashboard each, from files/host-dashboards/. Every host node_exporter runs on,

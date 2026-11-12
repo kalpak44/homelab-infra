@@ -14,7 +14,5 @@ rustfs_data_dir: /data/rustfs
 # RustFS reads rustfs_cert.pem and rustfs_key.pem from here, for the API and console.
 rustfs_tls_dir: /etc/rustfs/tls
 
-# The root credentials are read from this Vault secret at configure time, with the
-# userpass login the vault-lxc role creates.
-rustfs_vault_addr: "https://vault.internal.pavel-usanli.online:8200"
+# The root credentials live in this Vault secret, generated on the first run if absent.
 rustfs_vault_secret: rustfs-secrets

@@ -1,36 +1,18 @@
 ---
 # --- Secrets --------------------------------------------------------------
-# Read from Vault on the controller rather than passed in as more CI secrets. The
-# userpass login is the one every configure run already carries.
 
-- name: Log in to Vault
-  ansible.builtin.uri:
-    url: "{{ rustfs_vault_addr }}/v1/auth/userpass/login/{{ vault_username }}"
-    method: POST
-    body_format: json
-    body:
-      password: "{{ vault_password }}"
-  register: rustfs_vault_login
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
-
-- name: Read the RustFS root secret
-  ansible.builtin.uri:
-    url: "{{ rustfs_vault_addr }}/v1/secret/data/{{ rustfs_vault_secret }}"
-    headers:
-      X-Vault-Token: "{{ rustfs_vault_login.json.auth.client_token }}"
-  register: rustfs_vault_read
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
+- name: Read the RustFS root secret from Vault
+  ansible.builtin.import_tasks: ../../../_shared/vault-secret.yml
+  vars:
+    vault_secret: "{{ rustfs_vault_secret }}"
+    vault_secret_generate:
+      access-key: rustfsadmin
+      secret-key: ""
 
 - name: Keep the values this role uses
   ansible.builtin.set_fact:
-    rustfs_access_key: "{{ rustfs_vault_read.json.data.data['access-key'] }}"
-    rustfs_secret_key: "{{ rustfs_vault_read.json.data.data['secret-key'] }}"
+    rustfs_access_key: "{{ vault_secret_data['access-key'] }}"
+    rustfs_secret_key: "{{ vault_secret_data['secret-key'] }}"
   no_log: true
 
 # --- Package --------------------------------------------------------------
