@@ -143,6 +143,7 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | Cloudflare Tunnel          | LXC        | 192.168.1.10  | `proxmox/cloudflared-lxc`              | `proxmox/cloudflared-lxc`                   |
 | Prometheus                 | LXC        | 192.168.1.11  | `proxmox/prometheus-lxc`               | `proxmox/prometheus-lxc`                    |
 | Grafana                    | LXC        | 192.168.1.12  | `proxmox/grafana-lxc`                  | `proxmox/grafana-lxc`                       |
+| RustFS (S3)                | LXC        | 192.168.1.13  | `proxmox/rustfs-lxc`                   | `proxmox/rustfs-lxc`                        |
 | NFS server (k3s PVs)       | VM         | 192.168.1.108 | `proxmox/nfs-vm`                       | `proxmox/nfs-vm`                            |
 | k3s control plane          | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                  | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
 | k3s worker                 | VM         | 192.168.1.111 | `proxmox/k3s-cluster`                  | (same)                                      |
@@ -186,6 +187,10 @@ in the UI, or kept as JSON in that role's `files/`, which `ansible/proxmox/grafa
 writes — edit the script, never the JSON. Every inventory host gets its own board in the Hosts folder, and
 *Homelab hosts* links to each. The admin login is read from Vault
 (`secret/grafana-secrets`) at configure time, so the role needs no CI secret of its own.
+
+**RustFS** – S3 API at `https://rustfs.internal.pavel-usanli.online`, console at `:9001`, both on a certbot
+certificate. Objects live on a 100G volume at `/data`. The root keys are read from Vault (`secret/rustfs-secrets`,
+`access-key` and `secret-key`) at configure time.
 
 **NocoBase** – LAN-isolated: the Proxmox firewall drops all outbound traffic to `192.168.0.0/16` on the
 container's veth, except PostgreSQL (`192.168.1.4:5432`) and Redis (`192.168.1.6:6379`). Internet access and

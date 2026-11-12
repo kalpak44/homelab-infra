@@ -120,7 +120,7 @@ delete any `preupgrade-*` older than a day whose upgrade clearly completed — b
 delete one belonging to a guest you are about to touch:
 
 ```
-ssh_host 192.168.1.50 "for i in 200 201 202 204 207 208 210 211 212; do pct listsnapshot \$i; done"
+ssh_host 192.168.1.50 "for i in 200 201 202 204 207 208 210 211 212 213; do pct listsnapshot \$i; done"
 ssh_host 192.168.1.50 "for i in 110 111 301 302; do qm listsnapshot \$i; done"
 ```
 
@@ -148,6 +148,7 @@ one the **proxy** is serving, on the port it actually listens on:
 | `vault.internal.pavel-usanli.online` | 8200 |
 | `prometheus.internal.pavel-usanli.online` | 9090 |
 | `grafana.internal.pavel-usanli.online` | 443 |
+| `rustfs.internal.pavel-usanli.online` | 443 (S3) and 9001 (console) |
 | `proxmox.internal.pavel-usanli.online` | 8006 |
 
 The two Postgres hostnames share one SAN certificate and the pgAdmin
@@ -191,7 +192,7 @@ being there — so a genuinely expired one needs `certbot renew --force-renewal`
 **In the cluster** Traefik resolves certificates itself through its `cloudflare` resolver,
 storing them in `acme.json` on its volume. The in-cluster hostnames are `home`, `headlamp`,
 `workspaced-ai`, `crowdsec`, `songradar` and `traefik`; check those through
-192.168.1.121. `vault`, `prometheus` and `grafana` terminate on their own hosts above, so probing them
+192.168.1.121. `vault`, `prometheus`, `grafana` and `rustfs` terminate on their own hosts above, so probing them
 through the ingress returns Traefik's default certificate, not a fault. Read Traefik's log
 for ACME errors — it retries forever and reports nothing else:
 
@@ -316,6 +317,7 @@ These are version variables in role defaults. Bump the number, then apply that o
 | `blackbox_exporter_version` | `ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml` | `prometheus/blackbox_exporter` releases |
 | `vault_version` | `ansible/proxmox/vault-lxc/roles/vault/defaults/main.yml` | the HashiCorp apt repo |
 | `grafana_version` | `ansible/proxmox/grafana-lxc/roles/grafana/defaults/main.yml` | the Grafana apt repo (`apt.grafana.com`) |
+| `rustfs_version` | `ansible/proxmox/rustfs-lxc/roles/rustfs/defaults/main.yml` | `rustfs/rustfs` releases (the `.deb` assets) |
 | `k3s_version` | `ansible/proxmox/k3s-cluster/group_vars/k3s.yml` | `https://update.k3s.io/v1-release/channels` |
 
 HashiCorp rotates its apt signing key. The Vault role must refresh the keyring before
@@ -342,6 +344,13 @@ bootstrap — never run `just bootstrap` to apply one, because that playbook als
 VMs and issues certificates and is not a nightly operation. The Actions runner also
 updates itself, so its pin is the floor a fresh VM downloads rather than what is running;
 `pveam available | grep ubuntu-24.04` is what tells you whether the template moved.
+
+**RustFS holds every object on its `/data` volume, so its minor is a major until it shows
+otherwise.** A patch is routine: bump `rustfs_version` and `just configure rustfs-lxc`. Any
+release whose notes mention the on-disk format, metadata or a migration goes through
+section 7 — snapshot guest 213 first, because the data volume is on the same snapshot and
+a format change does not survive a revert. The role reads the release's `SHA256SUMS`, so a
+version whose asset is missing or renamed fails the download rather than installing.
 
 `cloudflared` on both tunnel hosts, and the NFS server packages, carry no pin at all —
 they move when their playbook or the OS sweep runs. The roles restart `cloudflared` after
@@ -389,7 +398,7 @@ no majors this run: report that and move on.
 | redis | 204 | | k3s-2 | 111 |
 | nocobase | 207 | | nfs | 301 |
 | mihal | 208 | | portainer | 302 |
-| | | | grafana | 212 |
+| rustfs | 213 | | grafana | 212 |
 
 `pct` for the LXCs, `qm` for the VMs:
 
@@ -505,8 +514,8 @@ For an LXC or VM service, check the thing itself answers:
 curl -sk -o /dev/null -w '%{http_code}\n' --max-time 20 https://<host>.internal.pavel-usanli.online/
 ```
 
-Vault answers on `/v1/sys/health` and Prometheus on `/-/healthy`; their `/` does not
-answer, so a `000` there is not an outage.
+Vault answers on `/v1/sys/health`, Prometheus on `/-/healthy` and RustFS on `/health`; their
+`/` does not answer (RustFS returns 403 there), so a `000` or `403` there is not an outage.
 
 And the whole homelab, after the OS sweep:
 

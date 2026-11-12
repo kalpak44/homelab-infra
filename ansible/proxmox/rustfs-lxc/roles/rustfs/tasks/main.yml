@@ -1,0 +1,201 @@
+---
+# --- Secrets --------------------------------------------------------------
+# Read from Vault on the controller rather than passed in as more CI secrets. The
+# userpass login is the one every configure run already carries.
+
+- name: Log in to Vault
+  ansible.builtin.uri:
+    url: "{{ rustfs_vault_addr }}/v1/auth/userpass/login/{{ vault_username }}"
+    method: POST
+    body_format: json
+    body:
+      password: "{{ vault_password }}"
+  register: rustfs_vault_login
+  delegate_to: localhost
+  become: false
+  run_once: true
+  no_log: true
+
+- name: Read the RustFS root secret
+  ansible.builtin.uri:
+    url: "{{ rustfs_vault_addr }}/v1/secret/data/{{ rustfs_vault_secret }}"
+    headers:
+      X-Vault-Token: "{{ rustfs_vault_login.json.auth.client_token }}"
+  register: rustfs_vault_read
+  delegate_to: localhost
+  become: false
+  run_once: true
+  no_log: true
+
+- name: Keep the values this role uses
+  ansible.builtin.set_fact:
+    rustfs_access_key: "{{ rustfs_vault_read.json.data.data['access-key'] }}"
+    rustfs_secret_key: "{{ rustfs_vault_read.json.data.data['secret-key'] }}"
+  no_log: true
+
+# --- Package --------------------------------------------------------------
+# Upstream's .deb from the GitHub release: no distribution packages RustFS. The checksum
+# is checked against the release's own SHA256SUMS, and the download is skipped when that
+# version is already installed.
+
+- name: Read the installed packages
+  ansible.builtin.package_facts:
+
+- name: Download the RustFS package
+  ansible.builtin.get_url:
+    url: "https://github.com/rustfs/rustfs/releases/download/{{ rustfs_version }}/rustfs-linux-x86_64-gnu-v{{ rustfs_version }}.deb"
+    dest: "/tmp/rustfs-{{ rustfs_version }}.deb"
+    checksum: "sha256:https://github.com/rustfs/rustfs/releases/download/{{ rustfs_version }}/SHA256SUMS"
+    mode: "0644"
+  when: (ansible_facts.packages.rustfs | default([{}]))[0].version | default('') != rustfs_version
+
+# dpkg rather than apt's deb option: python-apt reads the whole archive into memory and is
+# OOM-killed in this 256 MB container. force-confold keeps the templated /etc/default/rustfs
+# over the package's copy, so the credentials survive a version bump.
+- name: Install RustFS
+  ansible.builtin.command:
+    cmd: "dpkg -i --force-confold /tmp/rustfs-{{ rustfs_version }}.deb"
+  when: (ansible_facts.packages.rustfs | default([{}]))[0].version | default('') != rustfs_version
+  notify: Restart RustFS
+
+- name: Remove the downloaded package
+  ansible.builtin.file:
+    path: "/tmp/rustfs-{{ rustfs_version }}.deb"
+    state: absent
+
+# The data volume is mounted by Proxmox and arrives owned by root; the package's postinst
+# only chowns the directory when it creates it.
+- name: Hand the data directory to rustfs
+  ansible.builtin.file:
+    path: "{{ rustfs_data_dir }}"
+    state: directory
+    owner: rustfs
+    group: rustfs
+    mode: "0750"
+
+# --- TLS ------------------------------------------------------------------
+# DNS-01 rather than HTTP-01: rustfs.internal resolves only on the LAN, so no ACME server
+# can reach this host to answer an HTTP challenge.
+
+- name: Install certbot and the Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+    update_cache: true
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Create the TLS directory
+  ansible.builtin.file:
+    path: "{{ rustfs_tls_dir }}"
+    state: directory
+    owner: rustfs
+    group: rustfs
+    mode: "0750"
+
+- name: Issue the Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ letsencrypt_email }}
+      -d {{ rustfs_domain }}
+    creates: "/etc/letsencrypt/live/{{ rustfs_domain }}/fullchain.pem"
+  when: letsencrypt_email != ""
+
+- name: Copy the TLS certificate for RustFS
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ rustfs_domain }}/fullchain.pem"
+    dest: "{{ rustfs_tls_dir }}/rustfs_cert.pem"
+    remote_src: true
+    owner: rustfs
+    group: rustfs
+    mode: "0640"
+  notify: Restart RustFS
+
+- name: Copy the TLS private key for RustFS
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ rustfs_domain }}/privkey.pem"
+    dest: "{{ rustfs_tls_dir }}/rustfs_key.pem"
+    remote_src: true
+    owner: rustfs
+    group: rustfs
+    mode: "0640"
+  notify: Restart RustFS
+
+# certbot renews on its own timer, and RustFS reads its certificate only at startup —
+# without this hook it serves the expired one until someone notices.
+- name: Deploy the certbot renewal hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-rustfs.sh
+    content: |
+      #!/bin/bash
+      cp /etc/letsencrypt/live/{{ rustfs_domain }}/fullchain.pem {{ rustfs_tls_dir }}/rustfs_cert.pem
+      cp /etc/letsencrypt/live/{{ rustfs_domain }}/privkey.pem {{ rustfs_tls_dir }}/rustfs_key.pem
+      chown rustfs:rustfs {{ rustfs_tls_dir }}/rustfs_cert.pem {{ rustfs_tls_dir }}/rustfs_key.pem
+      chmod 640 {{ rustfs_tls_dir }}/rustfs_cert.pem {{ rustfs_tls_dir }}/rustfs_key.pem
+      systemctl restart rustfs
+    mode: "0755"
+
+# --- Configuration --------------------------------------------------------
+
+- name: Deploy the RustFS environment
+  ansible.builtin.template:
+    src: rustfs.env.j2
+    dest: /etc/default/rustfs
+    owner: root
+    group: rustfs
+    mode: "0640"
+  no_log: true
+  notify: Restart RustFS
+
+- name: Create the systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/rustfs.service.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy the systemd drop-in
+  ansible.builtin.template:
+    src: override.conf.j2
+    dest: /etc/systemd/system/rustfs.service.d/override.conf
+    mode: "0644"
+  notify: Restart RustFS
+
+- name: Flush handlers to apply the configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure RustFS is running
+  ansible.builtin.systemd:
+    name: rustfs
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for the S3 API to answer
+  ansible.builtin.uri:
+    url: "https://localhost:{{ rustfs_api_port }}/health"
+    validate_certs: false
+  register: rustfs_ready
+  until: rustfs_ready.status == 200
+  retries: 12
+  delay: 5
+
+# Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
+# guarded on the file being there. Runs after the deploy hook, so a renewal reloads the
+# service.
+- name: Renew and verify the certificate
+  ansible.builtin.import_tasks: ../../../_shared/certbot-renew.yml
+  vars:
+    certbot_domain: "{{ rustfs_domain }}"

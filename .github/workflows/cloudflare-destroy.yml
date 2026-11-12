@@ -11,6 +11,7 @@ on:
           - dns/private/acestream
           - dns/private/adguard
           - dns/private/grafana
+          - dns/private/rustfs
           - dns/private/headlamp
           - dns/private/nfs
           - dns/private/portainer

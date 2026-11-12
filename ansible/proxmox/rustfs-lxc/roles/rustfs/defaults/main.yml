@@ -1,0 +1,20 @@
+---
+rustfs_version: "1.0.5"
+
+# The S3 API is on 443, so clients use the bare https URL. The unit gets
+# CAP_NET_BIND_SERVICE for it rather than running as root.
+rustfs_api_port: 443
+rustfs_console_port: 9001
+rustfs_domain: "rustfs.internal.pavel-usanli.online"
+
+# On the data volume from terraform/proxmox/rustfs-lxc/main.tf, and the one path the
+# package's unit lists in ReadWritePaths.
+rustfs_data_dir: /data/rustfs
+
+# RustFS reads rustfs_cert.pem and rustfs_key.pem from here, for the API and console.
+rustfs_tls_dir: /etc/rustfs/tls
+
+# The root credentials are read from this Vault secret at configure time, with the
+# userpass login the vault-lxc role creates.
+rustfs_vault_addr: "https://vault.internal.pavel-usanli.online:8200"
+rustfs_vault_secret: rustfs-secrets

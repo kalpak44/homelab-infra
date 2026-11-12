@@ -68,6 +68,9 @@ prometheus_probes:
   - service: pgadmin
     module: http_2xx
     target: https://pgadmin.internal.pavel-usanli.online/pgadmin4/misc/ping
+  - service: rustfs
+    module: http_2xx
+    target: https://rustfs.internal.pavel-usanli.online/health
   - service: postgres
     module: tcp_connect
     target: postgres.internal.pavel-usanli.online:5432

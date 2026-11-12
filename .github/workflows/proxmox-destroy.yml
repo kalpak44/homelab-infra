@@ -17,6 +17,7 @@ on:
           - mihal-lxc
           - prometheus-lxc
           - grafana-lxc
+          - rustfs-lxc
           - nfs-vm
           - portainer-vm
           - k3s-cluster

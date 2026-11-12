@@ -6,6 +6,7 @@
 #
 # host.json and host-proxmox.json are templates: the role writes one copy per inventory
 # host, with __HOST__ replaced, so a new LXC or VM gets its own board with no edit here.
+# host-<name>.json, when present, replaces host.json for that one host to add service rows.
 import json
 import pathlib
 
@@ -151,7 +152,7 @@ HOSTS_LINK = [{"title": "All hosts", "type": "link", "url": "/d/homelab-hosts",
 
 # --- One host ---------------------------------------------------------------------------
 
-def host_board(proxmox):
+def host_board(proxmox, extra=None):
     sel = 'job=~"hosts|node",host="__HOST__"'
     fs = f"{sel},{FS_REAL}"
     net = f"{sel},{NET_REAL}"
@@ -246,6 +247,8 @@ def host_board(proxmox):
 
     if proxmox:
         thin_pool(b)
+    if extra:
+        extra(b)
 
     return dashboard("host-__HOST__", "__HOST__",
                      "CPU, memory, disk and network of __HOST__.", b.panels,
@@ -413,6 +416,58 @@ def traffic():
                      b.panels, ["homelab", "traefik"])
 
 
+# --- RustFS -------------------------------------------------------------------------------
+# Extra rows on the rustfs host board. RustFS pushes its own metrics over OTLP only, so they
+# are built from what Prometheus already pulls: the blackbox probe and node_exporter.
+
+def rustfs_rows(b):
+    probe = 'probe_success{job="probes",service="rustfs"}'
+    data = 'job="hosts",host="rustfs",mountpoint="/data"'
+
+    b.row("S3 endpoint")
+    up = stat("Status", f"min({probe})", "none", {"mode": "absolute", "steps": [
+        {"color": "red", "value": None}, {"color": "green", "value": 1}]})
+    up["fieldConfig"]["defaults"]["mappings"] = UP_DOWN
+    b.add(up, 4, 5, 0)
+    b.add(stat("Uptime", f"100 * avg(avg_over_time({probe}[$__range]))", "percent",
+               {"mode": "absolute", "steps": [{"color": "red", "value": None},
+                                              {"color": "orange", "value": 99},
+                                              {"color": "green", "value": 99.9}]},
+               "Share of probes that answered over the selected time range.", decimals=2),
+          4, 5, 4)
+    b.add(stat("Certificate expires in", "min((probe_ssl_earliest_cert_expiry{job=\"probes\","
+               "service=\"rustfs\"} - time()) / 86400)", "d", {"mode": "absolute", "steps": [
+                   {"color": "red", "value": None}, {"color": "orange", "value": 7},
+                   {"color": "green", "value": 14}]},
+               "certbot renews at 30 days, so anything under that means renewal is failing.",
+               decimals=0), 4, 5, 8)
+    b.add(timeline("Probe", probe, "{{instance}}", "Down while /health does not answer 200 "
+                   "over TLS with a valid certificate."), 12, 5, 12, newline=True)
+    b.add(series("Response time", [target(f'probe_duration_seconds{{job="probes",'
+                                          f'service="rustfs"}}', "A", "{{instance}}")], "s"),
+          24, 6, 0, newline=True)
+
+    b.row("Object storage")
+    b.add(stat("Data used", f"100 * (1 - max(node_filesystem_avail_bytes{{{data}}}) / "
+               f"max(node_filesystem_size_bytes{{{data}}}))", "percent", steps(75, 90),
+               "The object volume at /data.", gauge=True), 4, 8, 0)
+    b.add(stat("Data free", f"max(node_filesystem_avail_bytes{{{data}}})", "bytes",
+               decimals=1), 4, 4, 4)
+    b.add(stat("Full in", f"max(node_filesystem_avail_bytes{{{data}}}) / "
+               f"clamp_min(-deriv(node_filesystem_avail_bytes{{{data}}}[7d]), 1e-9) / 86400",
+               "d", {"mode": "absolute", "steps": [{"color": "red", "value": None},
+                                                   {"color": "orange", "value": 14},
+                                                   {"color": "green", "value": 60}]},
+               "Days until /data fills at the growth rate of the last week. Huge while "
+               "nothing is being written.", decimals=0), 4, 4, 4)
+    b.panels[-1]["gridPos"]["y"] += 4
+    b.add(series("Data volume", [
+        target(f"max(node_filesystem_size_bytes{{{data}}} - node_filesystem_avail_bytes{{{data}}})",
+               "A", "used"),
+        target(f"max(node_filesystem_size_bytes{{{data}}})", "B", "size")], "bytes"),
+        16, 8, 8, newline=True)
+
+
 def write(path, board):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(board, indent=2) + "\n")
@@ -422,5 +477,6 @@ def write(path, board):
 write(OUT / "dashboards/hosts.json", overview())
 write(OUT / "dashboards/services.json", services())
 write(OUT / "dashboards/traffic.json", traffic())
+write(OUT / "host-dashboards/host-rustfs.json", host_board(proxmox=False, extra=rustfs_rows))
 write(OUT / "host-dashboards/host.json", host_board(proxmox=False))
 write(OUT / "host-dashboards/host-proxmox.json", host_board(proxmox=True))

@@ -197,6 +197,22 @@
     mode: "0640"
   with_fileglob: "dashboards/*.json"
 
+- name: Find provisioned dashboards on disk
+  ansible.builtin.find:
+    paths: /var/lib/grafana/dashboards
+    patterns: "*.json"
+  register: grafana_dashboard_files
+
+# Copy only adds, so a board removed from files/dashboards/ would otherwise stay in Grafana.
+- name: Remove dashboards no longer in the role
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ grafana_dashboard_files.files }}"
+  when: (item.path | basename) not in (query('ansible.builtin.fileglob', 'dashboards/*.json') | map('basename'))
+  loop_control:
+    label: "{{ item.path | basename }}"
+
 - name: Create the host dashboards directory
   ansible.builtin.file:
     path: /var/lib/grafana/dashboards-hosts
@@ -211,7 +227,9 @@
   ansible.builtin.copy:
     content: >-
       {{ lookup('ansible.builtin.file',
-                'host-dashboards/' ~ ('host-proxmox.json' if item in groups['proxmox_host'] else 'host.json'))
+                'host-dashboards/' ~ ('host-proxmox.json' if item in groups['proxmox_host']
+                                      else 'host-' ~ item ~ '.json' if query('ansible.builtin.fileglob', 'host-dashboards/host-' ~ item ~ '.json')
+                                      else 'host.json'))
          | replace('__HOST__', item) }}
     dest: "/var/lib/grafana/dashboards-hosts/{{ item }}.json"
     owner: grafana

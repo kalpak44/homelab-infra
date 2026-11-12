@@ -16,6 +16,7 @@ on:
           - redis-lxc
           - prometheus-lxc
           - grafana-lxc
+          - rustfs-lxc
           - nocobase-lxc
           - nfs-vm
           - portainer-vm
