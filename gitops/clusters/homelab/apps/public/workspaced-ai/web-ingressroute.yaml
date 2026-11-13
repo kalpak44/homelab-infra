@@ -8,9 +8,8 @@ metadata:
 spec:
   entryPoints:
     - public-web-secure
-    - private-web-secure
   routes:
-    - match: (Host(`app.workspaced.online`) || Host(`workspaced-ai.internal.pavel-usanli.online`))
+    - match: Host(`app.workspaced.online`)
       kind: Rule
       services:
         - name: workspaced-ai-web

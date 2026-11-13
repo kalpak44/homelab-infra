@@ -320,16 +320,16 @@ real CrowdSec decision the first time that address comes back.
 
 **Cloudflare — the worst offenders only.**
 `terraform/cloudflare/shared/zero-trust/blocked-ips.txt`, read by `waf-blocked-ips.tf`
-into both zones' rulesets. No annotation to update here; Terraform reads the file at plan
+into every zone's ruleset. No annotation to update here; Terraform reads the file at plan
 time. Promote an address only when it was sustained, hit more than one hostname, and is
 not a shared egress. This stops the traffic at Cloudflare's edge before it crosses the
 tunnel.
 
-Both zones read that one list, and each already spends custom rules on other things: the
-Free plan caps a zone at five. If adding the rule would exceed that on either zone, skip
+Every zone reads that one list, and each already spends custom rules on other things: the
+Free plan caps a zone at five. If adding the rule would exceed that on any zone, skip
 the Cloudflare half entirely and report it — CrowdSec still has the ban.
 
-**Both zones are on the Free plan and must stay there.** Your only Cloudflare lever is one
+**Every zone is on the Free plan and must stay there.** Your only Cloudflare lever is one
 more address inside `local.blocked_ips`. Do not reach for anything that bills: no IP Lists,
 no Bot Management, no managed ruleset beyond the free one, no second rate limiting rule,
 and no `matches` operator — match with `contains` on a `lower()`ed field. If the right
@@ -496,7 +496,8 @@ or a custom hostname means you edited the wrong thing — do not let it apply; r
 
 ```
 for h in pavel-usanli.online planner.pavel-usanli.online \
-         noco-google-connector.pavel-usanli.online proklinator.online; do
+         noco-google-connector.pavel-usanli.online proklinator.online \
+         app.workspaced.online; do
   curl -s -o /dev/null -w "$h %{http_code}\n" --max-time 20 "https://$h/"
 done
 ```
@@ -576,7 +577,7 @@ fenced block rather than a table.
   `terraform/cloudflare/shared/zero-trust/`. Applications, Ansible, and every other
   Terraform directory are out of scope even when the evidence points at them — report it
   instead.
-- Never use a Cloudflare feature the Free plan does not include. Both zones stay on Free.
+- Never use a Cloudflare feature the Free plan does not include. Every zone stays on Free.
 - Never hold a version back. `image.tag` exists to get ahead of a lagging chart, never to
   pin away from a release that has already shipped.
 - Never commit an address, a token or a header value that came out of a secret.

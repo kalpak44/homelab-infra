@@ -1,8 +1,10 @@
-# No application here uses Spring Actuator, so two probes in a minute are enough.
+# Two probes in a minute are enough. workspaced-ai is the one app that uses Spring
+# Actuator, and its web app reads the health endpoint on every page load, so that one
+# path on its host is exempt — without it every visitor is banned on their second load.
 type: leaky
 name: custom/actuator-probing
 description: "Block IPs probing Spring Boot Actuator endpoints"
-filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator'"
+filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator' && !(evt.Meta.target_fqdn == 'app.workspaced.online' && evt.Meta.http_path startsWith '/api/v1/actuator/health')"
 groupby: evt.Meta.source_ip
 capacity: 1
 leakspeed: "1m"

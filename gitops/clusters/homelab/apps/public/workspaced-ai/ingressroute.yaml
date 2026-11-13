@@ -9,9 +9,8 @@ metadata:
 spec:
   entryPoints:
     - public-web-secure
-    - private-web-secure
   routes:
-    - match: (Host(`app.workspaced.online`) || Host(`workspaced-ai.internal.pavel-usanli.online`)) && PathPrefix(`/api/v1/`)
+    - match: Host(`app.workspaced.online`) && PathPrefix(`/api/v1/`)
       kind: Rule
       middlewares:
         - name: workspaced-ai-forwarded-https

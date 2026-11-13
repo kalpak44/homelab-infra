@@ -195,7 +195,7 @@ being there — so a genuinely expired one needs `certbot renew --force-renewal`
 
 **In the cluster** Traefik resolves certificates itself through its `cloudflare` resolver,
 storing them in `acme.json` on its volume. The in-cluster hostnames are `home`, `headlamp`,
-`workspaced-ai`, `crowdsec`, `songradar` and `traefik`; check those through
+`crowdsec`, `songradar` and `traefik`; check those through
 192.168.1.121. `vault`, `prometheus`, `grafana` and `rustfs` terminate on their own hosts above, so probing them
 through the ingress returns Traefik's default certificate, not a fault. Read Traefik's log
 for ACME errors — it retries forever and reports nothing else:

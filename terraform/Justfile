@@ -250,7 +250,6 @@ list:
     @printf "    %-40s %s\n" "dns/private/rustfs"                      "rustfs.internal → 192.168.1.13 (RustFS S3)"
     @printf "    %-40s %s\n" "dns/private/private-home-page"           "home.internal → 192.168.1.121 (internal home page)"
     @printf "    %-40s %s\n" "dns/private/songradar"                   "songradar.internal → 192.168.1.121 (SongRadar, in-cluster)"
-    @printf "    %-40s %s\n" "dns/private/workspaced-ai"               "workspaced-ai.internal → 192.168.1.121 (workspaced-ai API, in-cluster)"
     @printf "    %-40s %s\n" "dns/private/prometheus"                  "prometheus.internal → 192.168.1.11 (Prometheus)"
     @printf "    %-40s %s\n" "dns/private/acestream"                   "acestream.internal → 192.168.1.7 (AceStream engine + acexy + Threadfin, Portainer stack)"
     @printf "    %-40s %s\n" "dns/private/cloudflared"                 "cloudflared.internal → 192.168.1.10 (Cloudflare Tunnel connector)"

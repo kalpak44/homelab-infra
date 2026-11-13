@@ -18,7 +18,6 @@ on:
           - dns/private/postgres
           - dns/private/private-home-page
           - dns/private/songradar
-          - dns/private/workspaced-ai
           - dns/private/prometheus
           - dns/private/proxmox
           - dns/private/redis

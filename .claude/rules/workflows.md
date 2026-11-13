@@ -119,7 +119,7 @@ flags which error):
 
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
-- `cloudflare-*.yml`: 24 entries (21 private DNS + 3 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
+- `cloudflare-*.yml`: 23 entries (20 private DNS + 3 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
 - `proxmox-*.yml`: 13 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `cloudflared-lxc`,
   `nocobase-lxc`, `mihal-lxc`, `prometheus-lxc`, `grafana-lxc`, `rustfs-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
 - `ansible-configure.yml`: 15 entries (the 13 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml`, and `node-exporter`, which maps to `maintenance/node-exporter.yml` in

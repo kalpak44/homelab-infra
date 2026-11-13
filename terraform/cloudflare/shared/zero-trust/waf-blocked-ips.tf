@@ -2,9 +2,10 @@
 # the worst offenders reach here — CrowdSec carries every ban and covers *.internal too,
 # while this stops the traffic before it crosses the tunnel.
 #
-# One list, read by both zones' rulesets. Each zone allows a single
+# One list, read by every zone's ruleset. Each zone allows a single
 # http_request_firewall_custom entrypoint, so the rule is added inside the ruleset that
-# already exists in edge-ports.tf and waf-proklinator.tf, never in a ruleset of its own.
+# already exists in edge-ports.tf, waf-proklinator.tf and waf-workspaced.tf, never in a
+# ruleset of its own.
 locals {
   # Kept in blocked-ips.txt rather than here, so a night's bans grow a plain list instead
   # of this file. Comment and blank lines are dropped; the file is the only edit point.
