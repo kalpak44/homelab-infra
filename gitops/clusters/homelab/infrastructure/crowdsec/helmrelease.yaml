@@ -117,11 +117,6 @@ spec:
       targetPath: 'appsec.rules.block-recon-artifacts\.yaml'
       literal: true
     - kind: ConfigMap
-      name: crowdsec-src-appsec-rules
-      valuesKey: block-dev-state.yaml
-      targetPath: 'appsec.rules.block-dev-state\.yaml'
-      literal: true
-    - kind: ConfigMap
       name: crowdsec-src-appsec-configs
       valuesKey: app-surface.yaml
       targetPath: 'appsec.configs.app-surface\.yaml'
