@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: workspaced-ai-web
-  namespace: private
+  namespace: workspaced-ai
 spec:
   replicas: 1
   # A new image tag on every bump leaves the superseded ReplicaSet behind for ever, and

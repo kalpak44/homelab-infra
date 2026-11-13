@@ -1,0 +1,6 @@
+# Its own namespace because the API creates every workspace in the namespace it runs in,
+# and its Role there covers Secrets and pods the other apps' namespaces must not expose.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workspaced-ai

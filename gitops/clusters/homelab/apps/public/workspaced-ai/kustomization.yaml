@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - namespace.yaml
   - externalsecret.yaml
   - rbac.yaml
   - deployment.yaml
@@ -11,4 +12,4 @@ resources:
   - web-service.yaml
   - web-ingressroute.yaml
 
-namespace: private
+namespace: workspaced-ai

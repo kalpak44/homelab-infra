@@ -25,11 +25,11 @@ gitops/clusters/homelab/
     │   ├── capacity-planner/               # Capacity planner tool (Sablier scale-on-demand)
     │   ├── bunker-game-app/                # Bunker party game (Sablier scale-on-demand)
     │   ├── noco-google-connector-web-page/ # Noco Google connector web page (noco-google-connector.pavel-usanli.online)
-    │   └── proklinator/                    # proklinator.online — nginx placeholder
+    │   ├── proklinator/                    # proklinator.online — nginx placeholder
+    │   └── workspaced-ai/                  # own namespace; web app at the root, API under /api/v1/ (app.workspaced.online, also workspaced-ai.internal.pavel-usanli.online)
     └── private/
         ├── private-home-page/               # Internal services dashboard
-        ├── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
-        └── workspaced-ai/                   # workspaced-ai web app at the root, API under /api/v1/ (workspaced-ai.internal.pavel-usanli.online)
+        └── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)
 ```
 
 ## Required secrets in Vault
