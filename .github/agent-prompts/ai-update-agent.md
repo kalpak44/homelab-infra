@@ -113,6 +113,8 @@ Check the guest filesystems as well as the pool: they are separate numbers and t
 fills first. A thin volume reads near-full long after the guest has freed the space, so
 compare the two rather than trusting either alone. A successful `fstrim` in a VM does not
 guarantee Proxmox's thin data percentage drops; report the allocation if it does not.
+An unprivileged LXC rejects in-guest `fstrim` with `Operation not permitted`; run
+`pct fstrim <id>` on the Proxmox node instead.
 
 Report anything over 80% and stop before taking a snapshot if the pool is over 85% — a
 snapshot on a nearly full thin pool is how you lose the node rather than one guest.
