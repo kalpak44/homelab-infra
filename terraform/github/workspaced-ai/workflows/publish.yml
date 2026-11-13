@@ -419,11 +419,13 @@ jobs:
           test "$(get -H 'Host: 10.42.0.5:8080' http://gateway:8080/healthz)" = "200 text/plain"
 
           echo "A name with a workspace behind it reaches that workspace"
-          get -H 'Host: demo.workspaced.test' http://gateway:8080/ | grep -q '^200 '
+          get -H 'Host: box-demo.workspaced.test' http://gateway:8080/ | grep -q '^200 '
 
           # An octet-stream body here reads as a broken download in a browser.
           echo "A name with nothing behind it gets the page, as a 404"
-          test "$(get -H 'Host: nobody.workspaced.test' http://gateway:8080/)" = "404 text/html"
+          test "$(get -H 'Host: box-nobody.workspaced.test' http://gateway:8080/)" = "404 text/html"
+          # Only box-<name> is a workspace, so no name can stand for another host.
+          test "$(get -H 'Host: demo.workspaced.test' http://gateway:8080/)" = "404 text/html"
           test "$(get -H 'Host: 10.42.0.5' http://gateway:8080/)" = "404 text/html"
 
       - name: Show the gateway log
