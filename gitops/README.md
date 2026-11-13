@@ -26,7 +26,7 @@ gitops/clusters/homelab/
     │   ├── bunker-game-app/                # Bunker party game (Sablier scale-on-demand)
     │   ├── noco-google-connector-web-page/ # Noco Google connector web page (noco-google-connector.pavel-usanli.online)
     │   ├── proklinator/                    # proklinator.online — nginx placeholder
-    │   └── workspaced-ai/                  # own namespace; web app at the root, API under /api/v1/ (app.workspaced.online)
+    │   └── workspaced-ai/                  # own namespace; web app at the root, API under /api/v1/ (ai.workspaced.online)
     └── private/
         ├── private-home-page/               # Internal services dashboard
         └── headlamp/                        # Kubernetes dashboard (+ Trivy plugin: CVE board)

@@ -10,7 +10,7 @@ spec:
   entryPoints:
     - public-web-secure
   routes:
-    - match: Host(`app.workspaced.online`) && PathPrefix(`/api/v1/`)
+    - match: Host(`ai.workspaced.online`) && PathPrefix(`/api/v1/`)
       kind: Rule
       middlewares:
         - name: workspaced-ai-forwarded-https

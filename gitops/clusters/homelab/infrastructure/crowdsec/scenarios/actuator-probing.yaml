@@ -4,7 +4,7 @@
 type: leaky
 name: custom/actuator-probing
 description: "Block IPs probing Spring Boot Actuator endpoints"
-filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator' && !(evt.Meta.target_fqdn == 'app.workspaced.online' && evt.Meta.http_path startsWith '/api/v1/actuator/health')"
+filter: "evt.Meta.service == 'http' && evt.Meta.http_path contains '/actuator' && !(evt.Meta.target_fqdn == 'ai.workspaced.online' && evt.Meta.http_path startsWith '/api/v1/actuator/health')"
 groupby: evt.Meta.source_ip
 capacity: 1
 leakspeed: "1m"

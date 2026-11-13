@@ -40,7 +40,7 @@ locals {
   }
 
   workspaced_apps = {
-    "app" = "app.workspaced.online"
+    "ai" = "ai.workspaced.online"
   }
 
   # Ingress rules are keyed by hostname, not record name, so "www" existing in

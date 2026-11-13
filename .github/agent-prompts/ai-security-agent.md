@@ -497,7 +497,7 @@ or a custom hostname means you edited the wrong thing — do not let it apply; r
 ```
 for h in pavel-usanli.online planner.pavel-usanli.online \
          noco-google-connector.pavel-usanli.online proklinator.online \
-         app.workspaced.online; do
+         ai.workspaced.online; do
   curl -s -o /dev/null -w "$h %{http_code}\n" --max-time 20 "https://$h/"
 done
 ```
