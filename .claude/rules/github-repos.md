@@ -221,6 +221,20 @@ as `access-key`/`secret-key`), and each workspace pod uploads and restores its o
 pod and the workspace pods must reach `rustfs.internal`. Secret values are deliberately left out of a backup; only
 their names are kept.
 
+**A workspace's web server is public at `<name>.workspaced.online`, and the API knows nothing about how.**
+Turning it on in the app claims the name (unique in Postgres), runs `web-server enable` in the harness, which
+drops `services/nginx.sh` into the home so nginx starts with every start, and creates a Service `web-<name>`
+selecting the pod on 8080. The routing is all infra: the `*` record and tunnel rule in `shared/zero-trust`, one
+`HostRegexp` IngressRoute at priority 1 asking for the `*.workspaced.online` wildcard certificate, and
+`web-gateway.conf`, a nginx that proxies each host to `web-$name` through cluster DNS. So no per-workspace
+Ingress, no annotations and no Cloudflare call exist anywhere, and a new name needs no apply. The name caps at 59
+characters so `web-<name>` fits a Service name, and `rbac.yaml` grants `list` on Services because those are found
+by label — the API server has no delete collection for them. The agent turns it on with `web-server publish <name>`,
+which only writes `~/.config/workspaced/web/request`; the API reads that file every few seconds, and only in
+workspaces whose user ticked "Let the agent…", then writes the outcome back as `result`. The harness never calls
+the API — that was built and dropped, because it meant a route outside the user sign-in and the API's address
+and a credential inside every pod.
+
 **`SONAR_PROJECT_KEY` is not always the variable name.** `proklinator-app` analyses two projects and names them `SONAR_PROJECT_KEY_SITE` and `SONAR_PROJECT_KEY_API`, so an agent reading only `SONAR_PROJECT_KEY` there finds an empty string and silently skips the gate entirely. The prompt collects every non-empty key among the three and loops.
 
 **The agent also clears the findings the gate does *not* fail on, once per sweep, on the default branch.** A Sonar gate keys off new-code conditions and a reliability rating, so a Minor smell fails nothing and simply accumulates — until a rule update turns the pile into a blocked merge for whoever opens the next pull request. That cleanup is the second and last exception to the rule against committing to the default branch, under the same discipline as repairing a pipeline that failed there: the repository's own validation passes locally first, one commit, then wait for the pipeline the push starts. The two exceptions cannot collide, because they are in different modes. What is out of scope is the finding whose fix would change behaviour — an `await` inside a loop is usually sequential on purpose, and batching it to silence the rule is a behaviour change wearing a cleanup's clothes, so the agent is told to read what the loop is for and leave it alone when the ordering is load-bearing. A cleanup commit on its own is a patch release.

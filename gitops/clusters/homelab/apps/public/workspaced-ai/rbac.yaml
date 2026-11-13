@@ -1,6 +1,7 @@
-# The API runs each workspace as a one-replica Deployment behind a Service, with a Secret
-# and a ConfigMap holding its environment and a PersistentVolumeClaim for its home, in the
-# API's namespace: a Role, not a ClusterRole.
+# The API runs each workspace as a one-replica Deployment behind a Service, plus a web-<name>
+# Service while its web server is public, with a Secret and a ConfigMap holding its
+# environment and a PersistentVolumeClaim for its home, in the API's namespace: a Role, not
+# a ClusterRole.
 # Pods and Deployments are watched, so workspace statuses come from a cache rather than a
 # list per request; a Deployment is patched when a restart moves it to the current harness
 # image. A restart deletes a workspace's pods by label selector, which is deletecollection,
@@ -29,9 +30,11 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # Listed as well, because a workspace's published web-<name> Services are found by
+  # label, and the API server offers no deletecollection on Services.
   - apiGroups: [""]
     resources: ["services"]
-    verbs: ["get", "create", "delete"]
+    verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "create", "patch", "delete"]

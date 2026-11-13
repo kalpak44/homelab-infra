@@ -39,8 +39,11 @@ locals {
     "www"                = "www.proklinator.online"
   }
 
+  # The wildcard is each workspace's web server, under a name chosen in the app; the
+  # workspaced-ai gateway in k3s routes it, so a new name needs no apply here.
   workspaced_apps = {
     "ai" = "ai.workspaced.online"
+    "*"  = "*.workspaced.online"
   }
 
   # Ingress rules are keyed by hostname, not record name, so "www" existing in

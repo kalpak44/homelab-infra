@@ -1,0 +1,25 @@
+# Every name under the domain but ai, whose own routes are longer and win. The domains
+# block makes the resolver issue one wildcard certificate, so a new workspace name is
+# served at once instead of waiting on, and counting against, a certificate of its own.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: workspaced-ai-web-gateway
+  namespace: workspaced-ai
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: HostRegexp(`^[a-z0-9-]+\.workspaced\.online$`)
+      kind: Rule
+      # Below every Host() rule, whatever their length.
+      priority: 1
+      services:
+        - name: workspaced-ai-web-gateway
+          port: 8080
+  tls:
+    certResolver: cloudflare
+    domains:
+      - main: workspaced.online
+        sans:
+          - "*.workspaced.online"

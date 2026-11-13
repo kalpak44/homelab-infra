@@ -1,0 +1,73 @@
+# The one route into every workspace's web server: web-gateway-ingressroute.yaml sends
+# the whole wildcard here, and web-gateway.conf picks the workspace's Service by name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspaced-ai-web-gateway
+  namespace: workspaced-ai
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: workspaced-ai-web-gateway
+  template:
+    metadata:
+      labels:
+        app: workspaced-ai-web-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: nginxinc/nginx-unprivileged:1.31.7-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            # Replaces the image's default server rather than adding beside it.
+            - name: config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: web-gateway.conf
+              readOnly: true
+            # readOnlyRootFilesystem is on, and nginx keeps its pid file and proxy
+            # buffers under /tmp in the unprivileged image.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+      volumes:
+        # kustomization.yaml generates it with a content hash in its name, so a change to
+        # web-gateway.conf rolls the pod; a subPath mount would never see the update.
+        - name: config
+          configMap:
+            name: workspaced-ai-web-gateway
+        - name: tmp
+          emptyDir: {}

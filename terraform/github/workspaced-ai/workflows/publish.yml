@@ -321,6 +321,26 @@ jobs:
           docker exec harness task add smoke --in 5m --prompt x | grep 'on Europe/Sofia'
           docker exec harness task rm smoke
 
+          # The service runner looks for changes every few seconds, hence the waits.
+          echo "The web server is off until turned on, then serves its page on 8080"
+          web() { docker exec harness curl -sS --max-time 5 -o /dev/null -w '%{http_code}' localhost:8080 || true; }
+          test "$(web)" = 000
+          docker exec harness web-server enable https://smoke.example
+          for _ in $(seq 1 20); do [ "$(web)" = 200 ] && break; sleep 1; done
+          docker exec harness curl -fsS localhost:8080 | grep -q 'It works'
+          docker exec harness web-server reload
+
+          echo "The agent's publish refuses a name the app would, before asking it"
+          if docker exec harness web-server publish Not_A_Name; then
+            echo "::error::web-server publish accepted an invalid name"
+            exit 1
+          fi
+
+          echo "...and stops once turned off"
+          docker exec harness web-server disable
+          for _ in $(seq 1 20); do [ "$(web)" = 000 ] && break; sleep 1; done
+          test "$(web)" = 000
+
       - name: Show the harness log
         if: failure()
         run: |
