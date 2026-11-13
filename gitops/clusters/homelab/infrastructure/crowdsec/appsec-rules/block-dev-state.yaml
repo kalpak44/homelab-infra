@@ -1,0 +1,57 @@
+# Requests for AI-agent state, credential exports, backup archives and framework
+# debugger endpoints. None of the applications behind Traefik serves these paths:
+# the static sites answer unknown paths with index.html, which is why these probes
+# return 200 and the 4xx scenarios never see them. The existing block-secret-files
+# and block-recon-artifacts rules cover neighbouring names, not these ones.
+name: custom/block-dev-state
+description: "Request for agent state, credential exports, backups or debugger surfaces"
+rules:
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '(^|/)(\.claude\.json|\.claude/\.credentials\.json|\.codex/[^/]+|\.openai/[^/]+|\.gemini/[^/]+|\.vscode/[^/]+|\.windsurf/[^/]+|\.aider\.conf\.ya?ml|\.envrc|\.gitconfig)([?#/]|$)'
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '(^|/)(application_default_credentials\.json|\.terraform\.d/credentials\.tfrc\.json|credentials\.csv|Dockerrun\.aws\.json|firebase-(config|credentials)\.json|config/(credentials\.yml\.enc|database\.ya?ml|email\.ya?ml|mongoid\.ya?ml|settings\.local\.ya?ml))([?#/]|$)'
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '(^|/)backup\.(zip|tar\.gz|tgz|7z|rar)([?#/]|$)'
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '(^|/)_debugbar/'
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '(^|/)(elmah\.axd|trace\.axd|wp-config\.(old|bak|save|orig|swp))([?#/]|$)'
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: '^/mcp\.json([?#/]|$)'
+labels:
+  type: scan
+  service: http
+  behavior: "http:scan"
+  confidence: 3
+  spoofable: 0
+  label: "Unserved agent state, credential, backup or debugger path"
