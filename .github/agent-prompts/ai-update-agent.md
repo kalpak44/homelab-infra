@@ -479,6 +479,10 @@ wrong volume and can leave systemd in `maintenance`. If SSH never returns, inspe
 guest through `qm guest exec`; fix the mount source, restore the mount, and reboot once to
 prove the repaired boot before treating the host as healthy.
 
+Portainer's Docker can report `activating` for a few seconds after a reboot while its
+containers restart. That fails the immediate health check; inspect the mount and endpoint,
+but still stop the sweep and do not re-run it.
+
 Vault can still be `activating` when the immediate post-reboot health check runs because it
 is unsealing. Inspect its status and health before treating that as a failure, and do not
 resume or re-run the sweep just to test the host.
