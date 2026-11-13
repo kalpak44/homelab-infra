@@ -128,8 +128,8 @@ message, so a token missing it looks like a broken token.
 ## Services
 
 All services live behind `*.internal.pavel-usanli.online` (LAN only, unproxied) or `*.pavel-usanli.online` (public,
-routed through a Cloudflare Zero Trust tunnel — no open WAN ports required). `proklinator.online` is a second public
-zone on the same tunnel, managed from the same `cloudflare/shared/zero-trust` dir — registered at GoDaddy, nameservers
+routed through a Cloudflare Zero Trust tunnel — no open WAN ports required). `proklinator.online` and `workspaced.online` are
+further public zones on the same tunnel, managed from the same `cloudflare/shared/zero-trust` dir — registered at GoDaddy, nameservers
 delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) → Ansible (configures the service).
 
 | Service                    | Where      | IP            | Terraform dir                          | Ansible dir                                 |

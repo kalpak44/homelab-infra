@@ -8,6 +8,11 @@ data "cloudflare_zone" "proklinator" {
   name = "proklinator.online"
 }
 
+# Third public zone, delegated from GoDaddy the same way.
+data "cloudflare_zone" "workspaced" {
+  name = "workspaced.online"
+}
+
 resource "random_bytes" "tunnel_secret" {
   length = 32
 }
@@ -34,6 +39,10 @@ locals {
     "www"                = "www.proklinator.online"
   }
 
+  workspaced_apps = {
+    "app" = "app.workspaced.online"
+  }
+
   # Ingress rules are keyed by hostname, not record name, so "www" existing in
   # both zones doesn't collide. Cloudflare-for-SaaS hostnames belong here too:
   # we hold no DNS record for them, but the tunnel still has to recognise the
@@ -41,6 +50,7 @@ locals {
   all_hostnames = toset(concat(
     values(local.public_k3s_apps),
     values(local.proklinator_apps),
+    values(local.workspaced_apps),
     keys(local.saas_customers),
   ))
 
@@ -75,6 +85,16 @@ resource "cloudflare_record" "proklinator" {
   for_each = local.proklinator_apps
 
   zone_id = data.cloudflare_zone.proklinator.id
+  name    = each.key
+  content = local.tunnel_cname
+  type    = "CNAME"
+  proxied = true
+}
+
+resource "cloudflare_record" "workspaced" {
+  for_each = local.workspaced_apps
+
+  zone_id = data.cloudflare_zone.workspaced.id
   name    = each.key
   content = local.tunnel_cname
   type    = "CNAME"
