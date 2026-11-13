@@ -219,7 +219,9 @@ Four things about these are load-bearing. **One sweep cuts one release**, becaus
 URLs against the `workspace-backups` bucket with the `workspaced-ai` RustFS user (keys in `secret/workspaced-secrets`
 as `access-key`/`secret-key`), and each workspace pod uploads and restores its own home through them, so both the API
 pod and the workspace pods must reach `rustfs.internal`. Secret values are deliberately left out of a backup; only
-their names are kept.
+their names are kept. An archive the user uploads is the one exception: the browser sends it to the API in 16 MiB
+parts, which the API writes into an S3 multipart upload, because `rustfs.internal` is LAN-only and Cloudflare caps a
+request body at 100 MB.
 
 **A workspace's web server is public at `box-<name>.workspaced.online`, and the API knows nothing about how.**
 Turning it on in the app claims the name (unique in Postgres), runs `web-server enable` in the harness, which
