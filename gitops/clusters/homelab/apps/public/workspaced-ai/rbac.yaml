@@ -1,4 +1,4 @@
-# The API runs each workspace as a one-replica Deployment behind a Service, plus a web-<name>
+# The API runs each workspace as a one-replica Deployment behind a Service, plus a box-<name>
 # Service while its web server is public, with a Secret and a ConfigMap holding its
 # environment and a PersistentVolumeClaim for its home, in the API's namespace: a Role, not
 # a ClusterRole.
@@ -30,7 +30,7 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
-  # Listed as well, because a workspace's published web-<name> Services are found by
+  # Listed as well, because a workspace's published box-<name> Services are found by
   # label, and the API server offers no deletecollection on Services.
   - apiGroups: [""]
     resources: ["services"]

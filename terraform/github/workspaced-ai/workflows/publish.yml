@@ -400,7 +400,7 @@ jobs:
           set -euo pipefail
           docker network create gateway-smoke
           docker run -d --name workspace --network gateway-smoke \
-            --network-alias web-demo.smoke.svc.cluster.local \
+            --network-alias box-demo.smoke.svc.cluster.local \
             nginx:1.31.7-alpine
           docker run -d --name gateway --platform linux/amd64 --network gateway-smoke \
             --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \

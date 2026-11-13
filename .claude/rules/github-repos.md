@@ -221,17 +221,19 @@ as `access-key`/`secret-key`), and each workspace pod uploads and restores its o
 pod and the workspace pods must reach `rustfs.internal`. Secret values are deliberately left out of a backup; only
 their names are kept.
 
-**A workspace's web server is public at `<name>.workspaced.online`, and the API knows nothing about how.**
+**A workspace's web server is public at `box-<name>.workspaced.online`, and the API knows nothing about how.**
 Turning it on in the app claims the name (unique in Postgres), runs `web-server enable` in the harness, which
-drops `services/nginx.sh` into the home so nginx starts with every start, and creates a Service `web-<name>`
-selecting the pod on 8080. The routing is all infra: the `*` record and tunnel rule in `shared/zero-trust`, one
-`HostRegexp` IngressRoute at priority 1 asking for the `*.workspaced.online` wildcard certificate, and the
-`workspaced-ai-gateway` image, an nginx that proxies each host to `web-$name` through cluster DNS and serves
-the 404 page for anything else. It lives in the app's repository, builds with the other three images, and
-`bump-images` moves all four together; its namespace comes from the pod, so the image names no cluster. So no per-workspace
-Ingress, no annotations and no Cloudflare call exist anywhere, and a new name needs no apply. The name caps at 59
-characters so `web-<name>` fits a Service name, and `rbac.yaml` grants `list` on Services because those are found
-by label — the API server has no delete collection for them. The agent turns it on with `web-server publish <name>`,
+drops `services/nginx.sh` into the home so nginx starts with every start, and creates a Service named exactly as
+the host's first label, `box-<name>`, selecting the pod on 8080. The routing is all infra: the `*` record and
+tunnel rule in `shared/zero-trust`, one `HostRegexp` IngressRoute at priority 1 asking for the
+`*.workspaced.online` wildcard certificate, and the `workspaced-ai-gateway` image, an nginx that passes a `box-`
+label through as the Service name via cluster DNS and serves the 404 page for anything else. The gateway lives
+in the app's repository, builds with the other three images, and `bump-images` moves all four together; its
+namespace comes from the pod, so the image names no cluster. No per-workspace Ingress, annotation or Cloudflare
+call exists anywhere, so a new name needs no apply, and the `box-` prefix keeps every name clear of `ai.` and
+the rest of the zone. The name caps at 59 characters so `box-<name>` fits a label and a Service name, and
+`rbac.yaml` grants `list` on Services because those are found by label — the API server has no delete
+collection for them. The agent turns it on with `web-server publish <name>`,
 which only writes `~/.config/workspaced/web/request`; the API reads that file every few seconds, and only in
 workspaces whose user ticked "Let the agent…", then writes the outcome back as `result`. The harness never calls
 the API — that was built and dropped, because it meant a route outside the user sign-in and the API's address
