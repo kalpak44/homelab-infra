@@ -225,8 +225,10 @@ their names are kept.
 Turning it on in the app claims the name (unique in Postgres), runs `web-server enable` in the harness, which
 drops `services/nginx.sh` into the home so nginx starts with every start, and creates a Service `web-<name>`
 selecting the pod on 8080. The routing is all infra: the `*` record and tunnel rule in `shared/zero-trust`, one
-`HostRegexp` IngressRoute at priority 1 asking for the `*.workspaced.online` wildcard certificate, and
-`web-gateway.conf`, a nginx that proxies each host to `web-$name` through cluster DNS. So no per-workspace
+`HostRegexp` IngressRoute at priority 1 asking for the `*.workspaced.online` wildcard certificate, and the
+`workspaced-ai-gateway` image, an nginx that proxies each host to `web-$name` through cluster DNS and serves
+the 404 page for anything else. It lives in the app's repository, builds with the other three images, and
+`bump-images` moves all four together; its namespace comes from the pod, so the image names no cluster. So no per-workspace
 Ingress, no annotations and no Cloudflare call exist anywhere, and a new name needs no apply. The name caps at 59
 characters so `web-<name>` fits a Service name, and `rbac.yaml` grants `list` on Services because those are found
 by label — the API server has no delete collection for them. The agent turns it on with `web-server publish <name>`,

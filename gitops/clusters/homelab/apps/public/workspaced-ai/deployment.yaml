@@ -56,7 +56,7 @@ spec:
             - name: WORKSPACED_BACKUP_BUCKET
               value: workspace-backups
             # Workspace web servers are public as <name>.<this>; the API only names a
-            # Service after each, and web-gateway.conf routes the domain to them.
+            # Service after each, and the gateway routes the domain to them.
             - name: WORKSPACED_WEB_SERVER_DOMAIN
               value: workspaced.online
           ports:

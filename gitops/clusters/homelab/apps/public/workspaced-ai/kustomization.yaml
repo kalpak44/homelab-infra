@@ -15,9 +15,4 @@ resources:
   - web-gateway-service.yaml
   - web-gateway-ingressroute.yaml
 
-configMapGenerator:
-  - name: workspaced-ai-web-gateway
-    files:
-      - web-gateway.conf
-
 namespace: workspaced-ai
