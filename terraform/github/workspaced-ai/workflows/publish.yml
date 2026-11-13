@@ -2,13 +2,13 @@
 # Edits made here in the target repo are overwritten by `just deploy github workspaced-ai`.
 #
 # One pipeline for every trigger: the API (format, build, test, coverage, SonarCloud), the
-# web app (test, coverage, SonarCloud, type check, build) and the agent harness (build,
-# smoke test) in parallel, then the images and the cluster rollout. Those last two are the
-# only conditional parts — they run when the ref being built is main and never on a pull
-# request, so a dependency bump is fully validated without pushing an image or touching
-# the cluster.
+# web app (test, coverage, SonarCloud, type check, build), the agent harness and the web
+# server gateway (build, smoke test) in parallel, then the images and the cluster rollout.
+# Those last two are the only conditional parts — they run when the ref being built is
+# main and never on a pull request, so a dependency bump is fully validated without
+# pushing an image or touching the cluster.
 #
-# All three images are built on every run and share one tag, because the deploy points
+# All four images are built on every run and share one tag, because the deploy points
 # every image of this repository at the same tag and a missing one would never pull.
 #
 # This is also the workflow the AI maintenance agent gates on
@@ -356,7 +356,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Same tag as the API image: the deploy moves all three to it at once.
+      # Same tag as the API image: the deploy moves all four to it at once.
       - name: Push image to GHCR
         if: ${{ env.PUBLISH == 'true' }}
         env:
@@ -368,20 +368,103 @@ jobs:
           docker push "$GHCR_IMAGE:$tag"
           docker push "$GHCR_IMAGE:latest"
 
+  gateway:
+    name: Build gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+
+    defaults:
+      run:
+        working-directory: apps/gateway
+
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build --platform linux/amd64 -t gateway:candidate .
+
+      # Run as the cluster runs it: read-only root, no capabilities. A container stands in
+      # for a workspace under the name its Service would have, listening on 80 as that
+      # Service does, and Docker's DNS finds it as the cluster's finds the real one.
+      - name: Smoke test
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          docker network create gateway-smoke
+          docker run -d --name workspace --network gateway-smoke \
+            --network-alias web-demo.smoke.svc.cluster.local \
+            nginx:1.31.7-alpine
+          docker run -d --name gateway --platform linux/amd64 --network gateway-smoke \
+            --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+            -e WORKSPACE_NAMESPACE=smoke -e DNS_RESOLVER=127.0.0.11 \
+            gateway:candidate
+
+          # From a third container: the gateway publishes no port to the runner.
+          get() { docker run --rm --network gateway-smoke curlimages/curl:8.17.0 \
+            -sS --max-time 10 -o /dev/null -w '%{http_code} %{content_type}' "$@" || true; }
+
+          echo "Waiting for the gateway"
+          for _ in $(seq 1 20); do [ "$(get http://gateway:8080/healthz)" = "200 text/plain" ] && break; sleep 1; done
+
+          # The kubelet probes by the pod's IP, which also looks like <label>.<rest>.
+          echo "Probes by IP reach the health check, not a workspace"
+          test "$(get -H 'Host: 10.42.0.5:8080' http://gateway:8080/healthz)" = "200 text/plain"
+
+          echo "A name with a workspace behind it reaches that workspace"
+          get -H 'Host: demo.workspaced.test' http://gateway:8080/ | grep -q '^200 '
+
+          # An octet-stream body here reads as a broken download in a browser.
+          echo "A name with nothing behind it gets the page, as a 404"
+          test "$(get -H 'Host: nobody.workspaced.test' http://gateway:8080/)" = "404 text/html"
+          test "$(get -H 'Host: 10.42.0.5' http://gateway:8080/)" = "404 text/html"
+
+      - name: Show the gateway log
+        if: failure()
+        run: docker logs gateway || true
+
+      - name: Log in to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Pinned to the commit behind v4.6.0 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same tag as the API image: the deploy moves all four to it at once.
+      - name: Push image to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}-gateway
+        run: |
+          tag="${GITHUB_SHA:0:7}"
+          docker tag gateway:candidate "$GHCR_IMAGE:$tag"
+          docker tag gateway:candidate "$GHCR_IMAGE:latest"
+          docker push "$GHCR_IMAGE:$tag"
+          docker push "$GHCR_IMAGE:latest"
+
   scan:
     name: Scan image
     # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
     # blocking gate. A threshold here would deadlock on unfixable base-image CVEs.
-    needs: [build, web, harness]
+    needs: [build, web, harness, gateway]
     # Only a published image can be pulled, so a PR has nothing to scan.
     if: >-
       needs.build.outputs.tag != '' && needs.web.result == 'success' &&
-      needs.harness.result == 'success'
+      needs.harness.result == 'success' && needs.gateway.result == 'success'
     # One report per image; no scan waits on or fails another.
     strategy:
       fail-fast: false
       matrix:
-        app: [api, web, harness]
+        app: [api, web, harness, gateway]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -551,13 +634,14 @@ jobs:
     name: Deploy to cluster
     # `scan` is listed for ordering only — a scanner outage must not strand an image
     # that published cleanly.
-    needs: [build, web, harness, scan]
+    needs: [build, web, harness, gateway, scan]
     # `tag` is set by a step that only runs when PUBLISH is true, so an empty tag means
     # no image was pushed. Keying the deploy off the artifact rather than repeating the
     # event/ref test means the two conditions cannot drift apart.
     if: >-
       always() && needs.build.result == 'success' && needs.web.result == 'success' &&
-      needs.harness.result == 'success' && needs.build.outputs.tag != ''
+      needs.harness.result == 'success' && needs.gateway.result == 'success' &&
+      needs.build.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

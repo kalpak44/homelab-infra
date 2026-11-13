@@ -71,3 +71,13 @@ updates:
       time: "05:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+
+  # The nginx image of the gateway that routes each workspace's public name. Its own entry,
+  # though it shares a base with the web app, so a broken gateway bump never blocks the site.
+  - package-ecosystem: docker
+    directory: /apps/gateway
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
