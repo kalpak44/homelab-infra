@@ -7,6 +7,10 @@ kind: Deployment
 metadata:
   name: workspaced-ai-agent-hub
   namespace: workspaced-ai
+  annotations:
+    # Recreates the Deployment when an apply is refused, as it was when the live object still
+    # held the rolling-update defaults Recreate forbids.
+    kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   replicas: 1
   strategy:
