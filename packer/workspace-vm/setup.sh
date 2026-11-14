@@ -47,6 +47,36 @@ docker run --rm hello-world
 docker image rm hello-world
 docker compose version
 
+# Pinned to the digest :latest resolves to now, so every VM from this snapshot runs the
+# same build until the next one.
+supervisor_image=ghcr.io/kalpak44/workspaced-ai-supervisor
+docker pull "$supervisor_image:latest"
+supervisor="$(docker inspect --format '{{index .RepoDigests 0}}' "$supervisor_image:latest")"
+install -d -m 0700 /etc/workspaced /var/lib/workspaced
+# Starts only on a VM whose cloud-config wrote its enrollment file, which the build server
+# has none of, so the snapshot carries no key and no enrollment.
+cat > /etc/systemd/system/workspaced-supervisor.service <<UNIT
+[Unit]
+Description=workspaced-ai supervisor
+Requires=docker.service
+After=docker.service cloud-final.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/workspaced/agent.env
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f workspaced-supervisor
+ExecStart=/usr/bin/docker run --rm --name workspaced-supervisor --network host \
+  -v /etc/workspaced:/etc/workspaced -v /var/lib/workspaced:/var/lib/workspaced \
+  --cap-drop ALL --read-only --security-opt no-new-privileges $supervisor
+ExecStop=/usr/bin/docker stop workspaced-supervisor
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl enable workspaced-supervisor.service
+
 # Nothing reaches a VM inbound, so SSH has nothing to serve. Masked rather than removed:
 # Packer is connected through it until the build server shuts down.
 systemctl mask ssh.service ssh.socket

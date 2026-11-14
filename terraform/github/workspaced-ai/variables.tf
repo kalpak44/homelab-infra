@@ -40,6 +40,12 @@ variable "sonar_project_key_vm_manager" {
   default     = "workspaced-ai-vm-manager"
 }
 
+variable "sonar_project_keys_extra" {
+  description = "Further SonarCloud project keys, space-separated, published as SONAR_PROJECT_KEYS_EXTRA"
+  type        = string
+  default     = "workspaced-ai-agent-hub"
+}
+
 variable "sonar_organization" {
   description = "SonarCloud organization owning the project"
   type        = string

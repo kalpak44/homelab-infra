@@ -55,6 +55,42 @@ updates:
           - minor
           - patch
 
+  # The agent hub's own pom and group, for the same reason.
+  - package-ecosystem: maven
+    directory: /apps/agent-hub
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: all
+    groups:
+      agent-hub-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The supervisor uses the standard library only, so this opens nothing until it takes a
+  # dependency; the docker entry below moves its Go builder and runtime base images.
+  - package-ecosystem: gomod
+    directory: /apps/supervisor
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /apps/supervisor
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+
   # The web app's toolchain: Vite, Tailwind, TypeScript. Its own entry and group, so a
   # front-end bump is attributable apart from a Java one.
   - package-ecosystem: npm

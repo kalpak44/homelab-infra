@@ -1,0 +1,27 @@
+# Traefik for the supervisors' routes, the VM manager for the internal ones that issue
+# and revoke enrollment tokens; nothing else in the namespace may reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: workspaced-ai-agent-hub
+  namespace: workspaced-ai
+spec:
+  podSelector:
+    matchLabels:
+      app: workspaced-ai-agent-hub
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+        - podSelector:
+            matchLabels:
+              app: workspaced-ai-vm-manager
+      ports:
+        - protocol: TCP
+          port: http

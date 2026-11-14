@@ -1,0 +1,77 @@
+# The one service a workspace VM talks to: it enrolls each VM's supervisor and takes its
+# signed ready and heartbeat reports to the VM manager. Public only under /api/v1/agent.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspaced-ai-agent-hub
+  namespace: workspaced-ai
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: workspaced-ai-agent-hub
+  template:
+    metadata:
+      labels:
+        app: workspaced-ai-agent-hub
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent-hub
+          image: ghcr.io/kalpak44/workspaced-ai-agent-hub:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - secretRef:
+                name: workspaced-ai-agent-hub-secrets
+          env:
+            - name: WORKSPACED_VM_MANAGER_URL
+              value: http://workspaced-ai-vm-manager:8080/api/v1
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /api/v1/actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/actuator/health/liveness
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            # readOnlyRootFilesystem is on, and Tomcat and the JVM still need somewhere
+            # to write their temporary files.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+              ephemeral-storage: 256Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

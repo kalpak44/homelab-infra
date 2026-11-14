@@ -80,7 +80,8 @@ playbook to work around a stubborn host.
 `packer/<image>/` is booted on a throwaway server, set up, and saved as a snapshot labelled `image=<image>`; each build
 keeps the three newest. It runs here because the Hetzner token is in Vault, which GitHub-hosted runners cannot reach.
 Packer is downloaded at a pinned version and checksum rather than installed on the runner. A new image is a new
-`packer/<image>/` dir plus one dropdown entry.
+`packer/<image>/` dir plus one dropdown entry. `workspace-vm` bakes in workspaced-ai's supervisor at the digest its
+`:latest` resolves to, so a supervisor release reaches new VMs only with the next build — run it by hand after one.
 
 ## Shape of every workflow
 

@@ -18,5 +18,10 @@ resources:
   - vm-manager-deployment.yaml
   - vm-manager-service.yaml
   - vm-manager-networkpolicy.yaml
+  - agent-hub-externalsecret.yaml
+  - agent-hub-deployment.yaml
+  - agent-hub-service.yaml
+  - agent-hub-ingressroute.yaml
+  - agent-hub-networkpolicy.yaml
 
 namespace: workspaced-ai

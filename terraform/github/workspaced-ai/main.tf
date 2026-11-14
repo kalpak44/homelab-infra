@@ -115,6 +115,13 @@ resource "github_actions_variable" "sonar_project_key_api" {
   value         = var.sonar_project_key_vm_manager
 }
 
+# Every slot above is taken, so the agent hub's gate is swept from this list.
+resource "github_actions_variable" "sonar_project_keys_extra" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEYS_EXTRA"
+  value         = var.sonar_project_keys_extra
+}
+
 resource "github_actions_variable" "sonar_organization" {
   repository    = github_repository.this.name
   variable_name = "SONAR_ORGANIZATION"

@@ -797,8 +797,9 @@ all. Do not guess at what failed — ask SonarCloud.
 
 Only when SONAR_TOKEN is non-empty. This repository may analyse more than one
 project: collect every non-empty value among SONAR_PROJECT_KEY,
-SONAR_PROJECT_KEY_SITE and SONAR_PROJECT_KEY_API, and do everything below once
-per key. If all three are empty, skip this section and say so. A gate you did not
+SONAR_PROJECT_KEY_SITE and SONAR_PROJECT_KEY_API, plus each space-separated key in
+SONAR_PROJECT_KEYS_EXTRA, and do everything below once per key. If all are empty,
+skip this section and say so. A gate you did not
 read because you only checked the first key is a gate that did not run.
 
 Authenticate with `curl -u "$SONAR_TOKEN:"`, against https://sonarcloud.io/api.

@@ -1,0 +1,18 @@
+# Only the routes a VM's supervisor calls. The internal ones under /api/v1/internal, which
+# issue enrollment tokens, are never routed, and the app refuses them when proxied too.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: workspaced-ai-agent-hub
+  namespace: workspaced-ai
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`agent.workspaced.online`) && PathPrefix(`/api/v1/agent/`)
+      kind: Rule
+      services:
+        - name: workspaced-ai-agent-hub
+          port: 8080
+  tls:
+    certResolver: cloudflare

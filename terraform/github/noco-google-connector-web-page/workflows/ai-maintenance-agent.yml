@@ -216,6 +216,7 @@ jobs:
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
       SONAR_PROJECT_KEY_SITE: ${{ vars.SONAR_PROJECT_KEY_SITE }}
       SONAR_PROJECT_KEY_API: ${{ vars.SONAR_PROJECT_KEY_API }}
+      SONAR_PROJECT_KEYS_EXTRA: ${{ vars.SONAR_PROJECT_KEYS_EXTRA }}
       # Read by the image-scan section of the prompt. The scan runs only on a published
       # image, so it never exists for a pull request — the agent reads the default
       # branch's latest instead.

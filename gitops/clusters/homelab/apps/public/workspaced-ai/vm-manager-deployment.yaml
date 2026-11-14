@@ -45,6 +45,12 @@ spec:
               value: https://vault.internal.pavel-usanli.online:8200
             - name: WORKSPACED_VAULT_JWT_PATH
               value: /var/run/secrets/vault/token
+            # Issues each new VM's enrollment token, which goes into its cloud-config.
+            - name: WORKSPACED_AGENT_HUB_URL
+              value: http://workspaced-ai-agent-hub:8080/api/v1
+            # The newest image build, which has the supervisor installed.
+            - name: WORKSPACED_HETZNER_IMAGE_SELECTOR
+              value: image=workspace-vm
           ports:
             - name: http
               containerPort: 8080

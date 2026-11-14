@@ -217,6 +217,138 @@ jobs:
           docker push "$GHCR_IMAGE:$tag"
           docker push "$GHCR_IMAGE:latest"
 
+  agent-hub:
+    name: Build agent hub
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+
+    defaults:
+      run:
+        working-directory: apps/agent-hub
+
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - name: Checkout source
+        # Full history: Sonar needs it for blame and new-code detection.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: apps/agent-hub/pom.xml
+
+      - name: Check formatting
+        run: mvn -B fmt:check
+
+      # The 80% line-coverage floor is a jacoco rule in the pom, so `verify` enforces it.
+      - name: Build, test, coverage
+        run: mvn -B verify
+
+      # A separate project from the API's, so a failing gate names which app broke.
+      - name: SonarCloud analysis
+        if: ${{ env.SONAR_TOKEN != '' }}
+        run: |
+          mvn -B sonar:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.organization=kalpak44 \
+            -Dsonar.projectKey=workspaced-ai-agent-hub \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+            -Dsonar.qualitygate.wait=true
+
+      - name: Log in to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Pinned to the commit behind v4.6.0 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same tag as the API image: the deploy moves every image to it at once.
+      - name: Build & push image to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}-agent-hub
+        run: |
+          tag="${GITHUB_SHA:0:7}"
+          mvn -B -DskipTests package spring-boot:build-image-no-fork \
+            -Dspring-boot.build-image.imageName="$GHCR_IMAGE:$tag" \
+            -Dspring-boot.build-image.tags="$GHCR_IMAGE:latest"
+          docker push "$GHCR_IMAGE:$tag"
+          docker push "$GHCR_IMAGE:latest"
+
+  supervisor:
+    name: Build supervisor
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+
+    defaults:
+      run:
+        working-directory: apps/supervisor
+
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        # Pinned to the commit behind v7.0.0 — a tag can be moved, a SHA cannot.
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/supervisor/go.mod
+          cache-dependency-path: apps/supervisor/go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      # Not pulled by the cluster: the VM image build bakes it into every workspace VM.
+      - name: Build image
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg VERSION="${GITHUB_SHA:0:7}" -t supervisor:candidate .
+
+      - name: Log in to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        # Pinned to the commit behind v4.6.0 — a tag can be moved, a SHA cannot.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The image build takes :latest and pins the digest it resolves to.
+      - name: Push image to GHCR
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}-supervisor
+        run: |
+          tag="${GITHUB_SHA:0:7}"
+          docker tag supervisor:candidate "$GHCR_IMAGE:$tag"
+          docker tag supervisor:candidate "$GHCR_IMAGE:latest"
+          docker push "$GHCR_IMAGE:$tag"
+          docker push "$GHCR_IMAGE:latest"
   web:
     name: Build web
     runs-on: ubuntu-latest
@@ -530,17 +662,18 @@ jobs:
     name: Scan image
     # REPORT-ONLY, and must stay that way: no --fail-on, no threshold. Sonar above is the
     # blocking gate. A threshold here would deadlock on unfixable base-image CVEs.
-    needs: [build, vm-manager, web, harness, gateway]
+    needs: [build, vm-manager, agent-hub, supervisor, web, harness, gateway]
     # Only a published image can be pulled, so a PR has nothing to scan.
     if: >-
       needs.build.outputs.tag != '' && needs.vm-manager.result == 'success' &&
+      needs.agent-hub.result == 'success' && needs.supervisor.result == 'success' &&
       needs.web.result == 'success' &&
       needs.harness.result == 'success' && needs.gateway.result == 'success'
     # One report per image; no scan waits on or fails another.
     strategy:
       fail-fast: false
       matrix:
-        app: [api, vm-manager, web, harness, gateway]
+        app: [api, vm-manager, agent-hub, supervisor, web, harness, gateway]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -710,12 +843,13 @@ jobs:
     name: Deploy to cluster
     # `scan` is listed for ordering only — a scanner outage must not strand an image
     # that published cleanly.
-    needs: [build, vm-manager, web, harness, gateway, scan]
+    needs: [build, vm-manager, agent-hub, supervisor, web, harness, gateway, scan]
     # `tag` is set by a step that only runs when PUBLISH is true, so an empty tag means
     # no image was pushed. Keying the deploy off the artifact rather than repeating the
     # event/ref test means the two conditions cannot drift apart.
     if: >-
       always() && needs.build.result == 'success' && needs.vm-manager.result == 'success' &&
+      needs.agent-hub.result == 'success' && needs.supervisor.result == 'success' &&
       needs.web.result == 'success' &&
       needs.harness.result == 'success' && needs.gateway.result == 'success' &&
       needs.build.outputs.tag != ''
