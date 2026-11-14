@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: vm-manager
-          image: ghcr.io/kalpak44/workspaced-ai-vm-manager:1489314
+          image: ghcr.io/kalpak44/workspaced-ai-vm-manager:985bbde
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
