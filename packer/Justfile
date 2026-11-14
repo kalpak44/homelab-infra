@@ -1,12 +1,12 @@
 # Homelab Packer images
 #
 # Usage:
-#   just build <image>      # build an image as a Hetzner snapshot, keep the newest few
+#   just build <image>      # build packer/<image>/ as a Hetzner snapshot, keep the newest few
 #   just list               # show the images that can be built
 #
-# The image definitions live in their own repos, next to the code that runs on them; this
-# only builds them, from a fresh clone of the default branch. The build runs here because
-# the Hetzner token is in Vault, which only this runner can reach.
+# Hetzner Cloud cannot boot a server from an uploaded ISO, so an image is a snapshot:
+# Packer boots a throwaway server, runs the image's setup on it, saves its disk and
+# deletes it.
 #
 # Env vars (the workflow injects them; locally they come from your shell):
 #   VAULT_USERNAME, VAULT_PASSWORD   read the Hetzner token from Vault
@@ -16,10 +16,6 @@
 # manager uses, so building one needs no credential of its own.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
-
-# image | source repo | template dir in that repo. The image name is also the snapshot's
-# `image` label, which is what the consumer selects and what pruning keys on.
-images := "workspace-vm|kalpak44/workspaced-ai|vm-image"
 
 packer_version := "1.16.2"
 # From releases.hashicorp.com/packer/<version>/packer_<version>_SHA256SUMS. Pinned here
@@ -40,17 +36,11 @@ build image:
     #!/usr/bin/env bash
     set -euo pipefail
     image='{{image}}'
-    entry="$(grep "^$image|" <<< '{{images}}' || true)"
-    if [ -z "$entry" ]; then
+    # The image name is also the snapshot's `image` label, which pruning keys on.
+    if [ ! -f "$image/$image.pkr.hcl" ]; then
         echo "no image '$image' — see 'just list'" >&2
         exit 1
     fi
-    IFS='|' read -r _ repo subdir <<< "$entry"
-    # Cloned afresh each time, so a build never runs a stale definition.
-    source="$(mktemp -d)"
-    trap 'rm -rf "$source"' EXIT
-    git clone --quiet --depth 1 "https://github.com/$repo.git" "$source"
-    template="$source/$subdir"
 
     case "$(uname -s)-$(uname -m)" in
         Linux-x86_64) platform=linux_amd64; sha='{{packer_sha256_linux_amd64}}' ;;
@@ -104,8 +94,8 @@ build image:
     fi
 
     export PKR_VAR_hcloud_token="$token"
-    "$packer" init "$template"
-    "$packer" build -color=false "$template"
+    "$packer" init "$image"
+    "$packer" build -color=false "$image"
 
     # Newest first; everything past the first few goes. A server already created from a
     # deleted snapshot keeps running, since Hetzner copies the image onto its disk.
@@ -120,4 +110,4 @@ build image:
 
 # Show the images that can be built
 list:
-    @echo "workspace-vm kalpak44/workspaced-ai vm-image/ — the OS of every workspace VM"
+    @echo "workspace-vm Ubuntu 24.04 + Docker, SSH masked — the OS of every workspaced-ai VM"

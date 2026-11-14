@@ -76,11 +76,11 @@ Proxmox node are patched but never rebooted, because the job runs on one and ins
 the process doing the patching and leave nothing to verify or roll back. Never reorder, parallelise, or `--limit` the
 playbook to work around a stubborn host.
 
-**`packer-build.yml` builds images whose definitions live elsewhere.** The template for `workspace-vm` is
-`vm-image/` in `kalpak44/workspaced-ai`, next to the code that will run on it; `packer/Justfile` clones that repo fresh
-and builds it here only because the Hetzner token is in Vault, which GitHub-hosted runners cannot reach. Packer is
-downloaded at a pinned version and checksum rather than installed on the runner. Each build keeps the three newest
-snapshots labelled `image=<image>`; a new image means one line in the Justfile's `images` list and one dropdown entry.
+**`packer-build.yml` builds a snapshot, not an ISO.** Hetzner Cloud cannot create a server from an uploaded ISO, so
+`packer/<image>/` is booted on a throwaway server, set up, and saved as a snapshot labelled `image=<image>`; each build
+keeps the three newest. It runs here because the Hetzner token is in Vault, which GitHub-hosted runners cannot reach.
+Packer is downloaded at a pinned version and checksum rather than installed on the runner. A new image is a new
+`packer/<image>/` dir plus one dropdown entry.
 
 ## Shape of every workflow
 
