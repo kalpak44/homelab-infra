@@ -107,6 +107,14 @@ resource "github_actions_variable" "sonar_project_key_site" {
   value         = var.sonar_project_key_web
 }
 
+# The VM manager is a third project. _API is the one slot this repo left free, so the
+# agent sweeps its gate with no change to the prompt it shares with other repos.
+resource "github_actions_variable" "sonar_project_key_api" {
+  repository    = github_repository.this.name
+  variable_name = "SONAR_PROJECT_KEY_API"
+  value         = var.sonar_project_key_vm_manager
+}
+
 resource "github_actions_variable" "sonar_organization" {
   repository    = github_repository.this.name
   variable_name = "SONAR_ORGANIZATION"

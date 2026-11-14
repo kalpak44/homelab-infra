@@ -34,6 +34,12 @@ variable "sonar_project_key_web" {
   default     = "workspaced-ai-web"
 }
 
+variable "sonar_project_key_vm_manager" {
+  description = "SonarCloud project key of the VM manager, published as SONAR_PROJECT_KEY_API"
+  type        = string
+  default     = "workspaced-ai-vm-manager"
+}
+
 variable "sonar_organization" {
   description = "SonarCloud organization owning the project"
   type        = string
