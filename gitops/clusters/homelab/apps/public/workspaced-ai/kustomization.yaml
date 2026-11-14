@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - externalsecret.yaml
-  - rbac.yaml
   - deployment.yaml
   - service.yaml
   - middleware.yaml
