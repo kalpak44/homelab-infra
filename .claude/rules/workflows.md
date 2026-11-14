@@ -1,8 +1,8 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Eleven workflows, all running on the **self-hosted** runner (VM 101 on the
-Proxmox node). All are `workflow_dispatch` (manual) except the four on a `schedule`: `gitops-bump-images.yml` daily,
-`scanners-bump-pins.yml` weekly, and `ai-security-agent.yml` and `ai-update-agent.yml` nightly.
+All CI/CDs live in `.github/workflows/`. Twelve workflows, all running on the **self-hosted** runner (VM 101 on the
+Proxmox node). All are `workflow_dispatch` (manual) except the five on a `schedule`: `gitops-bump-images.yml` daily,
+`scanners-bump-pins.yml` and `packer-build.yml` weekly, and `ai-security-agent.yml` and `ai-update-agent.yml` nightly.
 
 | File                     | Purpose                                    | Underlying command                   |
 |--------------------------|--------------------------------------------|--------------------------------------|
@@ -15,6 +15,7 @@ Proxmox node). All are `workflow_dispatch` (manual) except the four on a `schedu
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
 | `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
+| `packer-build.yml`       | Build a VM image as a Hetzner snapshot     | `just build <image>` (in `packer/`)  |
 | `ai-security-agent.yml`  | Review a day of requests, ban sources, tune CrowdSec | the agent prompt, not a recipe |
 | `ai-update-agent.yml`    | Update third-party software and patch every host | the agent prompt, plus `just os-update` |
 
@@ -74,6 +75,12 @@ is the LAN resolver and nothing — the runner included — resolves anything wh
 Proxmox node are patched but never rebooted, because the job runs on one and inside the other, so a reboot would kill
 the process doing the patching and leave nothing to verify or roll back. Never reorder, parallelise, or `--limit` the
 playbook to work around a stubborn host.
+
+**`packer-build.yml` builds images whose definitions live elsewhere.** The template for `workspace-vm` is
+`vm-image/` in `kalpak44/workspaced-ai`, next to the code that will run on it; `packer/Justfile` clones that repo fresh
+and builds it here only because the Hetzner token is in Vault, which GitHub-hosted runners cannot reach. Packer is
+downloaded at a pinned version and checksum rather than installed on the runner. Each build keeps the three newest
+snapshots labelled `image=<image>`; a new image means one line in the Justfile's `images` list and one dropdown entry.
 
 ## Shape of every workflow
 

@@ -20,6 +20,7 @@ homelab-infra/
     ├── ansible-configure.yml    | Ansible    - Configure
     ├── gitops-bump-images.yml   | GitOps     - Bump images
     ├── scanners-bump-pins.yml   | Scanners   - Bump pins
+    ├── packer-build.yml         | Packer     - Build image
     ├── ai-security-agent.yml    | AI Security Agent
     └── ai-update-agent.yml      | AI Update Agent
 ```
@@ -538,6 +539,7 @@ Seven workflows, all `workflow_dispatch` (manual), all running on the self-hoste
 | `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 | `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |
+| `packer-build.yml`       | weekly Mon 03:00 UTC + manual   | `just build <image>` (in `packer/`)  |
 
 Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [
 `terraform/README.md`](terraform/README.md) and [`ansible/README.md`](ansible/README.md).

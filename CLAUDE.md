@@ -106,6 +106,7 @@ homelab-infra/
 │   ├── ansible-configure.yml       # just configure <resource>
 │   ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
 │   ├── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)
+│   ├── packer-build.yml            # just build <image> in packer/ (weekly cron Mon 03:00 UTC)
 │   ├── ai-security-agent.yml       # CrowdSec review agent (nightly cron 22:00 UTC)
 │   └── ai-update-agent.yml         # third-party + OS updates (nightly cron 06:00 UTC)
 └── .github/agent-prompts/

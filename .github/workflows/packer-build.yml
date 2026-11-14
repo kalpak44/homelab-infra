@@ -1,0 +1,37 @@
+name: Packer - Build image
+
+# Rebuilds a VM image as a Hetzner snapshot, so new VMs start from current packages.
+# Weekly, because a running VM installs its own security updates and only a new VM
+# boots from the snapshot.
+on:
+  schedule:
+    - cron: "0 3 * * 1" # 03:00 UTC Monday
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Which packer/<image> to build
+        required: true
+        type: choice
+        options:
+          - workspace-vm
+
+# Two builds of one image would race to prune each other's snapshots.
+concurrency:
+  group: packer-build-${{ inputs.image || 'workspace-vm' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: packer
+    env:
+      # Only to read the Hetzner token from Vault; the build has no secret of its own.
+      VAULT_USERNAME: ${{ secrets.VAULT_USERNAME }}
+      VAULT_PASSWORD: ${{ secrets.VAULT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      # A schedule has no inputs, so it builds the one image there is.
+      - run: just build "${{ inputs.image || 'workspace-vm' }}"

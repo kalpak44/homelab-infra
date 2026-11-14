@@ -1,0 +1,123 @@
+# Homelab Packer images
+#
+# Usage:
+#   just build <image>      # build an image as a Hetzner snapshot, keep the newest few
+#   just list               # show the images that can be built
+#
+# The image definitions live in their own repos, next to the code that runs on them; this
+# only builds them, from a fresh clone of the default branch. The build runs here because
+# the Hetzner token is in Vault, which only this runner can reach.
+#
+# Env vars (the workflow injects them; locally they come from your shell):
+#   VAULT_USERNAME, VAULT_PASSWORD   read the Hetzner token from Vault
+#   (or a `vault login` session, or HCLOUD_TOKEN directly)
+#
+# Every image here is built in the workspaced-ai Hetzner project, with the token the VM
+# manager uses, so building one needs no credential of its own.
+
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+# image | source repo | template dir in that repo. The image name is also the snapshot's
+# `image` label, which is what the consumer selects and what pruning keys on.
+images := "workspace-vm|kalpak44/workspaced-ai|vm-image"
+
+packer_version := "1.16.2"
+# From releases.hashicorp.com/packer/<version>/packer_<version>_SHA256SUMS. Pinned here
+# rather than fetched beside the zip, so a compromised mirror cannot vouch for itself.
+packer_sha256_linux_amd64 := "abbfe0cf74985084112659b53e3565f264f70a20914c3b7c4f789f54f61c2414"
+packer_sha256_darwin_arm64 := "3d7e4df8e7e8c21bdf495c4f63ad9189e22540dc8126dee6db791aa8519e8b3a"
+
+# Snapshots kept per image; older ones only cost storage, and two spare allow a rollback.
+keep := "3"
+
+vault_addr := env("VAULT_ADDR", "https://vault.internal.pavel-usanli.online:8200")
+
+_help:
+    @just --list
+
+# Build an image as a Hetzner snapshot, then delete all but the newest few
+build image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    image='{{image}}'
+    entry="$(grep "^$image|" <<< '{{images}}' || true)"
+    if [ -z "$entry" ]; then
+        echo "no image '$image' — see 'just list'" >&2
+        exit 1
+    fi
+    IFS='|' read -r _ repo subdir <<< "$entry"
+    # Cloned afresh each time, so a build never runs a stale definition.
+    source="$(mktemp -d)"
+    trap 'rm -rf "$source"' EXIT
+    git clone --quiet --depth 1 "https://github.com/$repo.git" "$source"
+    template="$source/$subdir"
+
+    case "$(uname -s)-$(uname -m)" in
+        Linux-x86_64) platform=linux_amd64; sha='{{packer_sha256_linux_amd64}}' ;;
+        Darwin-arm64) platform=darwin_arm64; sha='{{packer_sha256_darwin_arm64}}' ;;
+        *) echo "no pinned Packer for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+    esac
+    # Cached per version, so the runner downloads it once rather than on every build.
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/homelab-packer/{{packer_version}}"
+    packer="$cache/packer"
+    if [ ! -x "$packer" ]; then
+        mkdir -p "$cache"
+        zip="$cache/packer.zip"
+        curl -fsSL -o "$zip" \
+            "https://releases.hashicorp.com/packer/{{packer_version}}/packer_{{packer_version}}_${platform}.zip"
+        python3 - "$zip" "$sha" "$cache" <<'PY'
+    import hashlib, sys, zipfile
+    path, expected, dest = sys.argv[1:]
+    actual = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    if actual != expected:
+        sys.exit(f"Packer checksum mismatch: {actual} != {expected}")
+    zipfile.ZipFile(path).extract("packer", dest)
+    PY
+        rm -f "$zip"
+        chmod +x "$packer"
+    fi
+
+    if [ -n "${HCLOUD_TOKEN:-}" ]; then
+        token="$HCLOUD_TOKEN"
+    elif [ -n "${VAULT_USERNAME:-}" ] && [ -n "${VAULT_PASSWORD:-}" ]; then
+        vault_token="$(VAULT_PASSWORD="$VAULT_PASSWORD" python3 - <<'PY'
+    import json, os, urllib.request
+    request = urllib.request.Request(
+        "{{vault_addr}}/v1/auth/userpass/login/" + os.environ["VAULT_USERNAME"],
+        data=json.dumps({"password": os.environ["VAULT_PASSWORD"]}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    print(json.load(urllib.request.urlopen(request))["auth"]["client_token"])
+    PY
+        )"
+        token="$(VAULT_TOKEN="$vault_token" python3 - <<'PY'
+    import json, os, urllib.request
+    request = urllib.request.Request(
+        "{{vault_addr}}/v1/secret/data/workspaced-vm-manager-secrets",
+        headers={"X-Vault-Token": os.environ["VAULT_TOKEN"]},
+    )
+    print(json.load(urllib.request.urlopen(request))["data"]["data"]["hcloud-token"])
+    PY
+        )"
+    else
+        token="$(vault kv get -field=hcloud-token secret/workspaced-vm-manager-secrets)"
+    fi
+
+    export PKR_VAR_hcloud_token="$token"
+    "$packer" init "$template"
+    "$packer" build -color=false "$template"
+
+    # Newest first; everything past the first few goes. A server already created from a
+    # deleted snapshot keeps running, since Hetzner copies the image onto its disk.
+    curl -fsS -H "Authorization: Bearer $token" \
+        "https://api.hetzner.cloud/v1/images?type=snapshot&label_selector=image=$image&sort=created:desc&per_page=50" \
+        | python3 -c 'import json, sys; [print(i["id"]) for i in json.load(sys.stdin)["images"][int(sys.argv[1]):]]' '{{keep}}' \
+        | while read -r id; do
+            echo "deleting old snapshot $id"
+            curl -fsS -o /dev/null -X DELETE -H "Authorization: Bearer $token" \
+                "https://api.hetzner.cloud/v1/images/$id"
+        done
+
+# Show the images that can be built
+list:
+    @echo "workspace-vm kalpak44/workspaced-ai vm-image/ — the OS of every workspace VM"
