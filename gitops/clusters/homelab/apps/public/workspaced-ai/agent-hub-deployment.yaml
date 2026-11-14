@@ -1,5 +1,7 @@
 # The one service a workspace VM talks to: it enrolls each VM's supervisor and takes its
 # signed ready and heartbeat reports to the VM manager. Public only under /api/v1/agent.
+# One replica, replaced rather than rolled: each VM's tunnel sockets are held in its memory,
+# so a second pod would answer the API for VMs connected to the first.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,6 +9,8 @@ metadata:
   namespace: workspaced-ai
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   revisionHistoryLimit: 2
   selector:
     matchLabels:

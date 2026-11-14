@@ -51,6 +51,9 @@ spec:
             # this pod may reach (vm-manager-networkpolicy.yaml).
             - name: WORKSPACED_VM_MANAGER_URL
               value: http://workspaced-ai-vm-manager:8080/api/v1
+            # Every call to a workspace's harness goes through the agent hub's tunnel to its VM.
+            - name: WORKSPACED_AGENT_HUB_URL
+              value: http://workspaced-ai-agent-hub:8080/api/v1
             # Workspace backups. Each workspace uploads and downloads its own archive through
             # URLs the API signs, so the pods must reach this host as well as the API.
             - name: WORKSPACED_BACKUP_ENDPOINT
