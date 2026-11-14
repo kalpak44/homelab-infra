@@ -1,0 +1,20 @@
+# The agent hub checks its callers' tokens with a TokenReview, which system:auth-delegator
+# allows and which grants nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workspaced-ai-agent-hub
+  namespace: workspaced-ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workspaced-ai-agent-hub-token-review
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: workspaced-ai-agent-hub
+    namespace: workspaced-ai

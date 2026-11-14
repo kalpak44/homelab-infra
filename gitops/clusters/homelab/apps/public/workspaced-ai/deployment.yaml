@@ -16,12 +16,9 @@ spec:
       labels:
         app: workspaced-ai-api
     spec:
-      # Workspaces run on Hetzner VMs the VM manager makes, so the API never calls the
-      # Kubernetes API and needs no token.
+      # The API never calls the Kubernetes API; its only token is the agent hub's below.
       automountServiceAccountToken: false
-      # Named rather than left out: the API server copies the deprecated serviceAccount
-      # field back into an absent serviceAccountName, which kept the deleted one.
-      serviceAccountName: default
+      serviceAccountName: workspaced-ai-api
       # A pod-level context, not only the per-container one below: the config scanner
       # treats an empty pod securityContext as running with defaults regardless of what
       # the containers set.
@@ -82,6 +79,9 @@ spec:
             # to write their temporary files.
             - name: tmp
               mountPath: /tmp
+            - name: agent-hub-token
+              mountPath: /var/run/secrets/workspaced-ai/agent-hub
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -96,3 +96,12 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        # Proves this pod to the agent hub. Issued for the hub's audience alone, so it is
+        # no use against the Kubernetes API; rotated by the kubelet and read on every call.
+        - name: agent-hub-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: workspaced-ai-agent-hub
+                  expirationSeconds: 3600

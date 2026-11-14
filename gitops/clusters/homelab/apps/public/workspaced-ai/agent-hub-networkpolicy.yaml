@@ -1,6 +1,7 @@
 # Traefik for the supervisors' routes, the VM manager for the internal ones that issue
 # and revoke enrollment tokens, the API for its tunnel to each harness, the gateway for the
-# workspaces' public services; nothing else in the namespace may reach it.
+# workspaces' public services; nothing else in the namespace may reach it. Each of those
+# three also needs its service account token, which opens only its own internal routes.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

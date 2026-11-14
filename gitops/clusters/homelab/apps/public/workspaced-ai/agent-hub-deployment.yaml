@@ -24,7 +24,9 @@ spec:
       labels:
         app: workspaced-ai-agent-hub
     spec:
-      automountServiceAccountToken: false
+      # Its own token, for the TokenReviews that identify its internal callers.
+      serviceAccountName: workspaced-ai-agent-hub
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

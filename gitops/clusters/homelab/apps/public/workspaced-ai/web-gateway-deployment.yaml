@@ -18,6 +18,7 @@ spec:
         app: workspaced-ai-web-gateway
     spec:
       automountServiceAccountToken: false
+      serviceAccountName: workspaced-ai-web-gateway
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
@@ -66,6 +67,9 @@ spec:
             # buffers under /tmp in the unprivileged image.
             - name: tmp
               mountPath: /tmp
+            - name: agent-hub-token
+              mountPath: /var/run/secrets/workspaced-ai/agent-hub
+              readOnly: true
           resources:
             requests:
               cpu: 10m
@@ -76,3 +80,12 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        # Proves this pod to the agent hub. Issued for the hub's audience alone, so it is
+        # no use against the Kubernetes API; rotated by the kubelet and read on every call.
+        - name: agent-hub-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: workspaced-ai-agent-hub
+                  expirationSeconds: 3600
