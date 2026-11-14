@@ -546,6 +546,12 @@ jobs:
           for _ in $(seq 1 20); do [ "$(web)" = 000 ] && break; sleep 1; done
           test "$(web)" = 000
 
+          # The VM hands the agent a Docker of its own; these are what it drives it with.
+          echo "The agent has the Docker CLI with buildx and compose"
+          docker exec harness docker --version
+          docker exec harness docker buildx version
+          docker exec harness docker compose version
+
       - name: Show the harness log
         if: failure()
         run: |

@@ -70,21 +70,18 @@ PROFILE
   apparmor_parser -r /etc/apparmor.d/usr.bin.rootlesskit
 fi
 # The agent's Docker: rootless, as the workspace user, so what it runs can never reach the
-# system daemon the supervisor holds. Its images live outside the home, so a backup of the
-# home never carries them.
+# system daemon the supervisor holds. A user unit under a lingering user manager, because
+# rootless containers need the cgroup a user session delegates. Its images live outside the
+# home, so a backup of the home never carries them.
 install -d -m 0700 -o workspace -g workspace /var/lib/workspace-docker
-cat > /etc/systemd/system/workspace-docker.service <<'UNIT'
+echo 'd /run/workspace-docker 0700 workspace workspace -' > /etc/tmpfiles.d/workspace-docker.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/workspace-docker.conf
+cat > /etc/systemd/user/workspace-docker.service <<'UNIT'
 [Unit]
 Description=Docker for the workspace's agent (rootless)
-After=network-online.target
-Wants=network-online.target
+ConditionUser=workspace
 
 [Service]
-User=workspace
-Group=workspace
-RuntimeDirectory=workspace-docker
-RuntimeDirectoryMode=0700
-Environment=XDG_RUNTIME_DIR=/run/workspace-docker HOME=/var/lib/workspace-docker
 Environment=PATH=/usr/bin:/usr/sbin:/bin:/sbin
 ExecStart=/usr/bin/dockerd-rootless.sh --data-root /var/lib/workspace-docker/data \
   --host unix:///run/workspace-docker/docker.sock
@@ -94,15 +91,19 @@ Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 UNIT
-systemctl daemon-reload
-systemctl enable --now workspace-docker.service
-timeout 60 sh -c 'until [ -S /run/workspace-docker/docker.sock ]; do sleep 1; done' || { journalctl -u workspace-docker --no-pager; exit 1; }
+systemctl --global enable workspace-docker.service
+loginctl enable-linger workspace
+timeout 60 sh -c 'until [ -S /run/user/1000/bus ]; do sleep 1; done'
+systemctl --user -M workspace@ daemon-reload
+systemctl --user -M workspace@ start workspace-docker.service
+timeout 60 sh -c 'until [ -S /run/workspace-docker/docker.sock ]; do sleep 1; done' || {
+  journalctl --user-unit workspace-docker --no-pager; exit 1; }
 # Fails the build if the agent's Docker cannot run a container either.
 sudo -u workspace DOCKER_HOST=unix:///run/workspace-docker/docker.sock docker run --rm hello-world
 sudo -u workspace DOCKER_HOST=unix:///run/workspace-docker/docker.sock docker image rm hello-world
-systemctl stop workspace-docker.service
+systemctl --user -M workspace@ stop workspace-docker.service
 
 # Pinned to the digest :latest resolves to now, so every VM from this snapshot runs the
 # same build until the next one.
@@ -116,8 +117,8 @@ cat > /etc/systemd/system/workspaced-supervisor.service <<UNIT
 [Unit]
 Description=workspaced-ai supervisor
 Requires=docker.service
-Wants=network-online.target workspace-docker.service
-After=docker.service workspace-docker.service cloud-final.service network-online.target
+Wants=network-online.target user@1000.service
+After=docker.service user@1000.service cloud-final.service network-online.target
 ConditionPathExists=/etc/workspaced/agent.env
 
 [Service]
