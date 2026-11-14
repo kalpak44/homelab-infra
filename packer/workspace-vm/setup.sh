@@ -118,7 +118,10 @@ cat > /etc/systemd/system/workspaced-supervisor.service <<UNIT
 Description=workspaced-ai supervisor
 Requires=docker.service
 Wants=network-online.target user@1000.service
-After=docker.service user@1000.service cloud-final.service network-online.target
+# cloud-init.service writes the enrollment file. Never cloud-final.service: it runs after
+# multi-user.target, which waits for this unit, so systemd drops this start job to break
+# the loop.
+After=docker.service user@1000.service cloud-init.service network-online.target
 ConditionPathExists=/etc/workspaced/agent.env
 
 [Service]
