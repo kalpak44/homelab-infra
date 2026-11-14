@@ -1,5 +1,5 @@
 # The one route into every workspace's web server: web-gateway-ingressroute.yaml sends
-# the whole wildcard here, and the gateway picks the workspace's Service by name. Its
+# the whole wildcard here, and the API resolves enabled names to VM tunnels. Its
 # routing and its 404 page are built into the image, from the app's own repository.
 apiVersion: apps/v1
 kind: Deployment
@@ -35,11 +35,13 @@ spec:
               drop:
                 - ALL
           env:
-            # Where the workspaces' Services are: this namespace, whatever it is called.
-            - name: WORKSPACE_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+            # Every box- host goes to the agent hub, which carries it through the tunnel to the
+            # workspace's VM.
+            - name: AGENT_HUB_URL
+              value: http://workspaced-ai-agent-hub:8080
+            # Resolve only enabled, database-owned domains before opening a VM web tunnel.
+            - name: API_URL
+              value: http://workspaced-ai-api:8080
           ports:
             - name: http
               containerPort: 8080

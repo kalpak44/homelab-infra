@@ -1,6 +1,6 @@
 # Traefik for the supervisors' routes, the VM manager for the internal ones that issue
-# and revoke enrollment tokens, the API for its tunnel to each harness; nothing else in the
-# namespace may reach it.
+# and revoke enrollment tokens, the API for its tunnel to each harness, the gateway for the
+# workspaces' public services; nothing else in the namespace may reach it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -26,6 +26,9 @@ spec:
         - podSelector:
             matchLabels:
               app: workspaced-ai-api
+        - podSelector:
+            matchLabels:
+              app: workspaced-ai-web-gateway
       ports:
         - protocol: TCP
           port: http
