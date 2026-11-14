@@ -1,8 +1,8 @@
 type: leaky
 name: custom/http-error-threshold
-description: "Block IP after 5 4xx/5xx HTTP responses, regardless of rate"
+description: "Block IP after 5 4xx HTTP responses, regardless of rate"
 
-# 4xx/5xx only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
+# Client errors only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
 # and counting them bans a visitor who merely followed a redirect and missed a favicon.
 # Static assets are excluded too: a stale browser asking for an old hashed bundle (or a
 # source map) produces a burst of 404s that says nothing about intent.
@@ -10,12 +10,15 @@ description: "Block IP after 5 4xx/5xx HTTP responses, regardless of rate"
 # MCP clients probe GET/DELETE session handling and retry POST during negotiation; 405
 # and 400 are normal protocol outcomes there. The MCP-specific auth and surface scenarios
 # judge those requests, so a sparse run of negotation errors must not become a 24h ban.
-filter: "evt.Meta.service == 'http' && evt.Parsed.static_ressource == 'false' && (evt.Meta.http_status startsWith '4' || evt.Meta.http_status startsWith '5') && (evt.Meta.target_fqdn != 'mite-assistant.pavel-usanli.online' || evt.Meta.http_path != '/mcp' || evt.Meta.http_status not in ['400', '405'])"
+# Server failures (5xx) describe the backend, not abuse by its caller. Counting them
+# bans legitimate visitors and VM supervisors during rollouts, then blocks recovery.
+# This applies to every source address and hostname; no VM or domain allowlist is needed.
+filter: "evt.Meta.service == 'http' && evt.Parsed.static_ressource == 'false' && evt.Meta.http_status startsWith '4' && (evt.Meta.target_fqdn != 'mite-assistant.pavel-usanli.online' || evt.Meta.http_path != '/mcp' || evt.Meta.http_status not in ['400', '405'])"
 
 # Group events by source IP - each IP gets its own bucket
 groupby: evt.Meta.source_ip
 
-# capacity 4 + 1 overflow event = 5 4xx/5xx responses trigger a ban
+# capacity 4 + 1 overflow event = 5 4xx responses trigger a ban
 capacity: 4
 
 # leakspeed 6h → effective window = 4 × 6h = 24h (long enough to catch slow, spread-out probing)
