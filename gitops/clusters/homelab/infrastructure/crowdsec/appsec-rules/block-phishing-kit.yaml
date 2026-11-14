@@ -1,0 +1,21 @@
+# Asset names from a credential-phishing kit that no application here serves. A scanner
+# requested the whole Twint/anti-bot bundle on app.workspaced and ai.workspaced: the
+# first answered 404, while the second returned its SPA fallback with 200. The names are
+# specific enough that a real page bundle cannot collide with them.
+name: custom/block-phishing-kit
+description: "Request for files belonging to a phishing kit"
+rules:
+  - zones:
+      - URI
+    transform:
+      - lowercase
+    match:
+      type: regex
+      value: "(^|/)(qrcode_twint|twint_ch|lkk_ch|raif_ch|antibot-client)\\.js([?#/]|$)|(^|/)(licensor|bot-connect)\\.js([?#/]|$)|^/assets/js/qr_modal\\.js([?#/]|$)|^/(static/style/(sys_files|protect)/index|css/support_parent)\\.(js|css)([?#/]|$)"
+labels:
+  type: scan
+  service: http
+  behavior: "http:scan"
+  confidence: 3
+  spoofable: 0
+  label: "Phishing-kit asset probing"

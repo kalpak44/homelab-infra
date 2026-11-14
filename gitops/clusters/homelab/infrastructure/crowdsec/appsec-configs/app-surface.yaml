@@ -11,3 +11,4 @@ inband_rules:
   - custom/block-secret-files
   - custom/block-laravel-ignition
   - custom/block-recon-artifacts
+  - custom/block-phishing-kit

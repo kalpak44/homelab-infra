@@ -51,3 +51,7 @@
 # 2026-11-12 Root-only 403 probes with rotating spoofed mobile UAs on www, returning
 # after a 1h automatic ban expired; 8 requests in four bursts over 12h
 91.184.244.208
+# 2026-11-14 HEAD probes for .env, .env.local, .env.prod and .env.dev on
+# ai.workspaced.online, 64 requests in six bursts over 1h23m; it resumed 23 minutes
+# after the automatic 1h threshold ban expired and was banned again
+104.244.74.39

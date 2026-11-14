@@ -117,6 +117,11 @@ spec:
       targetPath: 'appsec.rules.block-recon-artifacts\.yaml'
       literal: true
     - kind: ConfigMap
+      name: crowdsec-src-appsec-rules
+      valuesKey: block-phishing-kit.yaml
+      targetPath: 'appsec.rules.block-phishing-kit\.yaml'
+      literal: true
+    - kind: ConfigMap
       name: crowdsec-src-appsec-configs
       valuesKey: app-surface.yaml
       targetPath: 'appsec.configs.app-surface\.yaml'
@@ -194,7 +199,7 @@ spec:
       # when only the list does — without this the DaemonSet keeps serving the old one.
       # sha256 of blocked-ips.txt; update both in the same commit.
       podAnnotations:
-        homelab.pavel-usanli.online/blocked-ips-sha256: "43d561df357e45fe2a06e8e345619d1fea6a15be70ef5db679146b7b53b8847b"
+        homelab.pavel-usanli.online/blocked-ips-sha256: "4aa840139d68749c7a04f2d45ff009b9584ffac53cd8519490a5881db7ae11b7"
 
       # subPath, so the mount adds one file instead of masking the data directory the hub
       # downloads its pattern files into.
