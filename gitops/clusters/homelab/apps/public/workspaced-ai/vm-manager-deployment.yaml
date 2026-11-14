@@ -51,6 +51,9 @@ spec:
             # The newest image build, which has the supervisor installed.
             - name: WORKSPACED_HETZNER_IMAGE_SELECTOR
               value: image=workspace-vm
+            # What each VM's supervisor runs as the harness; bumped with the other images.
+            - name: WORKSPACED_HARNESS_IMAGE
+              value: ghcr.io/kalpak44/workspaced-ai-harness:9d2be6d
           ports:
             - name: http
               containerPort: 8080

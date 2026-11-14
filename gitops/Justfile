@@ -21,7 +21,7 @@
 # image is discovered by grep, so the file names do not matter.
 #
 # An image no container runs directly is pinned in an env `value:` instead of an `image:`
-# line, and is bumped the same way — workspaced-ai's harness is started by its API.
+# line, and is bumped the same way — workspaced-ai's harness is started by each VM's supervisor.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
