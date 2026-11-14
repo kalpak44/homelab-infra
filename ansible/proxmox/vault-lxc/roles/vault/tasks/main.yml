@@ -502,6 +502,41 @@
     VAULT_TOKEN: "{{ vault_root_token }}"
   changed_when: true
 
+# The workspaced-ai VM manager writes each VM's secrets under this one prefix and reaches
+# nothing else, its own Hetzner token included. Deleting metadata is what drops a removed
+# value from the entry's history.
+- name: Write workspaced-ai-vm-manager policy
+  ansible.builtin.shell:
+    cmd: |
+      vault policy write workspaced-ai-vm-manager - <<'POLICY'
+      path "secret/data/workspaced-ai/vms/*" {
+        capabilities = ["create", "read", "update"]
+      }
+      path "secret/metadata/workspaced-ai/vms/*" {
+        capabilities = ["create", "update", "delete"]
+      }
+      POLICY
+  environment:
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  changed_when: true
+
+# Signs in with its pod's service account token, so no Vault credential is stored anywhere.
+- name: Create Kubernetes auth role for workspaced-ai-vm-manager
+  ansible.builtin.command:
+    cmd: >
+      vault write auth/kubernetes/role/workspaced-ai-vm-manager
+      bound_service_account_names=workspaced-ai-vm-manager
+      bound_service_account_namespaces=workspaced-ai
+      policies=workspaced-ai-vm-manager
+      ttl=1h
+  environment:
+    VAULT_ADDR: "{{ vault_addr }}"
+    VAULT_SKIP_VERIFY: "{{ vault_tls_enabled | string | lower }}"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  changed_when: true
+
 # Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
 # guarded on the file being there. Runs after the deploy hook, so a renewal reloads the
 # service.

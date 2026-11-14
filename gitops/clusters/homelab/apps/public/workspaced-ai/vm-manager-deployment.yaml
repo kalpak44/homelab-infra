@@ -16,7 +16,9 @@ spec:
       labels:
         app: workspaced-ai-vm-manager
     spec:
-      # It talks to Hetzner, never to the Kubernetes API.
+      # Its token reaches Vault only, through the projected volume below; it never talks
+      # to the Kubernetes API.
+      serviceAccountName: workspaced-ai-vm-manager
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -37,6 +39,12 @@ spec:
           envFrom:
             - secretRef:
                 name: workspaced-ai-vm-manager-secrets
+          env:
+            # Each VM's secrets, kept under secret/workspaced-ai/vms/<vm id>.
+            - name: WORKSPACED_VAULT_URL
+              value: https://vault.internal.pavel-usanli.online:8200
+            - name: WORKSPACED_VAULT_JWT_PATH
+              value: /var/run/secrets/vault/token
           ports:
             - name: http
               containerPort: 8080
@@ -61,6 +69,9 @@ spec:
             # to write their temporary files.
             - name: tmp
               mountPath: /tmp
+            - name: vault-token
+              mountPath: /var/run/secrets/vault
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -75,3 +86,10 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        # Short-lived and rotated by the kubelet; the app reads it afresh at each sign-in.
+        - name: vault-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
