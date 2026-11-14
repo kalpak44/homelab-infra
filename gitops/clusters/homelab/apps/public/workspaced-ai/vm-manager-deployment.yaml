@@ -37,11 +37,6 @@ spec:
           envFrom:
             - secretRef:
                 name: workspaced-ai-vm-manager-secrets
-          env:
-            # 8080 like the API's Service; the app defaults to 8081 only so a local run
-            # does not collide with the API.
-            - name: WORKSPACED_VM_MANAGER_PORT
-              value: "8080"
           ports:
             - name: http
               containerPort: 8080
@@ -68,12 +63,14 @@ spec:
               mountPath: /tmp
           resources:
             requests:
-              cpu: 25m
-              memory: 192Mi
+              cpu: 50m
+              memory: 256Mi
               ephemeral-storage: 64Mi
+            # Same as the API's: the JVM sizes its heap from what is left of this after
+            # its fixed reservations.
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: "1"
+              memory: 768Mi
               ephemeral-storage: 256Mi
       volumes:
         - name: tmp

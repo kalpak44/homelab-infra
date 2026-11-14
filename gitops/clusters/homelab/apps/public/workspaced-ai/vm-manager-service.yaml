@@ -4,7 +4,6 @@ metadata:
   name: workspaced-ai-vm-manager
   namespace: workspaced-ai
 spec:
-  type: ClusterIP
   selector:
     app: workspaced-ai-vm-manager
   ports:

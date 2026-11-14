@@ -17,5 +17,6 @@ resources:
   - vm-manager-externalsecret.yaml
   - vm-manager-deployment.yaml
   - vm-manager-service.yaml
+  - vm-manager-networkpolicy.yaml
 
 namespace: workspaced-ai

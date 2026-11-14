@@ -1,0 +1,22 @@
+# The VM manager has no authentication of its own: it is private, and only the API calls
+# it. This is what makes that true inside the cluster too, where workspace pods run user
+# agents in the same namespace and could otherwise reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: workspaced-ai-vm-manager
+  namespace: workspaced-ai
+spec:
+  podSelector:
+    matchLabels:
+      app: workspaced-ai-vm-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: workspaced-ai-api
+      ports:
+        - protocol: TCP
+          port: http
