@@ -14,5 +14,8 @@ resources:
   - web-gateway-deployment.yaml
   - web-gateway-service.yaml
   - web-gateway-ingressroute.yaml
+  - vm-manager-externalsecret.yaml
+  - vm-manager-deployment.yaml
+  - vm-manager-service.yaml
 
 namespace: workspaced-ai

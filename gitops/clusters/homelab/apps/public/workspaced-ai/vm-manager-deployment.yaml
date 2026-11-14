@@ -1,0 +1,75 @@
+# Creates, watches and deletes the Hetzner VMs workspaces run on. Internal only: a
+# ClusterIP Service and no IngressRoute, so nothing outside the cluster can reach it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspaced-ai-vm-manager
+  namespace: workspaced-ai
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: workspaced-ai-vm-manager
+  template:
+    metadata:
+      labels:
+        app: workspaced-ai-vm-manager
+    spec:
+      # It talks to Hetzner, never to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vm-manager
+          image: ghcr.io/kalpak44/workspaced-ai-vm-manager:79840f4
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - secretRef:
+                name: workspaced-ai-vm-manager-secrets
+          ports:
+            - name: http
+              containerPort: 8081
+          startupProbe:
+            httpGet:
+              path: /api/v1/actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/actuator/health/liveness
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            # readOnlyRootFilesystem is on, and Tomcat and the JVM still need somewhere
+            # to write their temporary files.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 25m
+              memory: 192Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 256Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

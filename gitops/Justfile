@@ -32,7 +32,7 @@ public|bunker-game-app|kalpak44/bunker-party|publish.yml|ghcr.io/kalpak44/bunker
 public|proklinator|kalpak44/proklinator-app|publish.yml|ghcr.io/kalpak44/proklinator-app,ghcr.io/kalpak44/proklinator-api
 public|noco-google-connector-web-page|kalpak44/noco-google-connector-web-page|publish.yml|ghcr.io/kalpak44/noco-google-connector-web-page
 private|song-radar|kalpak44/song-radar|publish.yml|ghcr.io/kalpak44/song-radar
-public|workspaced-ai|kalpak44/workspaced-ai|publish.yml|ghcr.io/kalpak44/workspaced-ai-api,ghcr.io/kalpak44/workspaced-ai-web,ghcr.io/kalpak44/workspaced-ai-harness,ghcr.io/kalpak44/workspaced-ai-gateway"
+public|workspaced-ai|kalpak44/workspaced-ai|publish.yml|ghcr.io/kalpak44/workspaced-ai-api,ghcr.io/kalpak44/workspaced-ai-web,ghcr.io/kalpak44/workspaced-ai-harness,ghcr.io/kalpak44/workspaced-ai-gateway,ghcr.io/kalpak44/workspaced-ai-vm-manager"
 
 _help:
     @just --list
