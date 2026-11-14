@@ -40,13 +40,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # nginx's runtime resolver requires full DNS names; it does not use search domains.
             # Every box- host goes to the agent hub, which carries it through the tunnel to the
             # workspace's VM.
             - name: AGENT_HUB_URL
-              value: http://workspaced-ai-agent-hub:8080
+              value: http://workspaced-ai-agent-hub.$(WORKSPACE_NAMESPACE).svc.cluster.local:8080
             # Resolve only enabled, database-owned domains before opening a VM web tunnel.
             - name: API_URL
-              value: http://workspaced-ai-api:8080
+              value: http://workspaced-ai-api.$(WORKSPACE_NAMESPACE).svc.cluster.local:8080
           ports:
             - name: http
               containerPort: 8080
