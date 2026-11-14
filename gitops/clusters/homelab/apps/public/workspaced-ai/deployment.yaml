@@ -54,12 +54,6 @@ spec:
             # Every call to a workspace's harness goes through the agent hub's tunnel to its VM.
             - name: WORKSPACED_AGENT_HUB_URL
               value: http://workspaced-ai-agent-hub:8080/api/v1
-            # Workspace backups. Each workspace uploads and downloads its own archive through
-            # URLs the API signs, so the pods must reach this host as well as the API.
-            - name: WORKSPACED_BACKUP_ENDPOINT
-              value: https://rustfs.internal.pavel-usanli.online
-            - name: WORKSPACED_BACKUP_BUCKET
-              value: workspace-backups
             # Workspace web servers are public as <name>.<this>; the API only names a
             # Service after each, and the gateway routes the domain to them.
             - name: WORKSPACED_WEB_SERVER_DOMAIN
