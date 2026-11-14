@@ -195,8 +195,9 @@ being there — so a genuinely expired one needs `certbot renew --force-renewal`
 
 **In the cluster** Traefik resolves certificates itself through its `cloudflare` resolver,
 storing them in `acme.json` on its volume. The in-cluster hostnames are `home`, `headlamp`,
-`crowdsec`, `songradar` and `traefik`; check those through
-192.168.1.121. `vault`, `prometheus`, `grafana` and `rustfs` terminate on their own hosts above, so probing them
+`songradar` and `traefik`; check those through 192.168.1.121. CrowdSec has no dashboard
+route — its LAPI service is scraped by Prometheus and drawn in Grafana. `vault`,
+`prometheus`, `grafana` and `rustfs` terminate on their own hosts above, so probing them
 through the ingress returns Traefik's default certificate, not a fault. Read Traefik's log
 for ACME errors — it retries forever and reports nothing else:
 
@@ -344,9 +345,10 @@ every chart in `gitops/` still supports the new API versions, and snapshot both 
 bump; the update-agent token cannot read `HelmChart`, so use the node's own client:
 `ssh root@192.168.1.110 "k3s kubectl -n kube-system get helmchart traefik -o jsonpath='{.spec.chart}'"`.
 
-**Three components are pinned in the bootstrap playbook and are not applied by a nightly
-run.** `runner_version` and `terraform_version` in
+**Four components are pinned in the bootstrap playbook and are not applied by a nightly
+run.** `runner_version`, `terraform_version` and `k8s_minor` in
 `ansible/bootstrap/03-runner-vm.yml`, and `lxc_template` in `02-proxmox-artifacts.yml`.
+`k8s_minor` must track the k3s minor, because it selects the kubectl apt repository.
 Bump them when upstream moves and say in the report that they take effect at the next
 bootstrap — never run `just bootstrap` to apply one, because that playbook also creates
 VMs and issues certificates and is not a nightly operation. The Actions runner also
@@ -429,7 +431,9 @@ than one per guest, or thin-pool usage climbs until the whole node wedges.
    companion package must be available for the new major *before* you move. For postgres
    that means `postgresql-<new>-pgvector` must be packaged, because the application
    database uses the `vector` extension and an upgrade without it strands the data. If
-   anything is missing, stop and report — that is a successful check, not a failure.
+   anything is missing, stop and report — that is a successful check, not a failure. The
+   pgdg repository can publish a `-pgvector` package for a major before the server package
+   itself, so check both rather than reading the extension as proof the major exists.
 3. **Snapshot the guest.**
 4. **Run the migration the guide describes**, not a playbook re-run. For postgres: install
    the new major, `pg_upgradecluster -m upgrade <old> main`, confirm the new cluster
@@ -532,6 +536,8 @@ curl -sk -o /dev/null -w '%{http_code}\n' --max-time 20 https://<host>.internal.
 
 Vault answers on `/v1/sys/health`, Prometheus on `/-/healthy` and RustFS on `/health`; their
 `/` does not answer (RustFS returns 403 there), so a `000` or `403` there is not an outage.
+RustFS's console is at `https://rustfs.internal.pavel-usanli.online:9001/rustfs/console/`;
+its port root returns the same 403.
 
 And the whole homelab, after the OS sweep:
 
