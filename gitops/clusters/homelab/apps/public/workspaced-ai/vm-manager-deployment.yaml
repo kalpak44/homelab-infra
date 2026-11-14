@@ -37,9 +37,14 @@ spec:
           envFrom:
             - secretRef:
                 name: workspaced-ai-vm-manager-secrets
+          env:
+            # 8080 like the API's Service; the app defaults to 8081 only so a local run
+            # does not collide with the API.
+            - name: WORKSPACED_VM_MANAGER_PORT
+              value: "8080"
           ports:
             - name: http
-              containerPort: 8081
+              containerPort: 8080
           startupProbe:
             httpGet:
               path: /api/v1/actuator/health/liveness
