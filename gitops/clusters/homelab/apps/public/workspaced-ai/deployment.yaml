@@ -55,6 +55,9 @@ spec:
             # All domains reach that workspace's nginx on port 80 with Host preserved.
             - name: WORKSPACED_WEB_SERVER_DOMAIN
               value: workspaced.online
+            # Where Stripe Checkout sends the browser back after a top-up.
+            - name: WORKSPACED_BILLING_RETURN_URL
+              value: https://ai.workspaced.online/billing
           ports:
             - name: http
               containerPort: 8080
