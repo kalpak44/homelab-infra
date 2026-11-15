@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/kalpak44/workspaced-ai-gateway:170b3d9
+          image: ghcr.io/kalpak44/workspaced-ai-gateway:056780a
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
