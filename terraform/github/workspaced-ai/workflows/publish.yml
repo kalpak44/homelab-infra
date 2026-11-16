@@ -541,6 +541,11 @@ jobs:
           fi
           docker exec harness test ! -e /home/workspace/.config/workspaced/firewall/request
 
+          echo "domains says none reach the workspace yet, then lists what the app wrote"
+          docker exec harness domains | grep 'no domains reach this workspace yet'
+          docker exec harness sh -c 'mkdir -p ~/.config/workspaced && printf "example.com\n" > ~/.config/workspaced/domains'
+          docker exec harness domains | grep -x example.com
+
           # The VM hands the agent a Docker of its own; these are what it drives it with.
           echo "The agent has the Docker CLI with buildx and compose"
           docker exec harness docker --version
