@@ -51,10 +51,6 @@ spec:
             # Every call to a workspace's harness goes through the agent hub's tunnel to its VM.
             - name: WORKSPACED_AGENT_HUB_URL
               value: http://workspaced-ai-agent-hub:8080/api/v1
-            # Each enabled box-<name> domain resolves to its workspace's VM tunnel.
-            # All domains reach that workspace's nginx on port 80 with Host preserved.
-            - name: WORKSPACED_WEB_SERVER_DOMAIN
-              value: workspaced.online
             # Where Stripe Checkout sends the browser back after a top-up.
             - name: WORKSPACED_BILLING_RETURN_URL
               value: https://ai.workspaced.online/billing
