@@ -505,11 +505,16 @@ and API can also stay unavailable for several minutes while containerd and pods 
 A failed health check still stops the sweep; inspect the unit and node to distinguish a
 settling cluster from a real failure, but do not re-run the sweep. Separately, a CrowdSec
 agent or appsec pod that keeps its name across a reboot can fail its init with
-`user already exist` from `cscli lapi register`, or return as `Completed`. Delete that
-pod so its controller recreates it with a fresh watcher identity, then confirm both agent
-and appsec are Ready. The update-agent credential cannot delete pods, so use the node's
-client (`ssh root@192.168.1.110 "k3s kubectl -n crowdsec delete pod <name>"`) rather than
-reporting the `Forbidden` as the failure.
+`user already exist` from `cscli lapi register`, return as `Completed`, or remain `Pending`
+after its container exited at 255. Delete that pod so its controller recreates it with a
+fresh watcher identity, then confirm both agent and appsec are Ready. The update-agent
+credential cannot delete pods, so use the node's client
+(`ssh root@192.168.1.110 "k3s kubectl -n crowdsec delete pod <name>"`) rather than reporting
+the `Forbidden` as the failure.
+
+A Trivy scan job that starts while `trivy-server` is restarting can finish `Error` with a
+`trivy-service` timeout. `scanJobTTL` reaps it; wait for the job to disappear instead of
+deleting it or treating the scan as a service failure.
 
 ## 9. Proving it still works
 
@@ -558,8 +563,10 @@ done
 each answered before you started.
 
 Some Cloudflare edge addresses can be unreachable from the runner while the zone is healthy.
+Different zones can use different edge IPs, so test the same address against a working host.
 Retry a timed-out public hostname against another Cloudflare IP and check Traefik directly
-before treating it as an outage.
+before treating it as an outage. Public Traefik is `192.168.1.120`; `192.168.1.121` is
+private-only and returns 404 for public routes.
 
 ## 10. When something breaks
 
