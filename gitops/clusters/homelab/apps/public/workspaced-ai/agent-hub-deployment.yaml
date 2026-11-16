@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: agent-hub
-          image: ghcr.io/kalpak44/workspaced-ai-agent-hub:c714a90
+          image: ghcr.io/kalpak44/workspaced-ai-agent-hub:38f275c
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
