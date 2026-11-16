@@ -69,6 +69,10 @@ include <tunables/global>
 PROFILE
   apparmor_parser -r /etc/apparmor.d/usr.bin.rootlesskit
 fi
+# Rootless Docker binds published ports as the workspace user, which the kernel otherwise
+# keeps below 1024, so a site could not publish 80 and 443.
+echo 'net.ipv4.ip_unprivileged_port_start=0' > /etc/sysctl.d/60-workspace-ports.conf
+sysctl -p /etc/sysctl.d/60-workspace-ports.conf
 # The agent's Docker: rootless, as the workspace user, so what it runs can never reach the
 # system daemon the supervisor holds. A user unit under a lingering user manager, because
 # rootless containers need the cgroup a user session delegates. Its images live outside the
@@ -102,6 +106,9 @@ timeout 60 sh -c 'until [ -S /run/workspace-docker/docker.sock ]; do sleep 1; do
   journalctl --user-unit workspace-docker --no-pager; exit 1; }
 # Fails the build if the agent's Docker cannot run a container either.
 sudo -u workspace DOCKER_HOST=unix:///run/workspace-docker/docker.sock docker run --rm hello-world
+# Fails the build if it cannot publish a port below 1024.
+sudo -u workspace DOCKER_HOST=unix:///run/workspace-docker/docker.sock \
+  docker run --rm -p 80:8080 hello-world
 sudo -u workspace DOCKER_HOST=unix:///run/workspace-docker/docker.sock docker image rm hello-world
 systemctl --user -M workspace@ stop workspace-docker.service
 
