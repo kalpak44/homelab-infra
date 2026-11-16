@@ -227,6 +227,16 @@ with `docker run -p` listens on the VM's public IP, and the VM's Hetzner firewal
 every workspace through the cluster tied user traffic to the homelab, so do not bring a gateway or a wildcard
 record back for it. `agent.workspaced.online` has its own record because the wildcard used to cover it.
 
+**Each VM gets one name of its own, `<vm id>.vm.workspaced.online`, and that is neither a gateway nor a
+wildcard.** A user connecting their own domain points a CNAME at it, so the VM manager can move the name when a
+VM is recreated and delete it with the VM — the user's record then resolves to nothing instead of to whoever gets
+the IP next. The VM manager writes these records at runtime: DNS-only A/AAAA straight to the VM, never proxied, so
+no user traffic crosses Cloudflare or the cluster. They live in the Cloudflare zone because Hetzner Cloud DNS
+refuses a subdomain as a zone (`unsupported tld`), so `vm.workspaced.online` cannot be delegated there. The VM
+manager writes them with a token of its own, limited to DNS edit on `workspaced.online` and kept in
+`secret/workspaced-vm-manager-secrets` as `cloudflare-token` — never the Terraform token, which can rewrite WAF
+rules and the tunnel. Terraform must never declare anything under `vm`, or the next apply fights the VM manager.
+
 **`SONAR_PROJECT_KEY` is not always the variable name.** `proklinator-app` analyses two projects and names them `SONAR_PROJECT_KEY_SITE` and `SONAR_PROJECT_KEY_API`, so an agent reading only `SONAR_PROJECT_KEY` there finds an empty string and silently skips the gate entirely. The prompt collects every non-empty key among the three and loops.
 
 **The agent also clears the findings the gate does *not* fail on, once per sweep, on the default branch.** A Sonar gate keys off new-code conditions and a reliability rating, so a Minor smell fails nothing and simply accumulates — until a rule update turns the pile into a blocked merge for whoever opens the next pull request. That cleanup is the second and last exception to the rule against committing to the default branch, under the same discipline as repairing a pipeline that failed there: the repository's own validation passes locally first, one commit, then wait for the pipeline the push starts. The two exceptions cannot collide, because they are in different modes. What is out of scope is the finding whose fix would change behaviour — an `await` inside a loop is usually sequential on purpose, and batching it to silence the rule is a behaviour change wearing a cleanup's clothes, so the agent is told to read what the loop is for and leave it alone when the ordering is load-bearing. A cleanup commit on its own is a patch release.

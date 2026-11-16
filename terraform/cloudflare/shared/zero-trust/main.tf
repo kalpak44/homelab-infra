@@ -94,6 +94,8 @@ resource "cloudflare_record" "proklinator" {
   proxied = true
 }
 
+# The VM manager writes <vm id>.vm.workspaced.online records at runtime; declaring anything
+# under `vm` here would make every apply fight it.
 resource "cloudflare_record" "workspaced" {
   for_each = local.workspaced_apps
 
