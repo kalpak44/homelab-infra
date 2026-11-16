@@ -534,6 +534,13 @@ jobs:
           docker exec harness task add smoke --in 5m --prompt x | grep 'on Europe/Sofia'
           docker exec harness task rm smoke
 
+          echo "The firewall tool refuses a malformed request before asking the app"
+          if docker exec harness firewall open http; then
+            echo "::error::firewall accepted a port that is not a number"
+            exit 1
+          fi
+          docker exec harness test ! -e /home/workspace/.config/workspaced/firewall/request
+
           # The VM hands the agent a Docker of its own; these are what it drives it with.
           echo "The agent has the Docker CLI with buildx and compose"
           docker exec harness docker --version
