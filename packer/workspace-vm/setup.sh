@@ -143,8 +143,8 @@ WantedBy=multi-user.target
 UNIT
 systemctl enable workspaced-supervisor.service
 
-# Nothing reaches a VM inbound, so SSH has nothing to serve. Masked rather than removed:
-# Packer is connected through it until the build server shuts down.
+# Off, so a firewall rule can only ever open ports the workspace itself publishes. Masked
+# rather than removed: Packer is connected through it until the build server shuts down.
 systemctl mask ssh.service ssh.socket
 rm -f /root/.ssh/authorized_keys /etc/ssh/ssh_host_*
 
