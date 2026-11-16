@@ -237,6 +237,15 @@ manager writes them with a token of its own, limited to DNS edit on `workspaced.
 `secret/workspaced-vm-manager-secrets` as `cloudflare-token` — never the Terraform token, which can rewrite WAF
 rules and the tunnel. Terraform must never declare anything under `vm`, or the next apply fights the VM manager.
 
+**A user connects their own domain through Domain Connect, and its two templates live in `workspaced-ai/domain-connect/`.**
+`workspace-apex` sets A/AAAA on the domain and points `www` at the VM's name; `workspace` points one host at it. They
+are copies of what the public `Domain-Connect/Templates` repository holds, and a DNS provider only applies what is merged
+there, so a change means bumping `version` and opening a pull request — editing ours alone changes nothing. Every
+apply request is signed: the private key is `domain-connect-private-key` in `secret/workspaced-secrets`, and the
+public half is the `_dck1` TXT records in `terraform/cloudflare/shared/zero-trust/domain-connect.tf`, which is the
+key name and `syncPubKeyDomain` both templates name. CNAME targets are fixed to `%vmid%.vm.workspaced.online` rather than a free variable, so a signed request can only ever
+point a user's record at one of our VM names.
+
 **`SONAR_PROJECT_KEY` is not always the variable name.** `proklinator-app` analyses two projects and names them `SONAR_PROJECT_KEY_SITE` and `SONAR_PROJECT_KEY_API`, so an agent reading only `SONAR_PROJECT_KEY` there finds an empty string and silently skips the gate entirely. The prompt collects every non-empty key among the three and loops.
 
 **The agent also clears the findings the gate does *not* fail on, once per sweep, on the default branch.** A Sonar gate keys off new-code conditions and a reliability rating, so a Minor smell fails nothing and simply accumulates — until a rule update turns the pile into a blocked merge for whoever opens the next pull request. That cleanup is the second and last exception to the rule against committing to the default branch, under the same discipline as repairing a pipeline that failed there: the repository's own validation passes locally first, one commit, then wait for the pipeline the push starts. The two exceptions cannot collide, because they are in different modes. What is out of scope is the finding whose fix would change behaviour — an `await` inside a loop is usually sequential on purpose, and batching it to silence the rule is a behaviour change wearing a cleanup's clothes, so the agent is told to read what the loop is for and leave it alone when the ordering is load-bearing. A cleanup commit on its own is a patch release.
