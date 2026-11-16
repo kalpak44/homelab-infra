@@ -51,6 +51,9 @@ spec:
             # The newest image build, which has the supervisor installed.
             - name: WORKSPACED_HETZNER_IMAGE_SELECTOR
               value: image=workspace-vm
+            # workspaced.online, where each VM is published as <vm id>.vm.workspaced.online.
+            - name: WORKSPACED_CLOUDFLARE_ZONE_ID
+              value: f50d5e37234c6b48f3d9522174209184
             # What each VM's supervisor runs as the harness; bumped with the other images.
             - name: WORKSPACED_HARNESS_IMAGE
               value: ghcr.io/kalpak44/workspaced-ai-harness:ea66e0b
