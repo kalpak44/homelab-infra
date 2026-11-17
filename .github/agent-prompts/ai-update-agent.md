@@ -227,7 +227,7 @@ Two kinds of pin live under `gitops/clusters/homelab/`, and they move differentl
 | `infrastructure/external-secrets` | `2.15.x` |
 | `infrastructure/nfs-provisioner` | `4.*` |
 | `infrastructure/trivy-operator` | `0.38.x` |
-| `infrastructure/request-metrics` | `0.61.x` |
+| `infrastructure/request-metrics` | `0.62.x` |
 
 The wildcard already tracks patches on its own, so Flux has them without you. Your job is
 the **minor**: when the repository offers a newer one, widen the pin to it. Read what is

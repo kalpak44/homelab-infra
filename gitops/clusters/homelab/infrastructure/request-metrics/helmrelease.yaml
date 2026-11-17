@@ -11,7 +11,7 @@ spec:
   chart:
     spec:
       chart: vector
-      version: "0.61.x"
+      version: "0.62.x"
       sourceRef:
         kind: HelmRepository
         name: vector
