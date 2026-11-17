@@ -76,7 +76,7 @@ configure resource: setup
     # rather than stored as a second GitHub secret.
     cloudflare_tunnel_token_mihal=""
     if [[ "{{resource}}" == "mihal-lxc" ]]; then
-      cloudflare_tunnel_token_mihal="$(cd ../terraform && just output cloudflare shared/mihal-lxc-warp tunnel_token)"
+      cloudflare_tunnel_token_mihal="$(cd ../terraform && just output cloudflare tunnels/mihal tunnel_token)"
     fi
     ansible-playbook "$playbook" ${key_args[@]+"${key_args[@]}"} \
       -e "host_password=${HOST_PASSWORD:-}" \

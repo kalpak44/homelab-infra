@@ -11,12 +11,14 @@ terraform/
 │   ├── proxmox-lxc/
 │   └── proxmox-vm/          # clones from Proxmox VM template 9000
 ├── cloudflare/              # everything on the Cloudflare side
-│   ├── dns/
-│   │   ├── private/         # LAN-only *.internal A records (unproxied)
-│   │   └── public/          # internet-facing CNAME records → Cloudflare tunnel
-│   └── shared/              # non-DNS Cloudflare resources
-│       ├── cloudflare-email/  # email routing
-│       └── zero-trust/        # Cloudflare Tunnel + ingress config
+│   ├── tunnels/             # one state per tunnel: ingress + every record pointing at it
+│   │   ├── homelab/         # k3s tunnel, public hostnames in all zones, SaaS, WARP
+│   │   └── mihal/           # WARP-only SSH to mihal-lxc
+│   └── zones/               # one dir per zone, one state per concern
+│       ├── blocked-ips.txt  # read by every zone's edge/
+│       ├── pavel-usanli.online/{edge,email,internal}/
+│       ├── proklinator.online/edge/
+│       └── workspaced.online/edge/
 ├── proxmox/                 # LXCs + VMs on the Proxmox node
 │   ├── adguard-lxc/
 │   ├── vault-lxc/
@@ -46,11 +48,11 @@ just list                                # print every deployable resource dir
 Examples:
 
 ```bash
-just deploy  cloudflare dns/private/adguard
+just deploy  cloudflare zones/pavel-usanli.online/internal
 just deploy  proxmox    adguard-lxc
 just deploy  github     kalpak44
-just destroy cloudflare shared/cloudflare-email
-just output  cloudflare shared/zero-trust tunnel_token
+just destroy cloudflare zones/pavel-usanli.online/email
+just output  cloudflare tunnels/homelab tunnel_token
 ```
 
 Via GitHub Actions: **Cloudflare - Deploy** / **Cloudflare - Destroy** / **Proxmox - Deploy** / **Proxmox - Destroy** /

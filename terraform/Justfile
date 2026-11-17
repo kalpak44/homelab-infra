@@ -1,7 +1,7 @@
 # Homelab Terraform
 #
 # Usage:
-#   just deploy  <layer> <resource>   # e.g. just deploy cloudflare dns/private/adguard
+#   just deploy  <layer> <resource>   # e.g. just deploy cloudflare zones/pavel-usanli.online/internal
 #   just destroy <layer> <resource>   # e.g. just destroy proxmox adguard-lxc
 #
 # Layers: cloudflare | proxmox | github
@@ -89,7 +89,7 @@ destroy layer resource:
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform destroy -auto-approve -input=false
 
-# Print a sensitive terraform output (e.g. just output cloudflare shared/zero-trust tunnel_token)
+# Print a sensitive terraform output (e.g. just output cloudflare tunnels/homelab tunnel_token)
 output layer resource name:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -235,32 +235,16 @@ bump-scanners:
 
 # List every deployable resource with a short description
 list:
-    @echo "Cloudflare - DNS + shared (just deploy cloudflare <resource>):"
-    @echo "  private (LAN-only, *.internal, unproxied)"
-    @printf "    %-40s %s\n" "dns/private/adguard"                     "adguard.internal → 192.168.1.2 (AdGuard Home)"
-    @printf "    %-40s %s\n" "dns/private/vault"                       "vault.internal → 192.168.1.3 (HashiCorp Vault)"
-    @printf "    %-40s %s\n" "dns/private/postgres"                    "postgres.internal + pgadmin.internal → 192.168.1.4"
-    @printf "    %-40s %s\n" "dns/private/redis"                       "redis.internal → 192.168.1.6 (Redis + Commander)"
-    @printf "    %-40s %s\n" "dns/private/portainer"                   "portainer.internal → 192.168.1.7 (Portainer UI)"
-    @printf "    %-40s %s\n" "dns/private/nfs"                         "nfs.internal → 192.168.1.108 (NFS server)"
-    @printf "    %-40s %s\n" "dns/private/proxmox"                     "proxmox.internal → 192.168.1.50 (Proxmox web UI)"
-    @printf "    %-40s %s\n" "dns/private/traefik"                     "traefik.internal → 192.168.1.121 (Traefik, in-cluster)"
-    @printf "    %-40s %s\n" "dns/private/headlamp"                    "headlamp.internal → 192.168.1.121 (K8s dashboard)"
-    @printf "    %-40s %s\n" "dns/private/grafana"                     "grafana.internal → 192.168.1.12 (Grafana)"
-    @printf "    %-40s %s\n" "dns/private/rustfs"                      "rustfs.internal → 192.168.1.13 (RustFS S3)"
-    @printf "    %-40s %s\n" "dns/private/private-home-page"           "home.internal → 192.168.1.121 (internal home page)"
-    @printf "    %-40s %s\n" "dns/private/songradar"                   "songradar.internal → 192.168.1.121 (SongRadar, in-cluster)"
-    @printf "    %-40s %s\n" "dns/private/prometheus"                  "prometheus.internal → 192.168.1.11 (Prometheus)"
-    @printf "    %-40s %s\n" "dns/private/acestream"                   "acestream.internal → 192.168.1.7 (AceStream engine + acexy + Threadfin, Portainer stack)"
-    @printf "    %-40s %s\n" "dns/private/cloudflared"                 "cloudflared.internal → 192.168.1.10 (Cloudflare Tunnel connector)"
-    @printf "    %-40s %s\n" "dns/private/github-runner"               "github-runner.internal → 192.168.1.101 (self-hosted runner)"
-    @printf "    %-40s %s\n" "dns/private/k3s"                         "k3s-1.internal + k3s-2.internal → 192.168.1.110/111 (k3s nodes)"
-    @printf "    %-40s %s\n" "dns/private/mihal"                       "mihal.internal → 192.168.1.9 (mihal LXC)"
-    @printf "    %-40s %s\n" "dns/private/nocobase"                    "nocobase.internal → 192.168.1.5 (NocoBase LXC)"
-    @echo "  shared (non-DNS Cloudflare resources)"
-    @printf "    %-40s %s\n" "shared/cloudflare-email"                 "contact@pavel-usanli.online → Gmail forwarding, Mailjet sending, SPF/DKIM/DMARC"
-    @printf "    %-40s %s\n" "shared/mihal-lxc-warp"                   "Dedicated Cloudflare Tunnel + Gateway policy — WARP-only SSH to mihal-lxc (192.168.1.9)"
-    @printf "    %-40s %s\n" "shared/zero-trust"                       "Cloudflare Zero Trust tunnel + public DNS (pavel-usanli.online, proklinator.online)"
+    @echo "Cloudflare - tunnels + zones (just deploy cloudflare <resource>):"
+    @echo "  tunnels (one state per tunnel: its ingress, the records pointing at it, WARP)"
+    @printf "    %-40s %s\n" "tunnels/homelab"                         "k3s tunnel · public hostnames in every zone, SaaS custom hostnames, WARP to nocobase"
+    @printf "    %-40s %s\n" "tunnels/mihal"                           "Dedicated tunnel + Gateway policy — WARP-only SSH to mihal-lxc (192.168.1.9)"
+    @echo "  zones (one dir per concern per zone)"
+    @printf "    %-40s %s\n" "zones/pavel-usanli.online/edge"          "WAF (edge ports, blocklist), apex→www redirect, zone settings"
+    @printf "    %-40s %s\n" "zones/pavel-usanli.online/email"         "contact@ → Gmail forwarding, Mailjet sending, SPF/DKIM/DMARC"
+    @printf "    %-40s %s\n" "zones/pavel-usanli.online/internal"      "every *.internal A record (LAN-only, unproxied)"
+    @printf "    %-40s %s\n" "zones/proklinator.online/edge"           "WAF (scanners, rate limit, blocklist)"
+    @printf "    %-40s %s\n" "zones/workspaced.online/edge"            "WAF (edge ports, blocklist), zone settings, Domain Connect key"
     @echo
     @echo "Proxmox - LXCs + VMs (just deploy proxmox <resource>):"
     @printf "  %-14s %s\n" "adguard-lxc"    "LXC 200 · 192.168.1.2   · AdGuard Home"

@@ -41,7 +41,7 @@ prometheus_extra_scrape_jobs:
 # Scraped as the `hosts` job, one target per inventory host, labeled with its name.
 # Must match the hosts ansible/maintenance/node-exporter.yml installs on.
 # Each host is scraped as <inventory name>.<this>, so each needs a record under
-# terraform/cloudflare/dns/private/ or its target fails to resolve.
+# terraform/cloudflare/zones/pavel-usanli.online/internal/ or its target fails to resolve.
 node_exporter_scrape_domain: internal.pavel-usanli.online
 node_exporter_scrape_hosts: "{{ (groups['proxmox_host'] + groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"
 

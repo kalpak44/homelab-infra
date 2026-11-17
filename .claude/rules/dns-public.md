@@ -10,16 +10,17 @@ Internet → Cloudflare edge → Cloudflare Tunnel → cloudflared LXC (192.168.
 
 ## DNS + tunnel pattern
 
-All public DNS records and tunnel ingress rules are managed together in **`terraform/cloudflare/shared/zero-trust/`**.
-There are no individual `dns/public/<name>/` directories — that pattern is retired.
+All public DNS records and tunnel ingress rules are managed together in **`terraform/cloudflare/tunnels/homelab/`**.
+There are no per-record directories for them — that pattern is retired. What does not route through the tunnel lives
+per zone instead, under `terraform/cloudflare/zones/<zone>/` (`edge/` for WAF, redirects and zone settings).
 
 - **Hostname:** `<service>.pavel-usanli.online`
 - **Cloudflare record:** CNAME, `proxied = true`, pointing at `<tunnel-id>.cfargotunnel.com`
 - **Tunnel ingress rule:** routes `<service>.pavel-usanli.online` → `https://192.168.1.120` with `no_tls_verify = true`
-- **Managed in:** `terraform/cloudflare/shared/zero-trust/main.tf` — add one entry to `local.public_k3s_apps`
+- **Managed in:** `terraform/cloudflare/tunnels/homelab/main.tf` — add one entry to `local.public_k3s_apps`
 
 ```hcl
-# terraform/cloudflare/shared/zero-trust/main.tf
+# terraform/cloudflare/tunnels/homelab/main.tf
 locals {
   public_k3s_apps = {
     # key = DNS record name, value = full hostname for tunnel ingress
@@ -30,11 +31,11 @@ locals {
 ```
 
 Both the CNAME record and the tunnel ingress rule are generated automatically from this map via `for_each`.
-After editing, run `just deploy cloudflare shared/zero-trust` (or the **Cloudflare - Deploy** workflow).
+After editing, run `just deploy cloudflare tunnels/homelab` (or the **Cloudflare - Deploy** workflow).
 
 ## Multiple zones — one dir, one tunnel, one map per zone
 
-`shared/zero-trust` manages **every** public zone, not just `pavel-usanli.online`. `proklinator.online` (registered
+`tunnels/homelab` manages **every** public zone, not just `pavel-usanli.online`. `proklinator.online` (registered
 at GoDaddy, nameservers delegated to Cloudflare) is the second. A third zone follows the same three steps:
 
 1. A `data "cloudflare_zone"` block for it.
@@ -64,7 +65,7 @@ at the edge and the origin runs `no_tls_verify = true` — but Traefik retries f
 
 A hostname on someone else's domain cannot just CNAME at one of ours. It resolves to our edge IPs, but the handshake
 carries the customer's SNI, and with no zone to match it the edge rejects it (1016) before any routing happens. Adding
-a `cloudflare_custom_hostname` in `terraform/cloudflare/shared/zero-trust/saas.tf` registers that SNI against our zone,
+a `cloudflare_custom_hostname` in `terraform/cloudflare/tunnels/homelab/saas.tf` registers that SNI against our zone,
 issues a DV certificate for it, and routes it to the fallback origin (`saas.pavel-usanli.online`) — which is an
 ordinary proxied record pointing at the tunnel.
 
@@ -106,8 +107,8 @@ firewall — filtering 8080 on the box drops nothing, because nothing ever arriv
 **Zone:WAF:Edit** on `CLOUDFLARE_API_TOKEN`; without it the apply fails with a bare `Authentication error`.
 
 **One custom ruleset per zone, and a `skip` in it is a trapdoor.** Cloudflare allows a single `http_request_firewall_custom`
-entrypoint per zone and writing it replaces the whole rule list, so `edge-ports.tf` holds every custom rule for
-`pavel-usanli.online` and `waf-proklinator.tf` every rule for `proklinator.online` — a rule added in the dashboard is
+entrypoint per zone and writing it replaces the whole rule list, so each zone's `zones/<zone>/edge/` holds every custom
+rule for that zone (`edge-ports.tf` for `pavel-usanli.online`, `waf.tf` for the others) — a rule added in the dashboard is
 deleted by the next apply. A `skip` carrying `ruleset = "current"` ends evaluation for every request it matches: one
 matching `http.user_agent wildcard "*"` sat in the first of these and left every rule below it dead, including a
 `js_challenge` that would have taken `mite-assistant.pavel-usanli.online` off the air, since MCP clients execute no
@@ -149,11 +150,11 @@ spec:
 
 ## Checklist – adding a new public service
 
-1. Add one entry to `local.public_k3s_apps` in `terraform/cloudflare/shared/zero-trust/main.tf`:
+1. Add one entry to `local.public_k3s_apps` in `terraform/cloudflare/tunnels/homelab/main.tf`:
    ```hcl
    "<name>" = "<name>.pavel-usanli.online"
    ```
-2. Apply: `just deploy cloudflare shared/zero-trust` (or **Cloudflare - Deploy** → `shared/zero-trust`).
+2. Apply: `just deploy cloudflare tunnels/homelab` (or **Cloudflare - Deploy** → `tunnels/homelab`).
 3. Create the k3s manifests at `gitops/clusters/homelab/apps/public/<name>/`: `namespace.yaml`, `deployment.yaml` (or
    `helmrelease.yaml`), `service.yaml`, `ingressroute.yaml` (template above).
 4. If the app needs secrets, add a Vault secret and an `ExternalSecret` manifest.

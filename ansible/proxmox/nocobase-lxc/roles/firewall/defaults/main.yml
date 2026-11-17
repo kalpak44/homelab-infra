@@ -13,7 +13,7 @@ nocobase_firewall_public_ports: [80, 443]
 # Source restriction on the SSH rule. Empty means any source, which is the
 # default because nothing restricts *reaching* this port in the first place:
 # there is no WAN port-forward, so 22022 is only routable from the LAN and over
-# the WARP private route in terraform/cloudflare/shared/zero-trust/warp.tf. A
+# the WARP private route in terraform/cloudflare/tunnels/homelab/warp.tf. A
 # CIDR here narrows it further — "192.168.0.0/16" keeps WARP clients out while
 # still letting the self-hosted runner in.
 #

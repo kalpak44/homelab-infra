@@ -99,7 +99,7 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`                                  | pgAdmin admin creds                                                                                          |
 | `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | Redis + Commander UI creds                                                                                   |
 | `FLUX_GITHUB_TOKEN`                                                  | GitHub PAT with `repo` scope – Flux CD bootstrap                                                             |
-| `CLOUDFLARE_TUNNEL_TOKEN`                                            | Token from `terraform output -raw tunnel_token` after deploying `cloudflare/shared/zero-trust`               |
+| `CLOUDFLARE_TUNNEL_TOKEN`                                            | Token from `terraform output -raw tunnel_token` after deploying `cloudflare/tunnels/homelab`               |
 | `GH_ADMIN_TOKEN`                                                     | PAT used by the `github/` Terraform layer – see [Managed GitHub repos](#managed-github-repos)                |
 | `GH_OWNER`                                                           | GitHub user/org owning the managed repos, e.g. `kalpak44` (optional; defaults to `kalpak44`)                 |
 | `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI maintenance agent                                        |
@@ -120,7 +120,7 @@ The single `CLOUDFLARE_API_TOKEN` needs:
 | Zone    | SSL and Certificates    | Edit        |
 
 Zone resource is scoped to your domain (e.g. `pavel-usanli.online`). Account-level permissions cover the Zero Trust
-tunnel (`cloudflare/shared/zero-trust`). **SSL and Certificates** is what the Cloudflare-for-SaaS custom hostnames in
+tunnel (`cloudflare/tunnels/homelab`). **SSL and Certificates** is what the Cloudflare-for-SaaS custom hostnames in
 `saas.tf` need; without it every call to that API returns a bare `Authentication error` rather than a permission
 message, so a token missing it looks like a broken token.
 
@@ -130,7 +130,7 @@ message, so a token missing it looks like a broken token.
 
 All services live behind `*.internal.pavel-usanli.online` (LAN only, unproxied) or `*.pavel-usanli.online` (public,
 routed through a Cloudflare Zero Trust tunnel — no open WAN ports required). `proklinator.online` and `workspaced.online` are
-further public zones on the same tunnel, managed from the same `cloudflare/shared/zero-trust` dir — registered at GoDaddy, nameservers
+further public zones on the same tunnel, managed from the same `cloudflare/tunnels/homelab` dir — registered at GoDaddy, nameservers
 delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) → Ansible (configures the service).
 
 | Service                    | Where      | IP            | Terraform dir                          | Ansible dir                                 |
@@ -149,8 +149,11 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | k3s control plane          | VM         | 192.168.1.110 | `proxmox/k3s-cluster`                  | `proxmox/k3s-cluster` (`cluster-setup.yml`) |
 | k3s worker                 | VM         | 192.168.1.111 | `proxmox/k3s-cluster`                  | (same)                                      |
 | Flux CD bootstrap          | -          | (on k3s)      | -                                      | `proxmox/k3s-cluster` (`flux-install.yml`)  |
-| Cloudflare Zero Trust      | Cloudflare | -             | `cloudflare/shared/zero-trust`         | -                                           |
-| Cloudflare email routing   | Cloudflare | -             | `cloudflare/shared/cloudflare-email`   | -                                           |
+| Cloudflare Tunnel (k3s)    | Cloudflare | -             | `cloudflare/tunnels/homelab`           | -                                           |
+| Cloudflare Tunnel (mihal)  | Cloudflare | -             | `cloudflare/tunnels/mihal`             | -                                           |
+| `*.internal` DNS records   | Cloudflare | -             | `cloudflare/zones/pavel-usanli.online/internal` | -                                  |
+| Email (routing + Mailjet)  | Cloudflare | -             | `cloudflare/zones/pavel-usanli.online/email` | -                                     |
+| Edge (WAF, redirects)      | Cloudflare | -             | `cloudflare/zones/<zone>/edge`         | -                                           |
 
 ### Per-service notes
 
@@ -218,7 +221,7 @@ which would take Docker's own tables with it. Egress policy stays where it was, 
 Cloudflare's edge is the other half, and the origin cannot reach it: a proxied hostname is also served on 8080, 8880,
 2052, 2082, 2086, 2095 (HTTP) and 2053, 2083, 2087, 2096, 8443 (HTTPS), and the tunnel forwards all of them to the
 same `http://192.168.1.5:80` — so `ownai.deepcraftstudio.com:8080` was this box's port 80, not a service on 8080.
-`shared/zero-trust/edge-ports.tf` blocks anything the edge did not accept on 80 or 443. It needs **Zone:WAF:Edit** on
+`zones/pavel-usanli.online/edge/edge-ports.tf` blocks anything the edge did not accept on 80 or 443. It needs **Zone:WAF:Edit** on
 `CLOUDFLARE_API_TOKEN`, which the current token does not have.
 
 **Portainer** - Docker + nginx + certbot inside the VM. UI at `https://portainer.internal.pavel-usanli.online`. First
@@ -240,14 +243,14 @@ kubectl get nodes
 
 **Cloudflare Tunnel** – `cloudflared` daemon running on LXC 210 (`192.168.1.10`). Connects outbound to the
 Cloudflare Zero Trust network; all public traffic for `*.pavel-usanli.online` routes through the tunnel to Traefik
-at `192.168.1.120` — no open WAN ports needed. The tunnel is provisioned by `cloudflare/shared/zero-trust`
+at `192.168.1.120` — no open WAN ports needed. The tunnel is provisioned by `cloudflare/tunnels/homelab`
 (outputs `tunnel_token`); the daemon is installed and configured by `ansible/proxmox/cloudflared-lxc`.
 Firewall: outbound restricted to `192.168.1.120` (k3s) + internet only.
 
-To retrieve the tunnel token after deploying `cloudflare/shared/zero-trust`:
+To retrieve the tunnel token after deploying `cloudflare/tunnels/homelab`:
 
 ```bash
-cd terraform && just output cloudflare shared/zero-trust tunnel_token
+cd terraform && just output cloudflare tunnels/homelab tunnel_token
 ```
 
 Save the printed value as `CLOUDFLARE_TUNNEL_TOKEN` in your shell (`~/.zshenv`) and as a GitHub Actions secret.

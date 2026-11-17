@@ -14,9 +14,10 @@ The repo has **three layers**, each with its own state model and lifecycle:
 Located in `terraform/`. Provisions Proxmox LXCs / VMs and Cloudflare records. **One state file per resource** on
 Cloudflare R2 (S3-compatible backend). No monolithic root.
 
-- `terraform/cloudflare/` - all Cloudflare records and email routing
-    - `dns/private/<name>/` - LAN-only `*.internal` A records (unproxied)
-    - `shared/<name>/` - non-DNS Cloudflare (email routing + Zero Trust tunnel + public DNS)
+- `terraform/cloudflare/` - everything on the Cloudflare side, grouped by what it is attached to
+    - `tunnels/<name>/` - one tunnel each: its ingress, the public records pointing at it, WARP routes
+    - `zones/<zone>/<concern>/` - per-zone state: `internal/` (`*.internal` A records), `email/`, `edge/` (WAF,
+      redirects, zone settings)
 - `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
 - `terraform/github/<repo>/` - GitHub repo settings + DeepSeek PR agent, one dir per managed repo
 - `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
@@ -69,8 +70,8 @@ homelab-infra/
 │   ├── README.md
 │   ├── Justfile                    # just deploy | destroy | list
 │   ├── cloudflare/
-│   │   ├── dns/private/<name>/     # 13 dirs, one per LAN record set
-│   │   └── shared/<name>/          # non-DNS Cloudflare (email routing, Zero Trust tunnel + public DNS)
+│   │   ├── tunnels/<name>/         # homelab (k3s, every public hostname), mihal (WARP-only SSH)
+│   │   └── zones/<zone>/<concern>/ # internal, email, edge; blocked-ips.txt shared by every edge/
 │   ├── proxmox/
 │   │   └── <service>/              # 10 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   ├── github/
@@ -134,7 +135,7 @@ There is one dropdown entry, one dir, one description per resource. When adding 
 
 | What                       | For                            | Which files                                                                                                                    |
 |----------------------------|--------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| Terraform dir              | Provisioning                   | `terraform/cloudflare/<layer>/<name>/` or `terraform/proxmox/<name>/` (with `backend.tf` key `homelab/<layer>/<path>.tfstate`) |
+| Terraform dir              | Provisioning                   | `terraform/cloudflare/{tunnels,zones}/...` or `terraform/proxmox/<name>/` (with `backend.tf` key `homelab/<layer>/<path>.tfstate`) |
 | Ansible dir                | Config (Proxmox services only) | `ansible/proxmox/<name>/playbook.yml` + `roles/<name>/`                                                                        |
 | Workflow dropdown          | CI                             | Choice list in the matching `.github/workflows/<layer>-{deploy,destroy}.yml` (and `ansible-configure.yml` when relevant)       |
 | `just list` recipe         | Local UX                       | Description line in `terraform/Justfile` and/or `ansible/Justfile`                                                             |

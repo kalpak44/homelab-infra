@@ -8,29 +8,13 @@ on:
         required: true
         type: choice
         options:
-          - dns/private/acestream
-          - dns/private/adguard
-          - dns/private/grafana
-          - dns/private/rustfs
-          - dns/private/headlamp
-          - dns/private/nfs
-          - dns/private/portainer
-          - dns/private/postgres
-          - dns/private/private-home-page
-          - dns/private/songradar
-          - dns/private/prometheus
-          - dns/private/proxmox
-          - dns/private/redis
-          - dns/private/traefik
-          - dns/private/vault
-          - dns/private/cloudflared
-          - dns/private/github-runner
-          - dns/private/k3s
-          - dns/private/mihal
-          - dns/private/nocobase
-          - shared/cloudflare-email
-          - shared/mihal-lxc-warp
-          - shared/zero-trust
+          - tunnels/homelab
+          - tunnels/mihal
+          - zones/pavel-usanli.online/edge
+          - zones/pavel-usanli.online/email
+          - zones/pavel-usanli.online/internal
+          - zones/proklinator.online/edge
+          - zones/workspaced.online/edge
 
 jobs:
   destroy:

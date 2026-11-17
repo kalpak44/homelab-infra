@@ -29,7 +29,7 @@ place to change what it will and will not do; the workflow only assembles tools 
 through a token minted for the `security-agent` ServiceAccount
 (`gitops/clusters/homelab/infrastructure/crowdsec/agent-rbac.yaml`), so the read-only boundary is the API
 server's rather than the prompt's — never hand it an admin kubeconfig to save a step. Its two edit points are
-`gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt` and `terraform/cloudflare/shared/zero-trust/blocked-ips.txt`
+`gitops/clusters/homelab/infrastructure/crowdsec/blocked-ips.txt` and `terraform/cloudflare/zones/blocked-ips.txt`
 — plain lists, so a night's bans never grow the HelmRelease or the HCL. Both are read by rules that already exist,
 because each zone allows one WAF ruleset and a second one would delete the first's rules on every apply. The CrowdSec
 list is a ConfigMap mount, which a running pod does not reload, so the `blocked-ips-sha256` pod annotation in
@@ -127,7 +127,8 @@ flags which error):
 
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
-- `cloudflare-*.yml`: 23 entries (20 private DNS + 3 shared). Public DNS records are managed inside `shared/zero-trust` — no individual `dns/public/` entries.
+- `cloudflare-*.yml`: 7 entries, one per dir under `terraform/cloudflare/tunnels/` and `terraform/cloudflare/zones/<zone>/`.
+  Records are not dirs: public ones are map entries in `tunnels/homelab`, private ones in `zones/pavel-usanli.online/internal`.
 - `proxmox-*.yml`: 13 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `cloudflared-lxc`,
   `nocobase-lxc`, `mihal-lxc`, `prometheus-lxc`, `grafana-lxc`, `rustfs-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
 - `ansible-configure.yml`: 15 entries (the 13 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml`, and `node-exporter`, which maps to `maintenance/node-exporter.yml` in
@@ -153,8 +154,8 @@ without SSH keys yet) from the `ansible/` dir.
 5. **`.github/workflows/ansible-configure.yml`** - append `<name>` to the `options:` list.
 6. **`terraform/Justfile`** `list` recipe + **`ansible/Justfile`** `list` recipe - add a description line.
 7. **`README.md`** - add row to the services table.
-8. If the service has an internal hostname, add its DNS record dir under `terraform/cloudflare/dns/private/<name>/` and
-   wire into `cloudflare-{deploy,destroy}.yml` + `terraform/Justfile` list.
+8. If the service has an internal hostname, add one line to `local.internal_records` in
+   `terraform/cloudflare/zones/pavel-usanli.online/internal/main.tf` (see `dns-private.md`).
 
 ## Checklist – adding an in-cluster (Flux) service
 
@@ -162,16 +163,16 @@ In-cluster services are managed by Flux, not by Terraform/Ansible — the only p
 DNS record.
 
 **Public service** (internet-facing, through the tunnel):
-1. Add one entry to `local.public_k3s_apps` in `terraform/cloudflare/shared/zero-trust/main.tf` (see `dns-public.md`).
-2. Deploy: `just deploy cloudflare shared/zero-trust` (or **Cloudflare - Deploy** → `shared/zero-trust`).
+1. Add one entry to `local.public_k3s_apps` in `terraform/cloudflare/tunnels/homelab/main.tf` (see `dns-public.md`).
+2. Deploy: `just deploy cloudflare tunnels/homelab` (or **Cloudflare - Deploy** → `tunnels/homelab`).
 3. Manifests: `gitops/clusters/homelab/apps/public/<name>/`.
 4. `gitops/README.md` and `README.md` updated.
 
 **Private service** (LAN-only):
-1. DNS record dir: `terraform/cloudflare/dns/private/<name>/` (see `dns-private.md`).
-2. Add `dns/private/<name>` to `cloudflare-{deploy,destroy}.yml` dropdowns and to `terraform/Justfile`'s `list`.
-3. Manifests: `gitops/clusters/homelab/apps/private/<name>/`.
-4. `gitops/README.md` and `README.md` updated.
+1. One line in `local.internal_records` in `terraform/cloudflare/zones/pavel-usanli.online/internal/main.tf` (see
+   `dns-private.md`), then `just deploy cloudflare zones/pavel-usanli.online/internal`.
+2. Manifests: `gitops/clusters/homelab/apps/private/<name>/`.
+3. `gitops/README.md` and `README.md` updated.
 
 No workflow entry is needed for the in-cluster manifests themselves — Flux reconciles from Git.
 

@@ -319,8 +319,8 @@ This covers every hostname Traefik serves, `*.internal` included, and the ban ar
 real CrowdSec decision the first time that address comes back.
 
 **Cloudflare — the worst offenders only.**
-`terraform/cloudflare/shared/zero-trust/blocked-ips.txt`, read by `waf-blocked-ips.tf`
-into every zone's ruleset. No annotation to update here; Terraform reads the file at plan
+`terraform/cloudflare/zones/blocked-ips.txt`, read by each zone's `edge/blocked-ips.tf`
+into that zone's ruleset. No annotation to update here; Terraform reads the file at plan
 time. Promote an address only when it was sustained, hit more than one hostname, and is
 not a shared egress. This stops the traffic at Cloudflare's edge before it crosses the
 tunnel.
@@ -384,14 +384,18 @@ a broken Terraform file is applied to the live edge.
 
 ```
 kubectl kustomize gitops/clusters/homelab/infrastructure/crowdsec > /dev/null
-terraform fmt -check terraform/cloudflare/shared/zero-trust
+terraform fmt -check -recursive terraform/cloudflare/zones
 
 # In a copy, never in place. The runner keeps a .terraform/ from the last apply, and
 # `init -backend=false` there tries to migrate that state and fails on no credentials.
+# The whole zones/ tree is copied because each edge/ reads ../../blocked-ips.txt.
 rm -rf /tmp/tf-validate && mkdir -p /tmp/tf-validate
-cp terraform/cloudflare/shared/zero-trust/*.tf /tmp/tf-validate/
-terraform -chdir=/tmp/tf-validate init -backend=false -input=false
-terraform -chdir=/tmp/tf-validate validate
+cp -R terraform/cloudflare/zones /tmp/tf-validate/
+find /tmp/tf-validate -name .terraform -prune -exec rm -rf {} +
+for d in /tmp/tf-validate/zones/*/edge; do
+  terraform -chdir="$d" init -backend=false -input=false > /dev/null
+  terraform -chdir="$d" validate
+done
 ```
 
 Then run the CrowdSec check. It must print `ok` before you commit anything under
@@ -419,7 +423,8 @@ expression Cloudflare rejects.
 
 Check `git diff` and confirm it touches only the files you meant to. If the diff reaches
 anything under `gitops/clusters/homelab/apps/`, `ansible/`, or any Terraform directory
-other than `shared/zero-trust`, you have made a mistake: revert it and report it.
+other than `terraform/cloudflare/zones/blocked-ips.txt`, you have made a mistake: revert it
+and report it.
 
 ## 10. Commit and push
 
@@ -485,7 +490,10 @@ If the agent pods do not reach Ready, your scenario did not parse.
 **Cloudflare**, only if you changed `local.blocked_ips`:
 
 ```
-cd terraform && just deploy cloudflare shared/zero-trust
+cd terraform
+for z in pavel-usanli.online proklinator.online workspaced.online; do
+  just deploy cloudflare "zones/$z/edge"
+done
 ```
 
 Read the plan output before you accept the result. It must show one rule changing in each
@@ -526,8 +534,8 @@ git revert --no-edit HEAD
 git push origin "$DEFAULT_BRANCH"
 ```
 
-If the revert touches the Cloudflare files, apply it too:
-`cd terraform && just deploy cloudflare shared/zero-trust`.
+If the revert touches the Cloudflare list, apply it too, with the same loop over the three
+`zones/<zone>/edge` dirs as above.
 
 Then wait for the rollout again and re-run the checks. Report what you tried, what broke,
 and that you reverted. Exit non-zero so the run goes red — a reverted change is still a
@@ -570,11 +578,11 @@ fenced block rather than a table.
 - Never widen `trusted_ips`, `parsers/cloudflare-whitelist.yaml`,
   `parsers/trusted-clients.yaml`, or any `skip` rule.
 - Never put an address into a scenario, parser, profile, AppSec file, `helmrelease.yaml` or
-  `waf-blocked-ips.tf`. The two `blocked-ips.txt` files are the only place a ban is written.
+  any `.tf` file. The two `blocked-ips.txt` files are the only place a ban is written.
 - Never rename or reorder the existing `valuesFrom` entries or `crowdsec-src-*` ConfigMaps.
   Add yours beside them.
 - Never edit anything outside `gitops/clusters/homelab/infrastructure/crowdsec/` and
-  `terraform/cloudflare/shared/zero-trust/`. Applications, Ansible, and every other
+  `terraform/cloudflare/zones/blocked-ips.txt`. Applications, Ansible, and every other
   Terraform directory are out of scope even when the evidence points at them — report it
   instead.
 - Never use a Cloudflare feature the Free plan does not include. Every zone stays on Free.
