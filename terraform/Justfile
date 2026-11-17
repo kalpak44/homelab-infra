@@ -250,6 +250,7 @@ list:
     @printf "    %-40s %s\n" "zones/pavel-usanli.online/email"         "contact@ → Gmail forwarding, Mailjet sending, SPF/DKIM/DMARC"
     @printf "    %-40s %s\n" "zones/pavel-usanli.online/internal"      "every *.internal A record (LAN-only, unproxied)"
     @printf "    %-40s %s\n" "zones/proklinator.online/edge"           "WAF (scanners, rate limit, blocklist)"
+    @printf "    %-40s %s\n" "zones/proklinator.online/email"          "sales@ → Gmail forwarding (Email Routing)"
     @printf "    %-40s %s\n" "zones/workspaced.online/edge"            "WAF (edge ports, blocklist), zone settings, Domain Connect key"
     @printf "    %-40s %s\n" "zones/workspaced.online/email"           "sales@ → Gmail forwarding (Email Routing)"
     @echo

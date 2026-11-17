@@ -20,7 +20,9 @@ terraform/
 │       │   ├── edge/        # WAF, apex→www redirect, zone settings
 │       │   ├── email/       # contact@ routing, Mailjet senders, SPF/DKIM/DMARC
 │       │   └── internal/    # every *.internal A record, one map
-│       ├── proklinator.online/edge/
+│       ├── proklinator.online/
+│       │   ├── edge/        # WAF: scanners, rate limit, blocklist
+│       │   └── email/       # sales@ → Gmail forwarding
 │       └── workspaced.online/
 │           ├── edge/        # WAF, zone settings, Domain Connect key
 │           └── email/       # sales@ → Gmail forwarding

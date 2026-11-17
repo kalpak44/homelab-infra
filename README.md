@@ -264,7 +264,7 @@ cd ansible && just configure cloudflared-lxc
 ```
 
 **Email** - inbound goes through Cloudflare Email Routing, one `zones/<zone>/email` dir per domain:
-`contact@pavel-usanli.online` and `sales@workspaced.online` both forward to Gmail. The first forwarding address on
+`contact@pavel-usanli.online`, `sales@workspaced.online` and `sales@proklinator.online` all forward to Gmail. The first forwarding address on
 the account triggers a verification email from Cloudflare; later zones reuse it.
 
 Outbound from `contact@…` goes through Mailjet, whose senders, SPF, DKIM and DMARC records are all in
@@ -532,8 +532,8 @@ Every workflow runs on the self-hosted runner; the scheduled ones can also be di
 
 | Workflow                 | Picks                           | Runs                                 |
 |--------------------------|---------------------------------|--------------------------------------|
-| `cloudflare-deploy.yml`  | 8 cloudflare/ dirs              | `just deploy cloudflare <resource>`  |
-| `cloudflare-destroy.yml` | 8 cloudflare/ dirs              | `just destroy cloudflare <resource>` |
+| `cloudflare-deploy.yml`  | 9 cloudflare/ dirs              | `just deploy cloudflare <resource>`  |
+| `cloudflare-destroy.yml` | 9 cloudflare/ dirs              | `just destroy cloudflare <resource>` |
 | `proxmox-deploy.yml`     | 13 proxmox/ services            | `just deploy proxmox <resource>`     |
 | `proxmox-destroy.yml`    | 13 proxmox/ services            | `just destroy proxmox <resource>`    |
 | `github-deploy.yml`      | 14 github/ repos                | `just deploy github <resource>`      |

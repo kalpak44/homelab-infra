@@ -130,7 +130,7 @@ flags which error):
 
 Every workflow's `options:` lists the deployable resource paths for that layer:
 
-- `cloudflare-*.yml`: 8 entries, one per dir under `terraform/cloudflare/tunnels/` and `terraform/cloudflare/zones/<zone>/`.
+- `cloudflare-*.yml`: 9 entries, one per dir under `terraform/cloudflare/tunnels/` and `terraform/cloudflare/zones/<zone>/`.
   Records are not dirs: public ones are map entries in `tunnels/homelab`, private ones in `zones/pavel-usanli.online/internal`.
 - `proxmox-*.yml`: 13 entries (`adguard-lxc`, `vault-lxc`, `postgres-lxc`, `redis-lxc`, `cloudflared-lxc`,
   `nocobase-lxc`, `mihal-lxc`, `prometheus-lxc`, `grafana-lxc`, `rustfs-lxc`, `nfs-vm`, `portainer-vm`, `k3s-cluster`).
