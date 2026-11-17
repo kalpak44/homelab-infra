@@ -538,8 +538,8 @@ Every workflow runs on the self-hosted runner; the scheduled ones can also be di
 | `proxmox-destroy.yml`    | 13 proxmox/ services            | `just destroy proxmox <resource>`    |
 | `github-deploy.yml`      | 14 github/ repos                | `just deploy github <resource>`      |
 | `github-destroy.yml`     | 14 github/ repos                | `just destroy github <resource>`     |
-| `stripe-deploy.yml`      | `stripe/live`                   | `just deploy stripe <resource>`      |
-| `stripe-destroy.yml`     | `stripe/live`                   | `just destroy stripe <resource>`     |
+| `stripe-deploy.yml`      | `stripe/<account>`                   | `just deploy stripe <resource>`      |
+| `stripe-destroy.yml`     | `stripe/<account>`                   | `just destroy stripe <resource>`     |
 | `ansible-configure.yml`  | 13 services + 2 playbooks       | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 | `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |

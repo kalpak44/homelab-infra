@@ -45,6 +45,9 @@ deploy layer resource:
     export TF_VAR_sonar_token="${SONAR_TOKEN:-}"
     export TF_VAR_android_keystore_base64="${ANDROID_KEYSTORE_BASE64:-}"
 
+    # One key per Stripe account; each terraform/stripe/<account>/ declares only its own.
+    export TF_VAR_stripe_api_key_workspaced="${STRIPE_API_KEY_WORKSPACED:-}"
+
     # A secret resource is gated on its variable being non-empty, so applying from a shell
     # that is missing one deletes the stored credential from the repo rather than leaving
     # it alone. Refuse instead of applying; the value is a secret of this repo, so the
@@ -85,6 +88,9 @@ destroy layer resource:
     export TF_VAR_deepseek_api_key="${DEEPSEEK_APIKEY:-}"
     export TF_VAR_sonar_token="${SONAR_TOKEN:-}"
     export TF_VAR_android_keystore_base64="${ANDROID_KEYSTORE_BASE64:-}"
+
+    # One key per Stripe account; each terraform/stripe/<account>/ declares only its own.
+    export TF_VAR_stripe_api_key_workspaced="${STRIPE_API_KEY_WORKSPACED:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform destroy -auto-approve -input=false
@@ -262,8 +268,9 @@ list:
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"
     @echo
-    @echo "Stripe - the live account every app sells through (just deploy stripe <resource>):"
-    @printf "  %-30s %s\n" "live"                           "acct_1IAIb3ABYXXbGldT · workspaced-ai billing webhook, VAT rate, catalog"
+    @echo "Stripe - one account per app, one dir per concern (just deploy stripe <account>/<concern>):"
+    @printf "  %-30s %s\n" "workspaced/tax"                 "Workspaced AI (acct_1IAIb3ABYXXbGldT) · VAT rate"
+    @printf "  %-30s %s\n" "workspaced/webhooks"            "Workspaced AI (acct_1IAIb3ABYXXbGldT) · billing webhook → ai.workspaced.online"
     @echo
     @echo "GitHub - repo settings + DeepSeek maintenance agent (just deploy github <resource>):"
     @printf "  %-30s %s\n" "bunker-party"                   "kalpak44/bunker-party · same + SonarCloud gate pass + publish.yml (PR check, publish, deploy) + dependabot"

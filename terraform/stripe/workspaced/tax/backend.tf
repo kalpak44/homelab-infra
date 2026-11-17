@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    key    = "homelab/stripe/live.tfstate"
+    key    = "homelab/stripe/workspaced/tax.tfstate"
     region = "auto"
 
     skip_credentials_validation = true

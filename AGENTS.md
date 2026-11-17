@@ -20,7 +20,7 @@ file per resource** on Cloudflare R2 (S3-compatible backend). No monolithic root
       redirects, zone settings)
 - `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
 - `terraform/github/<repo>/` - GitHub repo settings + DeepSeek PR agent, one dir per managed repo
-- `terraform/stripe/live/` - the live Stripe account every app sells through (webhooks, tax rates, catalog)
+- `terraform/stripe/<account>/<concern>/` - one Stripe account per app, one state per concern (`tax/`, `webhooks/`)
 - `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
 - `terraform/Justfile` - `deploy <layer> <resource>`, `destroy <layer> <resource>`, `list`
 
@@ -77,7 +77,7 @@ homelab-infra/
 │   │   └── <service>/              # 10 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   ├── github/
 │   │   └── <repo>/                 # repo settings + DeepSeek maintenance agent (workflow + agent-prompts/)
-│   ├── stripe/live/                # the one live Stripe account (webhooks, tax rates, catalog)
+│   ├── stripe/<account>/<concern>/ # one Stripe account per app; tax, webhooks
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
 │   ├── README.md

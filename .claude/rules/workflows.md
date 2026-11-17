@@ -12,8 +12,8 @@ Proxmox node). All are `workflow_dispatch` (manual) except the five on a `schedu
 | `proxmox-destroy.yml`    | Terraform destroy on a Proxmox LXC/VM      | `just destroy proxmox <resource>`    |
 | `github-deploy.yml`      | Terraform apply on a managed GitHub repo   | `just deploy github <repo>`          |
 | `github-destroy.yml`     | Terraform destroy on a managed GitHub repo | `just destroy github <repo>`         |
-| `stripe-deploy.yml`      | Terraform apply on the Stripe account      | `just deploy stripe <resource>`      |
-| `stripe-destroy.yml`     | Terraform destroy on the Stripe account    | `just destroy stripe <resource>`     |
+| `stripe-deploy.yml`      | Terraform apply on a Stripe account        | `just deploy stripe <account>`       |
+| `stripe-destroy.yml`     | Terraform destroy on a Stripe account      | `just destroy stripe <account>`      |
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
 | `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
@@ -123,7 +123,7 @@ flags which error):
 | `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`                                                                                                                                                                                                                                  |
 | `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`, `TF_VAR_host_password`                                                                                                                                                       |
 | `github-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `GH_ADMIN_TOKEN`, `GH_OWNER`, `DEEPSEEK_APIKEY`, `SONAR_TOKEN`, `ANDROID_KEYSTORE_BASE64` (secret names can't start with `GITHUB_`)                                                                                           |
-| `stripe-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `STRIPE_API_KEY` (the account's `terraform` restricted key, read by the provider directly) |
+| `stripe-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `STRIPE_API_KEY_<ACCOUNT>` per account, mapped to `TF_VAR_stripe_api_key_<account>` in the Justfile |
 | `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns
@@ -137,7 +137,7 @@ Every workflow's `options:` lists the deployable resource paths for that layer:
 - `ansible-configure.yml`: 15 entries (the 13 proxmox services + `k3s-cluster/flux`, which maps to `flux-install.yml`, and `node-exporter`, which maps to `maintenance/node-exporter.yml` in
   the Justfile).
 - `github-*.yml`: one entry per dir under `terraform/github/` (see `github-repos.md`).
-- `stripe-*.yml`: one entry per dir under `terraform/stripe/` — `live` only today.
+- `stripe-*.yml`: one entry per `terraform/stripe/<account>/<concern>/` dir.
 
 Adding or removing a resource means updating the dropdown in **every** relevant workflow **and** the matching `list`
 recipe in `terraform/Justfile` / `ansible/Justfile`.
