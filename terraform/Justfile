@@ -258,7 +258,7 @@ list:
     @printf "    %-40s %s\n" "dns/private/mihal"                       "mihal.internal → 192.168.1.9 (mihal LXC)"
     @printf "    %-40s %s\n" "dns/private/nocobase"                    "nocobase.internal → 192.168.1.5 (NocoBase LXC)"
     @echo "  shared (non-DNS Cloudflare resources)"
-    @printf "    %-40s %s\n" "shared/cloudflare-email"                 "contact@pavel-usanli.online → Gmail forwarding"
+    @printf "    %-40s %s\n" "shared/cloudflare-email"                 "contact@pavel-usanli.online → Gmail forwarding, Mailjet sending, SPF/DKIM/DMARC"
     @printf "    %-40s %s\n" "shared/mihal-lxc-warp"                   "Dedicated Cloudflare Tunnel + Gateway policy — WARP-only SSH to mihal-lxc (192.168.1.9)"
     @printf "    %-40s %s\n" "shared/zero-trust"                       "Cloudflare Zero Trust tunnel + public DNS (pavel-usanli.online, proklinator.online)"
     @echo
