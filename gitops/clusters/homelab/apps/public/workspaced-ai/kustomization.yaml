@@ -11,6 +11,9 @@ resources:
   - web-deployment.yaml
   - web-service.yaml
   - web-ingressroute.yaml
+  - site-deployment.yaml
+  - site-service.yaml
+  - site-ingressroute.yaml
   - vm-manager-serviceaccount.yaml
   - vm-manager-externalsecret.yaml
   - vm-manager-deployment.yaml

@@ -1,0 +1,17 @@
+# The public site. nginx redirects www to the apex, so both hosts land here.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: workspaced-ai-site
+  namespace: workspaced-ai
+spec:
+  entryPoints:
+    - public-web-secure
+  routes:
+    - match: Host(`workspaced.online`) || Host(`www.workspaced.online`)
+      kind: Rule
+      services:
+        - name: workspaced-ai-site
+          port: 8080
+  tls:
+    certResolver: cloudflare

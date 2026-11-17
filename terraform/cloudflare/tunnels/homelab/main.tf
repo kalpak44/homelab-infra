@@ -40,10 +40,13 @@ locals {
   }
 
   # agent is where every workspace VM's supervisor connects. Workspaces publish their own
-  # ports on their VM's address, so no workspace name passes through here.
+  # ports on their VM's address, so no workspace name passes through here. www reaches the
+  # public site only to be redirected to the apex.
   workspaced_apps = {
-    "ai"    = "ai.workspaced.online"
-    "agent" = "agent.workspaced.online"
+    "workspaced.online" = "workspaced.online"
+    "www"               = "www.workspaced.online"
+    "ai"                = "ai.workspaced.online"
+    "agent"             = "agent.workspaced.online"
   }
 
   # Ingress rules are keyed by hostname, not record name, so "www" existing in

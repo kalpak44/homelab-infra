@@ -127,10 +127,25 @@ updates:
       timezone: Etc/UTC
     open-pull-requests-limit: 5
 
-  # The nginx image of the gateway that routes each workspace's public name. Its own entry,
-  # though it shares a base with the web app, so a broken gateway bump never blocks the site.
+  # The public site's Tailwind build. Its own group, so a site bump never blocks the app's.
+  - package-ecosystem: npm
+    directory: /apps/site
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      site-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The nginx image that serves the public site.
   - package-ecosystem: docker
-    directory: /apps/gateway
+    directory: /apps/site
     schedule:
       interval: daily
       time: "05:00"

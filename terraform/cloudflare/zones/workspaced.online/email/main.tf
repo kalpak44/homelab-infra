@@ -10,16 +10,18 @@ resource "cloudflare_email_routing_settings" "this" {
 
 # The destination is an account-level address, verified and managed in
 # zones/pavel-usanli.online/email; declaring it here too would put it in two states.
-resource "cloudflare_email_routing_rule" "sales" {
+resource "cloudflare_email_routing_rule" "forward" {
+  for_each = toset(["sales", "support", "investor"])
+
   zone_id  = data.cloudflare_zone.this.id
-  name     = "sales@workspaced.online → pavel.usanli@gmail.com"
+  name     = "${each.key}@workspaced.online → pavel.usanli@gmail.com"
   enabled  = true
   priority = 1
 
   matcher {
     type  = "literal"
     field = "to"
-    value = "sales@workspaced.online"
+    value = "${each.key}@workspaced.online"
   }
 
   action {
@@ -28,4 +30,10 @@ resource "cloudflare_email_routing_rule" "sales" {
   }
 
   depends_on = [cloudflare_email_routing_settings.this]
+}
+
+# The sales rule predates the map; moving it keeps its rule id instead of recreating it.
+moved {
+  from = cloudflare_email_routing_rule.sales
+  to   = cloudflare_email_routing_rule.forward["sales"]
 }

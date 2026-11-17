@@ -252,7 +252,7 @@ list:
     @printf "    %-40s %s\n" "zones/proklinator.online/edge"           "WAF (scanners, rate limit, blocklist)"
     @printf "    %-40s %s\n" "zones/proklinator.online/email"          "sales@ → Gmail forwarding (Email Routing)"
     @printf "    %-40s %s\n" "zones/workspaced.online/edge"            "WAF (edge ports, blocklist), zone settings, Domain Connect key"
-    @printf "    %-40s %s\n" "zones/workspaced.online/email"           "sales@ → Gmail forwarding (Email Routing)"
+    @printf "    %-40s %s\n" "zones/workspaced.online/email"           "sales@, support@, investor@ → Gmail forwarding"
     @echo
     @echo "Proxmox - LXCs + VMs (just deploy proxmox <resource>):"
     @printf "  %-14s %s\n" "adguard-lxc"    "LXC 200 · 192.168.1.2   · AdGuard Home"
@@ -287,4 +287,4 @@ list:
     @printf "  %-30s %s\n" "postgres-awscli"                "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "proklinator-app"                "kalpak44/proklinator-app · PR sweep + issue resolver + publish.yml (2 Sonar gates, 2 images, deploy)"
     @printf "  %-30s %s\n" "song-radar"                     "kalpak44/song-radar · same + fmt/test/coverage/Sonar gate + publish.yml (PR check, GHCR publish, syft/grype report) + dependabot"
-    @printf "  %-30s %s\n" "workspaced-ai"                  "kalpak44/workspaced-ai · same + fmt/test/80%-coverage/Sonar gate + publish.yml (PR check, GHCR publish of apps/api + apps/web, syft/grype report, deploy) + dependabot"
+    @printf "  %-30s %s\n" "workspaced-ai"                  "kalpak44/workspaced-ai · same + fmt/test/80%-coverage/Sonar gate + publish.yml (PR check, GHCR publish of apps/api + apps/web + apps/site, syft/grype report, deploy) + dependabot"
