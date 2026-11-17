@@ -262,6 +262,9 @@ list:
     @printf "  %-14s %s\n" "portainer-vm"   "VM  302 · 192.168.1.7   · Portainer + Docker"
     @printf "  %-14s %s\n" "k3s-cluster"    "VMs 110+111 · 192.168.1.110/.111 · k3s 2-node cluster"
     @echo
+    @echo "Stripe - the live account every app sells through (just deploy stripe <resource>):"
+    @printf "  %-30s %s\n" "live"                           "acct_1IAIb3ABYXXbGldT · workspaced-ai billing webhook, VAT rate, catalog"
+    @echo
     @echo "GitHub - repo settings + DeepSeek maintenance agent (just deploy github <resource>):"
     @printf "  %-30s %s\n" "bunker-party"                   "kalpak44/bunker-party · same + SonarCloud gate pass + publish.yml (PR check, publish, deploy) + dependabot"
     @printf "  %-30s %s\n" "code-viewer-bot"                "kalpak44/code-viewer-bot · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered VSIX release + Marketplace) + dependabot"

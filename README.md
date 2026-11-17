@@ -17,6 +17,8 @@ homelab-infra/
     ├── proxmox-destroy.yml      | Proxmox    - Destroy
     ├── github-deploy.yml        | GitHub     - Deploy
     ├── github-destroy.yml       | GitHub     - Destroy
+    ├── stripe-deploy.yml        | Stripe     - Deploy
+    ├── stripe-destroy.yml       | Stripe     - Destroy
     ├── ansible-configure.yml    | Ansible    - Configure
     ├── gitops-bump-images.yml   | GitOps     - Bump images
     ├── scanners-bump-pins.yml   | Scanners   - Bump pins
@@ -540,6 +542,8 @@ Seven workflows, all `workflow_dispatch` (manual), all running on the self-hoste
 | `proxmox-destroy.yml`    | 9 proxmox/ services             | `just destroy proxmox <resource>`    |
 | `github-deploy.yml`      | 5 github/ repos                 | `just deploy github <resource>`      |
 | `github-destroy.yml`     | 5 github/ repos                 | `just destroy github <resource>`     |
+| `stripe-deploy.yml`      | `stripe/live`                   | `just deploy stripe <resource>`      |
+| `stripe-destroy.yml`     | `stripe/live`                   | `just destroy stripe <resource>`     |
 | `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 | `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |

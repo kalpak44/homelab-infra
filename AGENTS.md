@@ -20,6 +20,7 @@ Cloudflare R2 (S3-compatible backend). No monolithic root.
       redirects, zone settings)
 - `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
 - `terraform/github/<repo>/` - GitHub repo settings + DeepSeek PR agent, one dir per managed repo
+- `terraform/stripe/live/` - the live Stripe account every app sells through (webhooks, tax rates, catalog)
 - `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
 - `terraform/Justfile` - `deploy <layer> <resource>`, `destroy <layer> <resource>`, `list`
 
@@ -76,6 +77,7 @@ homelab-infra/
 │   │   └── <service>/              # 10 dirs (adguard-lxc, vault-lxc, ..., k3s-cluster)
 │   ├── github/
 │   │   └── <repo>/                 # repo settings + DeepSeek maintenance agent (workflow + agent-prompts/)
+│   ├── stripe/live/                # the one live Stripe account (webhooks, tax rates, catalog)
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
 │   ├── README.md
@@ -101,6 +103,8 @@ homelab-infra/
     ├── proxmox-destroy.yml         # just destroy proxmox <resource>
     ├── github-deploy.yml           # just deploy github <repo>
     ├── github-destroy.yml          # just destroy github <repo>
+    ├── stripe-deploy.yml           # just deploy stripe <resource>
+    ├── stripe-destroy.yml          # just destroy stripe <resource>
     ├── ansible-configure.yml       # just configure <resource>
     ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
     └── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)
