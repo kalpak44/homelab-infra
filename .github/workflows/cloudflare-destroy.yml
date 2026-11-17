@@ -15,6 +15,7 @@ on:
           - zones/pavel-usanli.online/internal
           - zones/proklinator.online/edge
           - zones/workspaced.online/edge
+          - zones/workspaced.online/email
 
 jobs:
   destroy:
