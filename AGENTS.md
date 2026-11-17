@@ -11,8 +11,8 @@ The repo has **three layers**, each with its own state model and lifecycle:
 
 ### 1. Terraform - infrastructure provisioning
 
-Located in `terraform/`. Provisions Proxmox LXCs / VMs and Cloudflare records. **One state file per resource** on
-Cloudflare R2 (S3-compatible backend). No monolithic root.
+Located in `terraform/`. Provisions Proxmox LXCs / VMs, Cloudflare, GitHub repo settings and Stripe. **One state
+file per resource** on Cloudflare R2 (S3-compatible backend). No monolithic root.
 
 - `terraform/cloudflare/` - everything on the Cloudflare side, grouped by what it is attached to
     - `tunnels/<name>/` - one tunnel each: its ingress, the public records pointing at it, WARP routes

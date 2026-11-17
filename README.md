@@ -7,7 +7,7 @@ triggered manually from GitHub Actions on a self-hosted runner, or locally via `
 
 ```
 homelab-infra/
-├── terraform/     # Proxmox LXCs/VMs + Cloudflare records + GitHub repos →  see terraform/README.md
+├── terraform/     # Proxmox, Cloudflare, GitHub repos, Stripe          →  see terraform/README.md
 ├── ansible/       # Post-provisioning for Proxmox services →  see ansible/README.md
 ├── gitops/        # Flux CD manifests (k3s workloads)      →  see gitops/README.md
 └── .github/workflows/
@@ -263,18 +263,14 @@ Then configure the daemon:
 cd ansible && just configure cloudflared-lxc
 ```
 
-**Cloudflare email routing** - `contact@pavel-usanli.online` forwards to your Gmail. First deploy triggers a
-verification email from Cloudflare – click the link in the forwarded message to activate.
+**Email** - inbound goes through Cloudflare Email Routing, one `zones/<zone>/email` dir per domain:
+`contact@pavel-usanli.online` and `sales@workspaced.online` both forward to Gmail. The first forwarding address on
+the account triggers a verification email from Cloudflare; later zones reuse it.
 
-For sending from `contact@…` via Gmail: **Gmail → Settings → Accounts → Send mail as → Add**, backed by Mailjet SMTP (
-`in-v3.mailjet.com:587`, TLS). Gmail sends its own verification email; approve via the forwarded link. Optional DMARC
-record:
-
-```
-TXT _dmarc.pavel-usanli.online  →  v=DMARC1; p=none; rua=mailto:contact@pavel-usanli.online
-```
-
-Start with `p=none` and tighten to `p=quarantine` / `p=reject` after reports confirm all senders pass SPF/DKIM.
+Outbound from `contact@…` goes through Mailjet, whose senders, SPF, DKIM and DMARC records are all in
+`zones/pavel-usanli.online/email` (`MJ_APIKEY_PUBLIC`/`MJ_APIKEY_PRIVATE`). The one manual step is Gmail's side:
+**Gmail → Settings → Accounts → Send mail as → Add**, backed by Mailjet SMTP (`in-v3.mailjet.com:587`, TLS). DMARC
+is `p=none`; tighten it to `p=quarantine` in `dmarc.tf` once the reports show every sender passing SPF/DKIM.
 
 ---
 
@@ -532,19 +528,19 @@ The built-in `GITHUB_TOKEN` cannot manage other repositories, so this layer need
 
 ## CI
 
-Seven workflows, all `workflow_dispatch` (manual), all running on the self-hosted runner:
+Every workflow runs on the self-hosted runner; the scheduled ones can also be dispatched by hand:
 
 | Workflow                 | Picks                           | Runs                                 |
 |--------------------------|---------------------------------|--------------------------------------|
-| `cloudflare-deploy.yml`  | 15 cloudflare/ dirs             | `just deploy cloudflare <resource>`  |
-| `cloudflare-destroy.yml` | 15 cloudflare/ dirs             | `just destroy cloudflare <resource>` |
-| `proxmox-deploy.yml`     | 9 proxmox/ services             | `just deploy proxmox <resource>`     |
-| `proxmox-destroy.yml`    | 9 proxmox/ services             | `just destroy proxmox <resource>`    |
-| `github-deploy.yml`      | 5 github/ repos                 | `just deploy github <resource>`      |
-| `github-destroy.yml`     | 5 github/ repos                 | `just destroy github <resource>`     |
+| `cloudflare-deploy.yml`  | 8 cloudflare/ dirs              | `just deploy cloudflare <resource>`  |
+| `cloudflare-destroy.yml` | 8 cloudflare/ dirs              | `just destroy cloudflare <resource>` |
+| `proxmox-deploy.yml`     | 13 proxmox/ services            | `just deploy proxmox <resource>`     |
+| `proxmox-destroy.yml`    | 13 proxmox/ services            | `just destroy proxmox <resource>`    |
+| `github-deploy.yml`      | 14 github/ repos                | `just deploy github <resource>`      |
+| `github-destroy.yml`     | 14 github/ repos                | `just destroy github <resource>`     |
 | `stripe-deploy.yml`      | `stripe/live`                   | `just deploy stripe <resource>`      |
 | `stripe-destroy.yml`     | `stripe/live`                   | `just destroy stripe <resource>`     |
-| `ansible-configure.yml`  | 8 services + `k3s-cluster/flux` | `just configure <resource>`          |
+| `ansible-configure.yml`  | 13 services + 2 playbooks       | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 | `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |
 | `packer-build.yml`       | weekly Mon 03:00 UTC + manual   | `just build <image>` (in `packer/`)  |

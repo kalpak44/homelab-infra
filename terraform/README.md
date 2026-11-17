@@ -16,25 +16,28 @@ terraform/
 │   │   └── mihal/           # WARP-only SSH to mihal-lxc
 │   └── zones/               # one dir per zone, one state per concern
 │       ├── blocked-ips.txt  # read by every zone's edge/
-│       ├── pavel-usanli.online/{edge,email,internal}/
+│       ├── pavel-usanli.online/
+│       │   ├── edge/        # WAF, apex→www redirect, zone settings
+│       │   ├── email/       # contact@ routing, Mailjet senders, SPF/DKIM/DMARC
+│       │   └── internal/    # every *.internal A record, one map
 │       ├── proklinator.online/edge/
-│       └── workspaced.online/edge/
-├── proxmox/                 # LXCs + VMs on the Proxmox node
-│   ├── adguard-lxc/
-│   ├── vault-lxc/
-│   ├── postgres-lxc/
-│   ├── redis-lxc/
-│   ├── cloudflared-lxc/     # Cloudflare Tunnel connector (LXC 210)
-│   ├── nfs-vm/
-│   ├── portainer-vm/
+│       └── workspaced.online/
+│           ├── edge/        # WAF, zone settings, Domain Connect key
+│           └── email/       # sales@ → Gmail forwarding
+├── proxmox/                 # LXCs + VMs on the Proxmox node, one dir each
+│   ├── adguard-lxc/  vault-lxc/  postgres-lxc/  redis-lxc/  cloudflared-lxc/
+│   ├── nocobase-lxc/  mihal-lxc/  prometheus-lxc/  grafana-lxc/  rustfs-lxc/
+│   ├── nfs-vm/  portainer-vm/
 │   └── k3s-cluster/         # two VMs (k3s-1, k3s-2)
-└── github/                  # GitHub repo settings + DeepSeek PR agent
-    └── kalpak44/            # one dir per managed repo
-        └── workflows/       # workflow files pushed into the target repo
+├── github/                  # GitHub repo settings + DeepSeek PR agent
+│   └── <repo>/              # one dir per managed repo
+│       └── workflows/       # workflow files pushed into the target repo
+└── stripe/
+    └── live/                # the live account every app sells through: webhooks, tax, catalog
 ```
 
-Each leaf directory has `main.tf`, `variables.tf`, `providers.tf`, `versions.tf`, and a `backend.tf` pointing at its own
-R2 key (`homelab/<layer>/<path>.tfstate`).
+Each leaf directory has `versions.tf`, `providers.tf` and a `backend.tf` pointing at its own R2 key
+(`homelab/<layer>/<path>.tfstate`); the resources sit beside them, split into files by concern.
 
 ## Usage
 
@@ -51,12 +54,13 @@ Examples:
 just deploy  cloudflare zones/pavel-usanli.online/internal
 just deploy  proxmox    adguard-lxc
 just deploy  github     kalpak44
-just destroy cloudflare zones/pavel-usanli.online/email
+just deploy  stripe     live
+just destroy cloudflare zones/workspaced.online/email
 just output  cloudflare tunnels/homelab tunnel_token
 ```
 
-Via GitHub Actions: **Cloudflare - Deploy** / **Cloudflare - Destroy** / **Proxmox - Deploy** / **Proxmox - Destroy** /
-**GitHub - Deploy** / **GitHub - Destroy** - pick the resource from the dropdown, one dispatch per resource.
+Via GitHub Actions: **Cloudflare**, **Proxmox**, **GitHub** and **Stripe** each have a **Deploy** and a **Destroy**
+workflow - pick the resource from the dropdown, one dispatch per resource.
 
 ## Environment variables
 
@@ -71,9 +75,10 @@ All layers need R2 backend credentials:
 
 Cloudflare layer:
 
-| Var                           | Where used            |
-|-------------------------------|-----------------------|
-| `TF_VAR_cloudflare_api_token` | every cloudflare/ dir |
+| Var                                      | Where used                                             |
+|------------------------------------------|--------------------------------------------------------|
+| `TF_VAR_cloudflare_api_token`            | every cloudflare/ dir                                  |
+| `MJ_APIKEY_PUBLIC`, `MJ_APIKEY_PRIVATE`  | `zones/pavel-usanli.online/email` (Mailjet provider)   |
 
 Proxmox layer:
 
@@ -86,11 +91,20 @@ Proxmox layer:
 
 GitHub layer:
 
-| Var                        | From env var      | Where used                                                |
-|----------------------------|-------------------|-----------------------------------------------------------|
-| `TF_VAR_github_token`      | `GH_ADMIN_TOKEN`  | github provider auth (Administration/Contents/Secrets/Workflows: write) |
-| `TF_VAR_github_owner`      | `GH_OWNER`        | repo owner, defaults to `kalpak44`                        |
-| `TF_VAR_deepseek_api_key`  | `DEEPSEEK_APIKEY` | published to the repo as the `DEEPSEEK_APIKEY` secret      |
+| Var                               | From env var              | Where used                                                              |
+|-----------------------------------|---------------------------|-------------------------------------------------------------------------|
+| `TF_VAR_github_token`             | `GH_ADMIN_TOKEN`          | github provider auth (Administration/Contents/Secrets/Workflows: write) |
+| `TF_VAR_github_owner`             | `GH_OWNER`                | repo owner, defaults to `kalpak44`                                      |
+| `TF_VAR_deepseek_api_key`         | `DEEPSEEK_APIKEY`         | published to the repo as the `DEEPSEEK_APIKEY` secret                   |
+| `TF_VAR_sonar_token`              | `SONAR_TOKEN`             | published to repos with a Sonar gate                                    |
+| `TF_VAR_android_keystore_base64`  | `ANDROID_KEYSTORE_BASE64` | `jacred-tv-client` only: the release signing keystore                   |
+
+Stripe layer:
+
+| Var              | Where used                                                              |
+|------------------|-------------------------------------------------------------------------|
+| `STRIPE_API_KEY` | stripe provider auth: the account's `terraform` restricted key (Write on everything) |
 
 `TF_VAR_*` env vars are silently ignored by directories that don't declare the matching variable – this is why one
-workflow can safely set them all.
+workflow can safely set them all. The Mailjet and Stripe providers read their keys from the environment directly,
+so they need no `TF_VAR_`.
