@@ -123,7 +123,7 @@ flags which error):
 | `cloudflare-{deploy,destroy}` | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_cloudflare_api_token`                                                                                                                                                                                                                                  |
 | `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`, `TF_VAR_host_password`                                                                                                                                                       |
 | `github-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `GH_ADMIN_TOKEN`, `GH_OWNER`, `DEEPSEEK_APIKEY`, `SONAR_TOKEN`, `ANDROID_KEYSTORE_BASE64` (secret names can't start with `GITHUB_`)                                                                                           |
-| `stripe-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `STRIPE_API_KEY_<ACCOUNT>` per account, mapped to `TF_VAR_stripe_api_key_<account>` in the Justfile |
+| `stripe-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `STRIPE_API_KEY`, mapped to `TF_VAR_stripe_api_key` in the Justfile |
 | `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns

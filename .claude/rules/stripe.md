@@ -7,9 +7,13 @@ see each app as its own business is its own account. `workspaced` is `acct_1IAIb
 Stripe's own `stripe/stripe`, pinned exactly because it is 0.x.
 
 **Each account has its own `terraform` restricted key** (Write on everything), kept apart from the app's keys so it can
-be revoked without touching a running service. It reaches the dir as `STRIPE_API_KEY_<ACCOUNT>` →
-`TF_VAR_stripe_api_key_<account>` in the Justfile, and `providers.tf` reads `GET /v1/account` with it and refuses to
-plan unless the ID matches — a key pasted into the wrong secret would otherwise apply one app's config to another.
+be revoked without touching a running service. Only `workspaced` is under Terraform, so its key is plain
+`STRIPE_API_KEY` → `TF_VAR_stripe_api_key`; a second account needs its own name for both. `providers.tf` reads
+`GET /v1/account` with the key and refuses to plan unless the ID matches — a key from the wrong account would
+otherwise apply one app's config to another.
+
+**An app's own API key cannot be managed here.** Stripe has no API for creating, rolling or revoking keys, so each
+app's restricted key is made in the Dashboard and written to Vault by hand.
 
 **Account settings stay in the Dashboard:** public details, branding, payouts, customer emails, Radar rules and team
 members have no API for an account editing itself.

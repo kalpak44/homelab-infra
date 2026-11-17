@@ -107,7 +107,7 @@ Stripe layer:
 
 | Var                                | From env var                | Where used                                               |
 |------------------------------------|-----------------------------|----------------------------------------------------------|
-| `TF_VAR_stripe_api_key_workspaced` | `STRIPE_API_KEY_WORKSPACED` | every `stripe/workspaced/` dir: that account's `terraform` key |
+| `TF_VAR_stripe_api_key`            | `STRIPE_API_KEY`            | every `stripe/workspaced/` dir: that account's `terraform` key |
 
 `TF_VAR_*` env vars are silently ignored by directories that don't declare the matching variable – this is why one
 workflow can safely set them all. The Mailjet provider reads its keys from the environment directly, so it needs no `TF_VAR_`.

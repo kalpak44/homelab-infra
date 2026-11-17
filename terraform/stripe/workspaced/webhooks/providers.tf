@@ -3,7 +3,7 @@ locals {
 }
 
 provider "stripe" {
-  api_key = var.stripe_api_key_workspaced
+  api_key = var.stripe_api_key
 }
 
 # Each app has its own Stripe account, so a key pasted into the wrong secret would apply
@@ -12,13 +12,13 @@ data "http" "account" {
   url = "https://api.stripe.com/v1/account"
 
   request_headers = {
-    Authorization = "Bearer ${var.stripe_api_key_workspaced}"
+    Authorization = "Bearer ${var.stripe_api_key}"
   }
 
   lifecycle {
     postcondition {
       condition     = self.status_code == 200 && try(jsondecode(self.response_body).id, "") == local.account_id
-      error_message = "TF_VAR_stripe_api_key_workspaced is not a key for ${local.account_id}."
+      error_message = "STRIPE_API_KEY is not a key for ${local.account_id}."
     }
   }
 }

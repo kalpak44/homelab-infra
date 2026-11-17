@@ -45,8 +45,8 @@ deploy layer resource:
     export TF_VAR_sonar_token="${SONAR_TOKEN:-}"
     export TF_VAR_android_keystore_base64="${ANDROID_KEYSTORE_BASE64:-}"
 
-    # One key per Stripe account; each terraform/stripe/<account>/ declares only its own.
-    export TF_VAR_stripe_api_key_workspaced="${STRIPE_API_KEY_WORKSPACED:-}"
+    # Only one Stripe account is under Terraform; a second needs its own key and variable.
+    export TF_VAR_stripe_api_key="${STRIPE_API_KEY:-}"
 
     # A secret resource is gated on its variable being non-empty, so applying from a shell
     # that is missing one deletes the stored credential from the repo rather than leaving
@@ -89,8 +89,8 @@ destroy layer resource:
     export TF_VAR_sonar_token="${SONAR_TOKEN:-}"
     export TF_VAR_android_keystore_base64="${ANDROID_KEYSTORE_BASE64:-}"
 
-    # One key per Stripe account; each terraform/stripe/<account>/ declares only its own.
-    export TF_VAR_stripe_api_key_workspaced="${STRIPE_API_KEY_WORKSPACED:-}"
+    # Only one Stripe account is under Terraform; a second needs its own key and variable.
+    export TF_VAR_stripe_api_key="${STRIPE_API_KEY:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform destroy -auto-approve -input=false
