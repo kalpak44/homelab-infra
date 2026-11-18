@@ -122,6 +122,11 @@ spec:
       targetPath: 'appsec.rules.block-phishing-kit\.yaml'
       literal: true
     - kind: ConfigMap
+      name: crowdsec-src-appsec-rules
+      valuesKey: vpatch-CVE-2026-114938.yaml
+      targetPath: 'appsec.rules.vpatch-CVE-2026-114938\.yaml'
+      literal: true
+    - kind: ConfigMap
       name: crowdsec-src-appsec-configs
       valuesKey: app-surface.yaml
       targetPath: 'appsec.configs.app-surface\.yaml'
@@ -276,10 +281,8 @@ spec:
           value: "crowdsecurity/appsec-virtual-patching"
         - name: APPSEC_CONFIGS
           value: "crowdsecurity/appsec-default"
-        # The collection is installed once at pod start, so a vpatch published after that
-        # stays absent until a restart. Naming it here pins it and rolls the pods.
         - name: APPSEC_RULES
-          value: "crowdsecurity/crs crowdsecurity/base-config crowdsecurity/appsec-generic-test crowdsecurity/vpatch-CVE-2026-114938"
+          value: "crowdsecurity/crs crowdsecurity/base-config crowdsecurity/appsec-generic-test"
       resources:
         limits:
           memory: 250Mi

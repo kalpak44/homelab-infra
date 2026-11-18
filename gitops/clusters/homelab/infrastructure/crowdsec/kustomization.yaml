@@ -67,6 +67,7 @@ configMapGenerator:
       - appsec-rules/block-laravel-ignition.yaml
       - appsec-rules/block-recon-artifacts.yaml
       - appsec-rules/block-phishing-kit.yaml
+      - appsec-rules/vpatch-CVE-2026-114938.yaml
   - name: crowdsec-src-appsec-configs
     namespace: crowdsec
     options:

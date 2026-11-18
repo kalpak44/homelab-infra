@@ -12,3 +12,4 @@ inband_rules:
   - custom/block-laravel-ignition
   - custom/block-recon-artifacts
   - custom/block-phishing-kit
+  - custom/vpatch-CVE-2026-114938
