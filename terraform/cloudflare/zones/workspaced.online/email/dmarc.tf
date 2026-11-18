@@ -1,6 +1,6 @@
 # Without a policy, anyone can send as sales@, support@ or investor@ and receivers have no
-# rule to reject it by. Email Routing writes SPF itself, so only DMARC is declared here.
-# Tighten to p=quarantine once the aggregate reports show nothing legitimate failing.
+# rule to reject it by. SPF and DKIM are in mailjet.tf.
+# Tighten to p=quarantine once the reports show Mailjet and Email Routing both pass.
 resource "cloudflare_record" "dmarc" {
   zone_id = data.cloudflare_zone.this.id
   name    = "_dmarc"

@@ -248,6 +248,13 @@ public half is the `_dck1` TXT records in `terraform/cloudflare/zones/workspaced
 key name and `syncPubKeyDomain` both templates name. CNAME targets are fixed to `%vmid%.vm.workspaced.online` rather than a free variable, so a signed request can only ever
 point a user's record at one of our VM names.
 
+**`workspaced-ai` sends mail through Mailjet as any `*@workspaced.online` address, and only sends.** The sender,
+its DKIM and the shared SPF record are in `terraform/cloudflare/zones/workspaced.online/email/mailjet.tf`; the API
+reuses the key pair Terraform manages that sender with, copied into `secret/workspaced-secrets` as `mailjet-api-key`
+and `mailjet-secret-key`. Admins send from Settings → Mail, and platform mail goes through `MailService.notify`, which
+sends as `noreply@` — no routing rule names it and the catch-all is off, so a reply bounces. Inbound stays on Email Routing's forwarding to Gmail. Rotating the account's keys means updating Vault too,
+or sending answers 502 while Terraform still works.
+
 **`SONAR_PROJECT_KEY` is not always the variable name.** `proklinator-app` analyses two projects and names them `SONAR_PROJECT_KEY_SITE` and `SONAR_PROJECT_KEY_API`, so an agent reading only `SONAR_PROJECT_KEY` there finds an empty string and silently skips the gate entirely. The prompt collects every non-empty key among the three and loops.
 
 **The agent also clears the findings the gate does *not* fail on, once per sweep, on the default branch.** A Sonar gate keys off new-code conditions and a reliability rating, so a Minor smell fails nothing and simply accumulates — until a rule update turns the pile into a blocked merge for whoever opens the next pull request. That cleanup is the second and last exception to the rule against committing to the default branch, under the same discipline as repairing a pipeline that failed there: the repository's own validation passes locally first, one commit, then wait for the pipeline the push starts. The two exceptions cannot collide, because they are in different modes. What is out of scope is the finding whose fix would change behaviour — an `await` inside a loop is usually sequential on purpose, and batching it to silence the rule is a behaviour change wearing a cleanup's clothes, so the agent is told to read what the loop is for and leave it alone when the ordering is load-bearing. A cleanup commit on its own is a patch release.

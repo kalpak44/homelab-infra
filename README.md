@@ -155,7 +155,7 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 | Cloudflare Tunnel (mihal)  | Cloudflare | -             | `cloudflare/tunnels/mihal`             | -                                           |
 | `*.internal` DNS records   | Cloudflare | -             | `cloudflare/zones/pavel-usanli.online/internal` | -                                  |
 | Email (routing + Mailjet)  | Cloudflare | -             | `cloudflare/zones/pavel-usanli.online/email` | -                                     |
-| Email (sales@, support@, investor@ forwarding) | Cloudflare | -             | `cloudflare/zones/workspaced.online/email` | -                                       |
+| Email (forwarding + Mailjet sending) | Cloudflare | -             | `cloudflare/zones/workspaced.online/email` | -                                       |
 | Edge (WAF, redirects)      | Cloudflare | -             | `cloudflare/zones/<zone>/edge`         | -                                           |
 
 ### Per-service notes

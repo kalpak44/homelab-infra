@@ -82,7 +82,7 @@ Cloudflare layer:
 | Var                                      | Where used                                             |
 |------------------------------------------|--------------------------------------------------------|
 | `TF_VAR_cloudflare_api_token`            | every cloudflare/ dir                                  |
-| `MJ_APIKEY_PUBLIC`, `MJ_APIKEY_PRIVATE`  | `zones/pavel-usanli.online/email` (Mailjet provider)   |
+| `MJ_APIKEY_PUBLIC`, `MJ_APIKEY_PRIVATE`  | `zones/{pavel-usanli,workspaced}.online/email` (Mailjet provider) |
 
 Proxmox layer:
 

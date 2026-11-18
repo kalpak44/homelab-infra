@@ -2,7 +2,8 @@ data "cloudflare_zone" "this" {
   name = "workspaced.online"
 }
 
-# Enabling routing makes Cloudflare create the zone's MX and SPF records itself.
+# Enabling routing makes Cloudflare create the zone's MX records and its first SPF record,
+# which mailjet.tf has since adopted.
 resource "cloudflare_email_routing_settings" "this" {
   zone_id = data.cloudflare_zone.this.id
   enabled = true
