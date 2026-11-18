@@ -1,5 +1,5 @@
 ---
-node_exporter_version: "1.12.1"
+node_exporter_version: "1.13.0"
 node_exporter_port: 9100
 
 # Read by the textfile collector. Empty on every host but the Proxmox node, which writes
