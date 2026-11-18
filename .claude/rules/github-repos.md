@@ -251,8 +251,11 @@ point a user's record at one of our VM names.
 **`workspaced-ai` sends mail through Mailjet as any `*@workspaced.online` address, and only sends.** The sender,
 its DKIM and the shared SPF record are in `terraform/cloudflare/zones/workspaced.online/email/mailjet.tf`; the API
 reuses the key pair Terraform manages that sender with, copied into `secret/workspaced-secrets` as `mailjet-api-key`
-and `mailjet-secret-key`. Admins send from Settings → Mail, and platform mail goes through `MailService.notify`, which
-sends as `noreply@` — no routing rule names it and the catch-all is off, so a reply bounces. Inbound stays on Email Routing's forwarding to Gmail. Rotating the account's keys means updating Vault too,
+and `mailjet-secret-key`. Admins send from Settings → Mail as one of the senders in the API's `mail_sender` table, each
+with its own signature and footer inside the site's header and footer; platform mail goes through
+`MailService.notify`, which sends as `noreply@` — no routing rule names it and the catch-all is
+off, so a reply bounces. A new address is two changes: its forwarding rule in `zones/workspaced.online/email/main.tf`
+and a `mail_sender` row in a migration, or it receives without being offered as a sender. Inbound stays on Email Routing's forwarding to Gmail. Rotating the account's keys means updating Vault too,
 or sending answers 502 while Terraform still works.
 
 **`SONAR_PROJECT_KEY` is not always the variable name.** `proklinator-app` analyses two projects and names them `SONAR_PROJECT_KEY_SITE` and `SONAR_PROJECT_KEY_API`, so an agent reading only `SONAR_PROJECT_KEY` there finds an empty string and silently skips the gate entirely. The prompt collects every non-empty key among the three and loops.
