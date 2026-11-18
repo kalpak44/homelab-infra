@@ -25,7 +25,7 @@ terraform/
 │       │   └── email/       # sales@ → Gmail forwarding
 │       └── workspaced.online/
 │           ├── edge/        # WAF, zone settings, Domain Connect key
-│           └── email/       # sales@, support@, investor@ → Gmail forwarding
+│           └── email/       # contact@, sales@, support@, investor@ → Gmail forwarding
 ├── proxmox/                 # LXCs + VMs on the Proxmox node, one dir each
 │   ├── adguard-lxc/  vault-lxc/  postgres-lxc/  redis-lxc/  cloudflared-lxc/
 │   ├── nocobase-lxc/  mihal-lxc/  prometheus-lxc/  grafana-lxc/  rustfs-lxc/

@@ -264,7 +264,7 @@ cd ansible && just configure cloudflared-lxc
 ```
 
 **Email** - inbound goes through Cloudflare Email Routing, one `zones/<zone>/email` dir per domain:
-`contact@pavel-usanli.online`, `sales@`, `support@` and `investor@workspaced.online`, and `sales@proklinator.online` all forward to Gmail. The first forwarding address on
+`contact@pavel-usanli.online`, `contact@`, `sales@`, `support@` and `investor@workspaced.online`, and `sales@proklinator.online` all forward to Gmail. The first forwarding address on
 the account triggers a verification email from Cloudflare; later zones reuse it.
 
 Outbound from `contact@…` goes through Mailjet, whose senders, SPF, DKIM and DMARC records are all in
