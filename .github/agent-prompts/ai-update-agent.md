@@ -214,6 +214,10 @@ check.
 listener. It is LAN-isolated and reached through a WARP service-token path, so probe
 `http://192.168.1.5/` rather than treating the absent TLS port as an outage.
 
+The Portainer VM also serves the `acestream` playlist proxy on port 8080 over plain HTTP.
+Report it as a no-TLS service like redis-commander; do not read the certificate on port
+443 there, because that port answers with the Portainer vhost instead.
+
 ## 5. Layer one — gitops
 
 Two kinds of pin live under `gitops/clusters/homelab/`, and they move differently.
@@ -354,6 +358,11 @@ bootstrap — never run `just bootstrap` to apply one, because that playbook als
 VMs and issues certificates and is not a nightly operation. The Actions runner also
 updates itself, so its pin is the floor a fresh VM downloads rather than what is running;
 `pveam available | grep ubuntu-24.04` is what tells you whether the template moved.
+
+The workflow's runner-tooling step pins `k8s_minor` a second time, separately from the
+bootstrap playbook. It is not applied by `just bootstrap`, and a stale value leaves the
+agent on an older kubectl than the cluster (v1.34 against k3s v1.37 on 2026-11-19).
+Changing it is a workflow edit, so report it rather than touching `.github/workflows/`.
 
 **RustFS holds every object on its `/data` volume, so its minor is a major until it shows
 otherwise.** A patch is routine: bump `rustfs_version` and `just configure rustfs-lxc`. Any
