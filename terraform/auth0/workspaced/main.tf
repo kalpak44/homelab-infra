@@ -68,7 +68,7 @@ resource "auth0_client" "workspaced_ai" {
   app_type        = "regular_web"
   is_first_party  = true
   oidc_conformant = true
-  grant_types     = ["authorization_code"]
+  grant_types     = ["authorization_code", "client_credentials"]
 
   # localhost is the Vite dev server, which proxies /api to the API on 8080.
   callbacks = [

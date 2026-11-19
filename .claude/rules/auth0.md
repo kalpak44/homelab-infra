@@ -5,6 +5,15 @@
 holds identities and roles: passwords, MFA and who is an `admin` live there, while billing and workspaces stay in
 the app's own database keyed by the Auth0 subject.
 
+**No personal data lives in the app's database.** `app_user` holds the Auth0 subject and the role, nothing else.
+Email, first and last name and picture stay in Auth0: the sign-up form asks for the names (`profile.tf`, a prompt
+partial plus a pre-registration Action that saves them to `user_metadata`), and the API reads and changes them
+through the Management API, as the same `workspaced-ai` application under a grant limited to `read:users` and
+`update:users`. The picture is Auth0's own — the Gravatar for the email, or one of the initials — because Auth0
+holds a URL, not an image, and an upload would put the image back in our storage. Prompt partials need a page
+template to exist, which is why `branding.tf` carries one that adds nothing but Auth0's own head and widget; a
+partial created before it reads back as a 403 on every later refresh.
+
 **Roles are Auth0 roles, assigned to people in the dashboard.** `roles.tf` defines `admin` and a post-login Action
 that copies the user's roles into the ID token as `https://workspaced.online/roles` — Auth0 drops a custom claim
 that is not namespaced to a URL. The app takes the role from that claim at every sign-in, so a change applies from

@@ -60,6 +60,9 @@ spec:
               value: https://auth.workspaced.online/
             - name: WORKSPACED_AUTH_CLIENT_ID
               value: dRdGOJHzotVdano2eR4VaQ2zSXnOltte
+            # Users' email, names and picture are read here; the custom domain does not serve it.
+            - name: WORKSPACED_AUTH_MANAGEMENT_API
+              value: https://workspaced.eu.auth0.com/api/v2/
           ports:
             - name: http
               containerPort: 8080

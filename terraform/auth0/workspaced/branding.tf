@@ -106,3 +106,23 @@ resource "auth0_prompt_custom_text" "signup" {
     }
   })
 }
+
+# Auth0 lets a prompt carry extra fields only once a page template exists. This one adds nothing
+# to the page: it is Auth0's own head and widget, which the theme above styles.
+resource "auth0_branding" "this" {
+  logo_url = "https://workspaced.online/mail-logo.png"
+
+  universal_login {
+    body = <<-EOT
+      <!DOCTYPE html>
+      <html lang="{{locale}}">
+        <head>
+          {%- auth0:head -%}
+        </head>
+        <body class="_widget-auto-layout">
+          {%- auth0:widget -%}
+        </body>
+      </html>
+    EOT
+  }
+}
