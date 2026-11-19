@@ -19,6 +19,12 @@ resource "auth0_prompt_screen_partial" "signup" {
         <input type="text" id="ulp-family-name" name="ulp-family-name" maxlength="100" autocomplete="family-name">
       </div>
     EOT
+    # Where the app's own sign-in card used to ask for it, now that sign-up starts here.
+    form_content_end = <<-EOT
+      <p class="ulp-consent">By creating an account you agree to the
+        <a href="https://workspaced.online/terms" target="_blank" rel="noopener">Terms of service</a> and the
+        <a href="https://workspaced.online/privacy" target="_blank" rel="noopener">Privacy policy</a>.</p>
+    EOT
   }
 }
 

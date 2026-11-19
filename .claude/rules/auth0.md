@@ -19,6 +19,26 @@ that copies the user's roles into the ID token as `https://workspaced.online/rol
 that is not namespaced to a URL. The app takes the role from that claim at every sign-in, so a change applies from
 the user's next sign-in on. Assignments are data, not configuration, so Terraform never holds them.
 
+**Local development signs in as `workspaced-ai-dev`, never the production client.** It allows only `localhost`, has no
+Management API grant, and its secret sits apart, in `secret/workspaced-dev-secrets`. The production client's secret can
+rewrite any user through its `update:users` grant, so it must never reach a laptop; `localhost` is therefore absent from
+the production client's callbacks too.
+
+**The ID token carries the names, so no page asks the Management API.** The post-login Action copies `given_name` and
+`family_name` from `user_metadata` into namespaced claims beside the roles, the API puts them in its own session token,
+and `GET /account` reads them from there. The Management API is left to saving names, recipe authors and the
+verification email, so an Auth0 outage or rate limit never signs anyone out.
+
+**Users' VMs are named under the same site, so every cookie is `__Host-`.** `<id>.vm.workspaced.online` runs whatever its
+owner likes, and a page there could otherwise plant cookies on `ai.workspaced.online`. `__Host-` stops it from setting or
+shadowing ours; changes must also come from the app's own origin, and the CSRF token is read from the header only. The VM
+name exists only as a CNAME target: the harness instructions tell the agent to publish on the IP, never on that name, since
+Let's Encrypt's per-domain limits are shared by every workspace.
+
+**An unverified sign-up is signed out of Auth0, not left in a loop.** The callback ends the Auth0 session and sends the
+browser to `/verify-email` with a 30-minute cookie naming the sign-up, from which the app can ask for the email again once a
+minute. Left signed in, every later "Sign in" passed silently and bounced back unverified for the life of the session.
+
 **The sign-in round trip keeps nothing on a server.** The pending authorization request (state, nonce, PKCE
 verifier) travels in an encrypted `workspaced_sign_in` cookie, so Auth0's callback may reach any API replica and
 the ingress needs no session affinity. Do not reintroduce Spring's default session-backed store: with more than

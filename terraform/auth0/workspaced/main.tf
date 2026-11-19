@@ -58,7 +58,7 @@ import {
 
 resource "auth0_connection_clients" "users" {
   connection_id   = auth0_connection.users.id
-  enabled_clients = [auth0_client.workspaced_ai.id]
+  enabled_clients = [auth0_client.workspaced_ai.id, auth0_client.workspaced_ai_dev.id]
 }
 
 # The API runs the authorization-code flow itself and then sets its own session cookie, so
@@ -70,20 +70,46 @@ resource "auth0_client" "workspaced_ai" {
   oidc_conformant = true
   grant_types     = ["authorization_code", "client_credentials"]
 
-  # localhost is the Vite dev server, which proxies /api to the API on 8080.
-  callbacks = [
-    "https://ai.workspaced.online/api/v1/login/oauth2/code/auth0",
-    "http://localhost:5173/api/v1/login/oauth2/code/auth0",
-  ]
+  callbacks = ["https://ai.workspaced.online/api/v1/login/oauth2/code/auth0"]
+  # Signing out ends on the public site; an unverified sign-up ends on the app's page that
+  # explains it.
   allowed_logout_urls = [
+    "https://workspaced.online/",
+    "https://ai.workspaced.online/verify-email",
+    # Where the API before this release sends sign-out; removed once the new one is live.
     "https://ai.workspaced.online/",
-    "http://localhost:5173/",
   ]
   initiate_login_uri = "https://ai.workspaced.online/api/v1/oauth2/authorization/auth0"
 
   jwt_configuration {
     alg = "RS256"
   }
+}
+
+# Local development signs in as this application, never the production one: it has no Management
+# API grant, so a leaked secret from a laptop cannot read or change any user. localhost is the
+# Vite dev server, which proxies /api to the API on 8080.
+resource "auth0_client" "workspaced_ai_dev" {
+  name            = "workspaced-ai-dev"
+  app_type        = "regular_web"
+  is_first_party  = true
+  oidc_conformant = true
+  grant_types     = ["authorization_code"]
+
+  callbacks = ["http://localhost:5173/api/v1/login/oauth2/code/auth0"]
+  allowed_logout_urls = [
+    "http://localhost:5173/",
+    "http://localhost:5173/verify-email",
+  ]
+
+  jwt_configuration {
+    alg = "RS256"
+  }
+}
+
+resource "auth0_client_credentials" "workspaced_ai_dev" {
+  client_id             = auth0_client.workspaced_ai_dev.id
+  authentication_method = "client_secret_basic"
 }
 
 # client_secret_basic is what Spring Security's OAuth2 client sends by default.
