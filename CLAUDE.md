@@ -11,7 +11,7 @@ The repo has **three layers**, each with its own state model and lifecycle:
 
 ### 1. Terraform - infrastructure provisioning
 
-Located in `terraform/`. Provisions Proxmox LXCs / VMs, Cloudflare, GitHub repo settings and Stripe. **One state
+Located in `terraform/`. Provisions Proxmox LXCs / VMs, Cloudflare, GitHub repo settings, Stripe and Auth0. **One state
 file per resource** on Cloudflare R2 (S3-compatible backend). No monolithic root.
 
 - `terraform/cloudflare/` - everything on the Cloudflare side, grouped by what it is attached to
@@ -21,6 +21,7 @@ file per resource** on Cloudflare R2 (S3-compatible backend). No monolithic root
 - `terraform/proxmox/` - LXC containers and VMs on the Proxmox node
 - `terraform/github/<repo>/` - GitHub repo settings + DeepSeek PR agent, one dir per managed repo
 - `terraform/stripe/<account>/<concern>/` - one Stripe account per app, one state per concern (`tax/`, `webhooks/`)
+- `terraform/auth0/<tenant>/` - one Auth0 tenant per app: sign-in, MFA, its mail and custom domain
 - `terraform/modules/{proxmox-lxc,proxmox-vm}/` - reusable primitives
 - `terraform/Justfile` - `deploy <layer> <resource>`, `destroy <layer> <resource>`, `list`
 
@@ -59,6 +60,7 @@ See `gitops/README.md` for the in-cluster service list.
 @.claude/rules/secrets.md
 @.claude/rules/rustfs.md
 @.claude/rules/stripe.md
+@.claude/rules/auth0.md
 
 ---
 
@@ -81,6 +83,7 @@ homelab-infra/
 │   ├── github/
 │   │   └── <repo>/                 # repo settings + DeepSeek maintenance agent (workflow + agent-prompts/)
 │   ├── stripe/<account>/<concern>/ # one Stripe account per app; tax, webhooks
+│   ├── auth0/<tenant>/             # one Auth0 tenant per app
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
 │   ├── README.md
@@ -109,6 +112,8 @@ homelab-infra/
 │   ├── github-destroy.yml          # just destroy github <repo>
 │   ├── stripe-deploy.yml           # just deploy stripe <resource>
 │   ├── stripe-destroy.yml          # just destroy stripe <resource>
+│   ├── auth0-deploy.yml            # just deploy auth0 <tenant>
+│   ├── auth0-destroy.yml           # just destroy auth0 <tenant>
 │   ├── ansible-configure.yml       # just configure <resource>
 │   ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
 │   ├── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)

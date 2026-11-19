@@ -7,7 +7,7 @@ triggered manually from GitHub Actions on a self-hosted runner, or locally via `
 
 ```
 homelab-infra/
-├── terraform/     # Proxmox, Cloudflare, GitHub repos, Stripe          →  see terraform/README.md
+├── terraform/     # Proxmox, Cloudflare, GitHub repos, Stripe, Auth0   →  see terraform/README.md
 ├── ansible/       # Post-provisioning for Proxmox services →  see ansible/README.md
 ├── gitops/        # Flux CD manifests (k3s workloads)      →  see gitops/README.md
 └── .github/workflows/
@@ -19,6 +19,8 @@ homelab-infra/
     ├── github-destroy.yml       | GitHub     - Destroy
     ├── stripe-deploy.yml        | Stripe     - Deploy
     ├── stripe-destroy.yml       | Stripe     - Destroy
+    ├── auth0-deploy.yml         | Auth0      - Deploy
+    ├── auth0-destroy.yml        | Auth0      - Destroy
     ├── ansible-configure.yml    | Ansible    - Configure
     ├── gitops-bump-images.yml   | GitOps     - Bump images
     ├── scanners-bump-pins.yml   | Scanners   - Bump pins
@@ -106,6 +108,7 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `GH_OWNER`                                                           | GitHub user/org owning the managed repos, e.g. `kalpak44` (optional; defaults to `kalpak44`)                 |
 | `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI maintenance agent                                        |
 | `SONAR_TOKEN`                                                        | SonarCloud token – optional, `bunker-party` only; mirrored into its Dependabot secret store so the quality gate runs on Dependabot PRs |
+| `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`             | The Auth0 tenant's Terraform machine-to-machine app (all Management API scopes) – `auth0/` layer |
 
 ### 4. Cloudflare API token - required scopes
 
@@ -540,6 +543,8 @@ Every workflow runs on the self-hosted runner; the scheduled ones can also be di
 | `github-destroy.yml`     | 14 github/ repos                | `just destroy github <resource>`     |
 | `stripe-deploy.yml`      | `stripe/<account>`                   | `just deploy stripe <resource>`      |
 | `stripe-destroy.yml`     | `stripe/<account>`                   | `just destroy stripe <resource>`     |
+| `auth0-deploy.yml`       | `auth0/<tenant>`                | `just deploy auth0 <resource>`       |
+| `auth0-destroy.yml`      | `auth0/<tenant>`                | `just destroy auth0 <resource>`      |
 | `ansible-configure.yml`  | 13 services + 2 playbooks       | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 | `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |

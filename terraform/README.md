@@ -34,10 +34,12 @@ terraform/
 ├── github/                  # GitHub repo settings + DeepSeek PR agent
 │   └── <repo>/              # one dir per managed repo
 │       └── workflows/       # workflow files pushed into the target repo
-└── stripe/                  # one dir per Stripe account (one account per app), one state per concern
-    └── workspaced/
-        ├── tax/             # VAT rate
-        └── webhooks/        # billing webhook → ai.workspaced.online
+├── stripe/                  # one dir per Stripe account (one account per app), one state per concern
+│   └── workspaced/
+│       ├── tax/             # VAT rate
+│       └── webhooks/        # billing webhook → ai.workspaced.online
+└── auth0/                   # one dir per Auth0 tenant (one tenant per app)
+    └── workspaced/          # sign-in for ai.workspaced.online
 ```
 
 Each leaf directory has `versions.tf`, `providers.tf` and a `backend.tf` pointing at its own R2 key
@@ -59,6 +61,7 @@ just deploy  cloudflare zones/pavel-usanli.online/internal
 just deploy  proxmox    adguard-lxc
 just deploy  github     kalpak44
 just deploy  stripe     workspaced/webhooks
+just deploy  auth0      workspaced
 just destroy cloudflare zones/workspaced.online/email
 just output  cloudflare tunnels/homelab tunnel_token
 ```
@@ -108,6 +111,9 @@ Stripe layer:
 | Var                                | From env var                | Where used                                               |
 |------------------------------------|-----------------------------|----------------------------------------------------------|
 | `TF_VAR_stripe_api_key`            | `STRIPE_API_KEY`            | every `stripe/workspaced/` dir: that account's `terraform` key |
+
+Auth0 layer: the provider reads `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET` itself, and `MJ_APIKEY_PUBLIC` /
+`MJ_APIKEY_PRIVATE` map to `TF_VAR_mailjet_api_key_{public,private}` for its SMTP mail.
 
 `TF_VAR_*` env vars are silently ignored by directories that don't declare the matching variable – this is why one
 workflow can safely set them all. The Mailjet provider reads its keys from the environment directly, so it needs no `TF_VAR_`.

@@ -4,7 +4,7 @@
 #   just deploy  <layer> <resource>   # e.g. just deploy cloudflare zones/pavel-usanli.online/internal
 #   just destroy <layer> <resource>   # e.g. just destroy proxmox adguard-lxc
 #
-# Layers: cloudflare | proxmox | github
+# Layers: cloudflare | proxmox | github | stripe | auth0
 # Resource: subdir under the layer (see `just list`)
 #
 # Env vars (must be set - the workflow injects them, locally they come from your shell).
@@ -17,6 +17,8 @@
 #   SSH_PUBLIC_KEY, SSH_PRIVATE_KEY, HOST_PASSWORD                          (proxmox layer)
 #   GH_ADMIN_TOKEN, GH_OWNER, DEEPSEEK_APIKEY, SONAR_TOKEN,
 #   ANDROID_KEYSTORE_BASE64                                                 (github layer)
+#   AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, CLOUDFLARE_API_TOKEN,
+#   MJ_APIKEY_PUBLIC, MJ_APIKEY_PRIVATE                                     (auth0 layer)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
@@ -47,6 +49,10 @@ deploy layer resource:
 
     # Only one Stripe account is under Terraform; a second needs its own key and variable.
     export TF_VAR_stripe_api_key="${STRIPE_API_KEY:-}"
+
+    # Auth0 sends its mail through the same Mailjet account the zones send with.
+    export TF_VAR_mailjet_api_key_public="${MJ_APIKEY_PUBLIC:-}"
+    export TF_VAR_mailjet_api_key_private="${MJ_APIKEY_PRIVATE:-}"
 
     # A secret resource is gated on its variable being non-empty, so applying from a shell
     # that is missing one deletes the stored credential from the repo rather than leaving
@@ -91,6 +97,10 @@ destroy layer resource:
 
     # Only one Stripe account is under Terraform; a second needs its own key and variable.
     export TF_VAR_stripe_api_key="${STRIPE_API_KEY:-}"
+
+    # Auth0 sends its mail through the same Mailjet account the zones send with.
+    export TF_VAR_mailjet_api_key_public="${MJ_APIKEY_PUBLIC:-}"
+    export TF_VAR_mailjet_api_key_private="${MJ_APIKEY_PRIVATE:-}"
     cd {{layer}}/{{resource}}
     terraform init -backend-config="bucket=$R2_BUCKET_NAME" -input=false
     terraform destroy -auto-approve -input=false
@@ -272,6 +282,9 @@ list:
     @echo "Stripe - one account per app, one dir per concern (just deploy stripe <account>/<concern>):"
     @printf "  %-30s %s\n" "workspaced/tax"                 "Workspaced AI (acct_1IAIb3ABYXXbGldT) · VAT rate"
     @printf "  %-30s %s\n" "workspaced/webhooks"            "Workspaced AI (acct_1IAIb3ABYXXbGldT) · billing webhook → ai.workspaced.online"
+    @echo
+    @echo "Auth0 - one tenant per app (just deploy auth0 <tenant>):"
+    @printf "  %-30s %s\n" "workspaced"                     "workspaced.eu.auth0.com · sign-in for ai.workspaced.online, auth.workspaced.online, optional MFA, Mailjet mail"
     @echo
     @echo "GitHub - repo settings + DeepSeek maintenance agent (just deploy github <resource>):"
     @printf "  %-30s %s\n" "bunker-party"                   "kalpak44/bunker-party · same + SonarCloud gate pass + publish.yml (PR check, publish, deploy) + dependabot"

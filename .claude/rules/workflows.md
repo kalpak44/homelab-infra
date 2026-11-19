@@ -1,6 +1,6 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Fourteen workflows, all running on the **self-hosted** runner (VM 101 on the
+All CI/CDs live in `.github/workflows/`. Sixteen workflows, all running on the **self-hosted** runner (VM 101 on the
 Proxmox node). All are `workflow_dispatch` (manual) except the five on a `schedule`: `gitops-bump-images.yml` daily,
 `scanners-bump-pins.yml` and `packer-build.yml` weekly, and `ai-security-agent.yml` and `ai-update-agent.yml` nightly.
 
@@ -14,6 +14,8 @@ Proxmox node). All are `workflow_dispatch` (manual) except the five on a `schedu
 | `github-destroy.yml`     | Terraform destroy on a managed GitHub repo | `just destroy github <repo>`         |
 | `stripe-deploy.yml`      | Terraform apply on a Stripe account        | `just deploy stripe <account>`       |
 | `stripe-destroy.yml`     | Terraform destroy on a Stripe account      | `just destroy stripe <account>`      |
+| `auth0-deploy.yml`       | Terraform apply on an Auth0 tenant         | `just deploy auth0 <tenant>`         |
+| `auth0-destroy.yml`      | Terraform destroy on an Auth0 tenant       | `just destroy auth0 <tenant>`        |
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
 | `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |
@@ -124,6 +126,7 @@ flags which error):
 | `proxmox-{deploy,destroy}`    | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `TF_VAR_proxmox_{endpoint,username,password}`, `TF_VAR_ssh_{public,private}_key`, `TF_VAR_host_password`                                                                                                                                                       |
 | `github-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `GH_ADMIN_TOKEN`, `GH_OWNER`, `DEEPSEEK_APIKEY`, `SONAR_TOKEN`, `ANDROID_KEYSTORE_BASE64` (secret names can't start with `GITHUB_`)                                                                                           |
 | `stripe-{deploy,destroy}`     | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `STRIPE_API_KEY`, mapped to `TF_VAR_stripe_api_key` in the Justfile |
+| `auth0-{deploy,destroy}`      | `AWS_*` (R2 creds), `R2_BUCKET_NAME`, `AUTH0_CLIENT_{ID,SECRET}` (read by the provider), `CLOUDFLARE_API_TOKEN`, `MJ_APIKEY_{PUBLIC,PRIVATE}` |
 | `ansible-configure`           | `HOST_PASSWORD` (root SSH + become for every host) + service creds (`CLOUDFLARE_API_TOKEN`, `LETSENCRYPT_EMAIL`, `ADGUARD_*`, `VAULT_*`, `POSTGRESQL_*`, `PGADMIN_*`, `REDIS_*`, `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`) — Ansible reads them in the Justfile's `configure` recipe via `-e "<name>=$VAR"` |
 
 ## Choice dropdowns
@@ -138,6 +141,7 @@ Every workflow's `options:` lists the deployable resource paths for that layer:
   the Justfile).
 - `github-*.yml`: one entry per dir under `terraform/github/` (see `github-repos.md`).
 - `stripe-*.yml`: one entry per `terraform/stripe/<account>/<concern>/` dir.
+- `auth0-*.yml`: one entry per `terraform/auth0/<tenant>/` dir.
 
 Adding or removing a resource means updating the dropdown in **every** relevant workflow **and** the matching `list`
 recipe in `terraform/Justfile` / `ansible/Justfile`.
