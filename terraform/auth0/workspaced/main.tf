@@ -4,6 +4,10 @@ resource "auth0_tenant" "this" {
   support_url     = "https://workspaced.online"
   enabled_locales = ["en"]
 
+  # Where Auth0's own pages, such as "email verified", send the user back: straight into signing
+  # in to the app. A per-template result_url would say the same, but needs an Enterprise plan.
+  default_redirection_uri = "https://ai.workspaced.online/api/v1/oauth2/authorization/auth0"
+
   # Links in verification and reset mail would otherwise point at the tenant's own domain.
   flags {
     enable_custom_domain_in_emails = true

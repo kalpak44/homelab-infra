@@ -14,10 +14,6 @@ resource "auth0_email_provider" "mailjet" {
 }
 
 locals {
-  # Where a verified or reset account lands: straight into signing in to the app. Auth0 appends
-  # its own query, which the sign-in ignores.
-  sign_in_url = "https://ai.workspaced.online/api/v1/oauth2/authorization/auth0"
-
   email_templates = {
     verify_email = "Verify your email for workspaced"
     reset_email  = "Reset your workspaced password"
@@ -33,7 +29,6 @@ resource "auth0_email_template" "this" {
   from                    = "workspaced <noreply@workspaced.online>"
   subject                 = each.value
   syntax                  = "liquid"
-  result_url              = local.sign_in_url
   url_lifetime_in_seconds = 432000
 
   body = templatefile("${path.module}/mail/layout.html.tftpl", {

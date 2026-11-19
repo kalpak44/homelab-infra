@@ -13,7 +13,8 @@ scopes, which the Management API answers with a bare `401 Invalid token`.
 **The tenant is on the free plan, which refuses rather than bills.** Password history, dictionary and
 personal-info checks answer `403 missing entitlement: password-advanced-options`, so the connection keeps a
 12-character minimum and leans on breached-password detection. The custom domain needs a verified card on file,
-which is there; the plan is still Free.
+which is there; the plan is still Free. A template's `result_url` is Enterprise-only (`403 Customizations for resultUrl are not
+allowed`), so where Auth0's own pages send the user back is the tenant's `default_redirection_uri` instead.
 
 **The user database carries `prevent_destroy`**: deleting the connection deletes every account in it. Signups are
 open, and the app refuses an email Auth0 has not verified, so a new account confirms its address before its first
