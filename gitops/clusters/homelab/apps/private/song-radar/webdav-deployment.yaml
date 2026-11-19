@@ -21,7 +21,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: nginx-webdav
-          image: dgraziotin/nginx-webdav-nononsense:1.31.4
+          image: dgraziotin/nginx-webdav-nononsense:1.31.9
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
