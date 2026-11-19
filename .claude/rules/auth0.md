@@ -16,7 +16,12 @@ personal-info checks answer `403 missing entitlement: password-advanced-options`
 which is there; the plan is still Free.
 
 **The user database carries `prevent_destroy`**: deleting the connection deletes every account in it. Signups are
-off until registration opens, so an admin creates each account.
+open, and the app refuses an email Auth0 has not verified, so a new account confirms its address before its first
+sign-in. Accounts are managed in Auth0 alone; the app has no user administration of its own.
+
+**Auth0's verification and reset mail is wrapped in the app's own mail layout** (`mail/layout.html.tftpl`, a copy
+of `apps/api/src/main/resources/mail/layout.html` in workspaced-ai), so a change to one is a change to both. Its
+logo is `https://workspaced.online/mail-logo.png`, published by the site, because Auth0 cannot embed an image.
 
 **The app's client secret is copied into Vault by hand** — `just output auth0 workspaced client_secret`, then
 `vault kv patch secret/workspaced-secrets auth0-client-secret=-`. It changes only when the client is recreated.

@@ -17,8 +17,8 @@ import {
   id = "con_zt7Ccmf0dljwW2s1"
 }
 
-# Deleting the connection deletes every account in it. Signups stay off until registration
-# opens, so until then each account is created by an admin.
+# Deleting the connection deletes every account in it. Anyone may sign up; the app refuses an
+# address that is not verified yet, so a new account first confirms its email.
 resource "auth0_connection" "users" {
   name     = "Username-Password-Authentication"
   strategy = "auth0"
@@ -26,7 +26,7 @@ resource "auth0_connection" "users" {
   options {
     password_policy        = "good"
     brute_force_protection = true
-    disable_signup         = true
+    disable_signup         = false
     requires_username      = false
 
     # History, dictionary and personal-info checks need a paid plan; breached-password

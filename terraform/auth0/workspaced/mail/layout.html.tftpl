@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>${title}</title>
+</head>
+<!-- A copy of the app's mail layout (apps/api/src/main/resources/mail/layout.html in
+     workspaced-ai), so Auth0's mail looks like the rest; change both together. The logo is
+     hosted, since Auth0 cannot embed one. -->
+<body style="margin:0;padding:0;background:#fafafa;-webkit-text-size-adjust:100%">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafafa">
+<tr><td align="center" style="padding:32px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px">
+<tr><td style="padding:0 4px 20px">
+<a href="https://workspaced.online" style="text-decoration:none;color:#18181b"><img src="https://workspaced.online/mail-logo.png" width="24" height="24" alt="" style="display:inline-block;vertical-align:middle;border:0"><span style="margin-left:8px;vertical-align:middle;font-family:Inter,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;letter-spacing:-0.01em;color:#18181b">workspaced<span style="color:#a1a1aa">-ai</span></span></a>
+</td></tr>
+<tr><td style="background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;padding:32px;font-family:Inter,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#18181b">
+${content}
+</td></tr>
+<tr><td style="padding:24px 4px 0;font-family:Inter,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#71717a">
+<p style="margin:0 0 12px">This is an automated message from workspaced-ai. Replies to this address are not read.</p>
+<p style="margin:0 0 12px"><a href="https://ai.workspaced.online/" style="color:#52525b;text-decoration:underline">Open app</a> &middot; <a href="https://workspaced.online/support" style="color:#52525b;text-decoration:underline">Support</a> &middot; <a href="https://workspaced.online/privacy" style="color:#52525b;text-decoration:underline">Privacy policy</a> &middot; <a href="https://workspaced.online/terms" style="color:#52525b;text-decoration:underline">Terms of service</a></p>
+<p style="margin:0">&copy; Workspaced AI. Public beta.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

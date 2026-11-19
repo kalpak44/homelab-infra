@@ -54,6 +54,9 @@ spec:
             # Where Stripe Checkout sends the browser back after a top-up.
             - name: WORKSPACED_BILLING_RETURN_URL
               value: https://ai.workspaced.online/billing
+            # Who becomes an admin on first signing in through Auth0.
+            - name: WORKSPACED_AUTH_ADMIN_EMAILS
+              value: pavel.usanli@gmail.com
           ports:
             - name: http
               containerPort: 8080
