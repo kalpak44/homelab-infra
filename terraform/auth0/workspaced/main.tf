@@ -76,8 +76,6 @@ resource "auth0_client" "workspaced_ai" {
   allowed_logout_urls = [
     "https://workspaced.online/",
     "https://ai.workspaced.online/verify-email",
-    # Where the API before this release sends sign-out; removed once the new one is live.
-    "https://ai.workspaced.online/",
   ]
   initiate_login_uri = "https://ai.workspaced.online/api/v1/oauth2/authorization/auth0"
 
