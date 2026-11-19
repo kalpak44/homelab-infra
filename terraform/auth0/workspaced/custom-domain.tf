@@ -4,9 +4,14 @@ data "cloudflare_zone" "workspaced" {
 
 # Users sign in on our own domain. Auth0 issues the certificate, which is why the record
 # stays DNS-only: a proxied one answers with Cloudflare's certificate instead.
+# Recreating it would change the issuer every token and the API are set to.
 resource "auth0_custom_domain" "this" {
   domain = "auth.workspaced.online"
   type   = "auth0_managed_certs"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "cloudflare_record" "auth" {

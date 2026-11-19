@@ -58,7 +58,18 @@ personal-info checks answer `403 missing entitlement: password-advanced-options`
 which is there; the plan is still Free. A template's `result_url` is Enterprise-only (`403 Customizations for resultUrl are not
 allowed`), so where Auth0's own pages send the user back is the tenant's `default_redirection_uri` instead.
 
-**The user database carries `prevent_destroy`**: deleting the connection deletes every account in it. Signups are
+**Sign-ups are throttled to five per address, then one every 12 minutes** (`attack-protection.tf`). Every sign-up
+mails a verification link through the domain's Mailjet account, so Auth0's default of about 3,000 an hour would let a
+script spend that account's reputation on other people's addresses. Bot detection would add a challenge, but it is a paid
+feature and is left off. Password-reset links last an hour, verification links five days (`email.tf`).
+
+**Signing out revokes every session of the account.** `app_user.sessions_valid_after` moves to the sign-out time and the
+API refuses any token issued before it, so a copied cookie stops working too. The Management API token is stored
+encrypted with a key derived from `WORKSPACED_JWT_SECRET`, which lives outside the database: it can rewrite any user.
+
+**The user database carries `prevent_destroy`**: deleting the connection deletes every account in it. So do the production
+client, whose id the API is configured with, the custom domain, which is every token's issuer, and the `admin` role,
+whose assignments would go with it. Signups are
 open, and the app refuses an email Auth0 has not verified, so a new account confirms its address before its first
 sign-in. Accounts are managed in Auth0 alone; the app has no user administration of its own.
 

@@ -1,5 +1,7 @@
 # Traefik forwards a WebSocket upgrade as X-Forwarded-Proto: wss, which Tomcat does not read
 # as secure, so Spring's same-origin check sees http and refuses the browser's https origin.
+# The host is pinned too: Traefik passes on whatever X-Forwarded-Host a client sends, and the
+# API builds its sign-in callback from it. Only ai.workspaced.online is routed here.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -9,3 +11,4 @@ spec:
   headers:
     customRequestHeaders:
       X-Forwarded-Proto: https
+      X-Forwarded-Host: ai.workspaced.online

@@ -82,6 +82,11 @@ resource "auth0_client" "workspaced_ai" {
   jwt_configuration {
     alg = "RS256"
   }
+
+  # Recreating it changes the client id the API is configured with, and its secret in Vault.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Local development signs in as this application, never the production one: it has no Management

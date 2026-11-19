@@ -28,6 +28,8 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # The preStop wait plus Spring's graceful shutdown, which has 30 seconds of its own.
+      terminationGracePeriodSeconds: 45
       containers:
         - name: api
           image: ghcr.io/kalpak44/workspaced-ai-api:bae13ce
@@ -82,6 +84,12 @@ spec:
               path: /api/v1/actuator/health/liveness
               port: http
             periodSeconds: 20
+          # Traefik keeps sending to a terminating pod until it drops the endpoint, so the pod
+          # waits that long before Tomcat stops accepting; a rollout then drops no request.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
           volumeMounts:
             # readOnlyRootFilesystem is on, and Tomcat and the JVM still need somewhere
             # to write their temporary files.

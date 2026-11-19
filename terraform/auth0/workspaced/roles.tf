@@ -1,9 +1,14 @@
 # Roles are assigned to people in Auth0, next to the accounts themselves; the app takes them, and
 # the names the sign-up form saved, from the ID token at each sign-in. Only `admin` means anything
 # to it.
+# Recreating it would drop every admin's assignment.
 resource "auth0_role" "admin" {
   name        = "admin"
   description = "Manages the platform's mail in workspaced"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "auth0_action" "roles" {

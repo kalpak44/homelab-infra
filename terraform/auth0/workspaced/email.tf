@@ -14,9 +14,11 @@ resource "auth0_email_provider" "mailjet" {
 }
 
 locals {
+  # Subject and how long the link works. A reset link left in an inbox is a way into the
+  # account, so it lasts an hour; verifying is harmless and may wait for days.
   email_templates = {
-    verify_email = "Verify your email for workspaced"
-    reset_email  = "Reset your workspaced password"
+    verify_email = { subject = "Verify your email for workspaced", lifetime = 432000 }
+    reset_email  = { subject = "Reset your workspaced password", lifetime = 3600 }
   }
 }
 
@@ -27,12 +29,12 @@ resource "auth0_email_template" "this" {
   template                = each.key
   enabled                 = true
   from                    = "workspaced <noreply@workspaced.online>"
-  subject                 = each.value
+  subject                 = each.value.subject
   syntax                  = "liquid"
-  url_lifetime_in_seconds = 432000
+  url_lifetime_in_seconds = each.value.lifetime
 
   body = templatefile("${path.module}/mail/layout.html.tftpl", {
-    title   = each.value
+    title   = each.value.subject
     content = file("${path.module}/mail/${each.key}.html")
   })
 
