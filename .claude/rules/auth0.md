@@ -2,8 +2,21 @@
 
 **One Auth0 tenant per app, one `terraform/auth0/<tenant>/` dir each.** `workspaced` is
 `workspaced.eu.auth0.com`, in the EU region for GDPR — a tenant's region and name can never change. The tenant
-holds identities only: passwords, MFA and profile live there, while roles, billing and workspaces stay in the app's
-own database keyed by the Auth0 subject.
+holds identities and roles: passwords, MFA and who is an `admin` live there, while billing and workspaces stay in
+the app's own database keyed by the Auth0 subject.
+
+**Roles are Auth0 roles, assigned to people in the dashboard.** `roles.tf` defines `admin` and a post-login Action
+that copies the user's roles into the ID token as `https://workspaced.online/roles` — Auth0 drops a custom claim
+that is not namespaced to a URL. The app takes the role from that claim at every sign-in, so a change applies from
+the user's next sign-in on. Assignments are data, not configuration, so Terraform never holds them.
+
+**The sign-in round trip keeps nothing on a server.** The pending authorization request (state, nonce, PKCE
+verifier) travels in an encrypted `workspaced_sign_in` cookie, so Auth0's callback may reach any API replica and
+the ingress needs no session affinity. Do not reintroduce Spring's default session-backed store: with more than
+one replica it fails every sign-in whose callback lands elsewhere.
+
+**Auth0's sign-in and sign-up pages are themed like the app's own sign-in card** (`branding.tf`): the same zinc
+palette, corners, logo and wording. The colours are copied from `apps/web`, so a change there is a change here.
 
 **Terraform signs in as the tenant's machine-to-machine app** (`AUTH0_CLIENT_ID` / `AUTH0_CLIENT_SECRET`, all
 Management API scopes). It is created by hand and deliberately left out of the config, so no apply can revoke its

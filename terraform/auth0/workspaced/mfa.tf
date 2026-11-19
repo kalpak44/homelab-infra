@@ -37,4 +37,9 @@ resource "auth0_trigger_actions" "post_login" {
     id           = auth0_action.mfa.id
     display_name = auth0_action.mfa.name
   }
+
+  actions {
+    id           = auth0_action.roles.id
+    display_name = auth0_action.roles.name
+  }
 }

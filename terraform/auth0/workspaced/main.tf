@@ -1,5 +1,5 @@
 resource "auth0_tenant" "this" {
-  friendly_name   = "Workspaced"
+  friendly_name   = "workspaced"
   support_email   = "support@workspaced.online"
   support_url     = "https://workspaced.online"
   enabled_locales = ["en"]
