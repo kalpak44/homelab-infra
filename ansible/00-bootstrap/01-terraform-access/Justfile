@@ -1,0 +1,5 @@
+set dotenv-load := false
+
+# Prepare Terraform access and show newly created credentials.
+apply *args:
+    @bash ../../shared/run-component.sh "{{justfile_directory()}}" {{args}}

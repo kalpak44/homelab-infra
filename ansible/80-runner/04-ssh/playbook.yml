@@ -1,0 +1,24 @@
+---
+- name: Configure runner SSH access
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    host_password: "{{ lookup('ansible.builtin.env', 'HOST_PASSWORD') | default('', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - host_password | length > 0
+        fail_msg: Fill the required inputs in this component’s .env before running.
+  tasks:
+    - name: Enable root SSH + set root password
+      ansible.builtin.import_tasks: ../../shared/tasks/enable-root-ssh.yml
+    - name: Keep ubuntu user password in sync with HOST_PASSWORD
+      ansible.builtin.user:
+        name: ubuntu
+        password: "{{ host_password | password_hash('sha512') }}"
+        update_password: always
+      when: host_password | default('') | length > 0

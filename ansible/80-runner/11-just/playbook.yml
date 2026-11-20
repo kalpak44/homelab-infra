@@ -1,0 +1,14 @@
+---
+- name: Install just
+  hosts: all
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Install just
+      ansible.builtin.shell:
+        cmd: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+      args:
+        creates: /usr/local/bin/just

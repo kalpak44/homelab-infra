@@ -1,0 +1,18 @@
+---
+- name: Enable Proxmox snippet storage
+  hosts: all
+  gather_facts: false
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Check if snippets already enabled on local datastore
+      ansible.builtin.shell: 'grep -A 10 ''^dir: local'' /etc/pve/storage.cfg | grep -q snippets'
+      register: snippets_check
+      changed_when: false
+      failed_when: false
+    - name: Enable snippet storage on 'local' datastore
+      ansible.builtin.command:
+        cmd: pvesm set local --content images,rootdir,vztmpl,backup,snippets,iso
+      when: snippets_check.rc != 0
+      changed_when: true

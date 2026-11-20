@@ -1,0 +1,316 @@
+---
+- name: Install qemu-guest-agent
+  ansible.builtin.apt:
+    name: qemu-guest-agent
+    state: present
+    update_cache: true
+
+- name: Ensure qemu-guest-agent is running
+  ansible.builtin.systemd:
+    name: qemu-guest-agent
+    state: started
+    enabled: true
+
+- name: Check if data disk already has a filesystem
+  ansible.builtin.command:
+    cmd: blkid {{ portainer_data_disk }}
+  register: disk_blkid
+  changed_when: false
+  failed_when: false
+
+- name: Format data disk
+  community.general.filesystem:
+    fstype: ext4
+    dev: "{{ portainer_data_disk }}"
+    state: present
+  when: disk_blkid.rc != 0
+
+- name: Check if /mnt/data is already mounted
+  ansible.builtin.command:
+    cmd: mountpoint -q /mnt/data
+  register: data_mountpoint
+  changed_when: false
+  failed_when: false
+
+- name: Mount data disk
+  ansible.builtin.mount:
+    path: /mnt/data
+    src: "{{ portainer_data_disk }}"
+    fstype: ext4
+    opts: defaults
+    state: mounted
+  when: data_mountpoint.rc != 0
+
+# Stacks bind-mount directories here as whatever uid their image runs as. The runtime
+# directory is pruned: it holds image layers whose modes must not change.
+- name: Ensure /mnt/data is writable by all recursively
+  ansible.builtin.shell:
+    cmd: >-
+      find /mnt/data -path {{ portainer_runtime_dir }} -prune -o
+      ! -perm 0777 -print -exec chmod 0777 {} +
+  register: data_chmod
+  changed_when: data_chmod.stdout | length > 0
+
+- name: Install Docker dependencies
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg]
+    state: present
+
+- name: Add Docker GPG key
+  ansible.builtin.shell:
+    cmd: >
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg |
+      gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    creates: /usr/share/keyrings/docker-archive-keyring.gpg
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg]
+      https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+
+- name: Install Docker
+  ansible.builtin.apt:
+    name: [docker-ce, docker-ce-cli, containerd.io]
+    state: present
+    update_cache: true
+
+# --- Container storage on the data disk ------------------------------------
+
+- name: Install rsync
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+
+- name: Create the container runtime directory
+  ansible.builtin.file:
+    path: "{{ portainer_runtime_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0711"
+
+- name: Check whether containerd already keeps its data there
+  ansible.builtin.command:
+    cmd: grep -qx 'root = "{{ portainer_runtime_dir }}/containerd"' /etc/containerd/config.toml
+  register: runtime_moved
+  changed_when: false
+  failed_when: false
+
+- name: Count the running containers before moving their storage
+  ansible.builtin.shell:
+    cmd: docker ps -q | wc -l
+  register: running_before
+  changed_when: false
+  when: runtime_moved.rc != 0
+
+# One-off move of what is already on the root disk. The copy keeps hard links, xattrs and
+# device files: overlay layers record deletions as whiteout devices and opaque xattrs, and
+# a copy without them resurrects files the image deleted.
+- name: Move existing container storage to the data disk
+  when: runtime_moved.rc != 0
+  block:
+    - name: Stop Docker and containerd
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: [docker.socket, docker, containerd]
+
+    - name: Copy containerd and Docker data
+      ansible.builtin.command:
+        cmd: "rsync -aHAX --numeric-ids /var/lib/{{ item }}/ {{ portainer_runtime_dir }}/{{ item }}/"
+      loop: [containerd, docker]
+
+- name: Deploy the containerd configuration
+  ansible.builtin.copy:
+    dest: /etc/containerd/config.toml
+    content: |
+      # Managed by ansible/05-services/portainer-vm.
+      disabled_plugins = ["cri"]
+      root = "{{ portainer_runtime_dir }}/containerd"
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Deploy the Docker daemon configuration
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ {'data-root': portainer_runtime_dir ~ '/docker', 'insecure-registries': portainer_insecure_registries} | to_nice_json }}\n"
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Ensure containerd and Docker are running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [containerd, docker]
+
+- name: Flush handlers to apply the runtime configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Confirm Docker reads its data from the data disk
+  ansible.builtin.command:
+    cmd: "docker info --format '{% raw %}{{.DockerRootDir}}{% endraw %}'"
+  register: docker_root
+  changed_when: false
+  failed_when: docker_root.stdout != portainer_runtime_dir ~ '/docker'
+
+# Every container restarts on its own restart policy. Until they all have, the old copy
+# is the only known-good one.
+- name: Wait for every container to come back
+  ansible.builtin.shell:
+    cmd: docker ps -q | wc -l
+  register: running_after
+  until: running_after.stdout | int >= running_before.stdout | int
+  retries: 24
+  delay: 5
+  changed_when: false
+  when: runtime_moved.rc != 0
+
+- name: Remove the old container storage from the root disk
+  ansible.builtin.file:
+    path: "/var/lib/{{ item }}"
+    state: absent
+  loop: [containerd, docker]
+  when: runtime_moved.rc != 0
+
+- name: Install certbot and Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+  when: portainer_tls_enabled
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  when: portainer_tls_enabled
+  no_log: true
+
+- name: Issue Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ letsencrypt_email }}
+      -d {{ portainer_tls_domain }}
+    creates: "/etc/letsencrypt/live/{{ portainer_tls_domain }}/fullchain.pem"
+  when: portainer_tls_enabled and letsencrypt_email != ""
+
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+- name: Remove default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Restart nginx
+
+- name: Deploy nginx configuration
+  ansible.builtin.template:
+    src: portainer.conf.j2
+    dest: /etc/nginx/sites-available/portainer.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nginx
+
+- name: Enable nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/portainer.conf
+    dest: /etc/nginx/sites-enabled/portainer.conf
+    state: link
+  notify: Restart nginx
+
+- name: Deploy certbot renewal hook to reload nginx
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+    content: "#!/bin/bash\nsystemctl reload nginx\n"
+    mode: "0755"
+  when: portainer_tls_enabled
+
+- name: Ensure nginx is running
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Check if Portainer container exists
+  ansible.builtin.command:
+    cmd: docker inspect portainer
+  register: portainer_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Pull the current Portainer image
+  ansible.builtin.command:
+    cmd: docker pull portainer/portainer-ce:latest
+  register: portainer_pull
+  changed_when: "'Downloaded newer image' in portainer_pull.stdout"
+
+- name: Read the running Portainer image
+  ansible.builtin.command:
+    cmd: "docker inspect --format '{% raw %}{{.Image}}{% endraw %}' portainer"
+  register: portainer_running_image
+  changed_when: false
+  when: portainer_inspect.rc == 0
+
+- name: Read the pulled Portainer image
+  ansible.builtin.command:
+    cmd: "docker image inspect --format '{% raw %}{{.Id}}{% endraw %}' portainer/portainer-ce:latest"
+  register: portainer_target_image
+  changed_when: false
+
+# Recreating is the only way a running container changes image. The named volume keeps
+# Portainer's state, so this is a short restart rather than a reinstall.
+- name: Decide whether Portainer needs recreating
+  ansible.builtin.set_fact:
+    portainer_needs_recreate: >-
+      {{ portainer_inspect.rc != 0 or
+         (portainer_running_image.stdout | default('')) != portainer_target_image.stdout }}
+
+- name: Remove the old Portainer container
+  ansible.builtin.command:
+    cmd: docker rm -f portainer
+  when: portainer_inspect.rc == 0 and portainer_needs_recreate
+
+- name: Start Portainer container
+  ansible.builtin.command:
+    cmd: >
+      docker run -d
+      --name portainer
+      --restart always
+      -v /var/run/docker.sock:/var/run/docker.sock
+      -v {{ portainer_data_volume }}:/data
+      -p 127.0.0.1:{{ portainer_internal_port }}:9000
+      portainer/portainer-ce:latest
+  when: portainer_needs_recreate
+
+- name: Wait for Portainer API to be ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ portainer_internal_port }}/api/status"
+    status_code: 200
+  register: portainer_status
+  until: portainer_status.status == 200
+  retries: 18
+  delay: 5
+  when: portainer_needs_recreate
+
+# Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
+# guarded on the file being there. Runs after the deploy hook, so a renewal reloads the
+# service.
+- name: Renew and verify the certificate
+  ansible.builtin.import_tasks: "{{ playbook_dir }}/../../shared/tasks/certbot-renew.yml"
+  vars:
+    certbot_domain: "{{ portainer_tls_domain }}"

@@ -1,0 +1,28 @@
+---
+- name: Install kubectl
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    k8s_minor: "{{ lookup('ansible.builtin.env', 'K8S_MINOR') | default('v1.37', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Add Kubernetes apt keyring
+      ansible.builtin.shell:
+        cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/{{ k8s_minor }}/deb/Release.key | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg"
+      args:
+        creates: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+    - name: Add Kubernetes apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/kubernetes.list
+        content: |
+          deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ k8s_minor }}/deb/ /
+        mode: '0644'
+    - name: Install kubectl
+      ansible.builtin.apt:
+        name:
+          - kubectl
+        state: present
+        update_cache: true

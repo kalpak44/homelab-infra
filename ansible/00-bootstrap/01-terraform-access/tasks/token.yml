@@ -1,0 +1,20 @@
+---
+- name: Create API token (privsep=0)
+  ansible.builtin.command:
+    cmd: pveum user token add terraform@pve terraform --privsep 0
+  register: token_create
+  changed_when: token_create.rc == 0
+  failed_when:
+    - token_create.rc != 0
+    - '''already exists'' not in token_create.stderr'
+- name: Show API token (SAVE THIS - shown once only)
+  ansible.builtin.debug:
+    msg: |-
+      PROXMOX_USERNAME=terraform@pve!terraform
+      Save the newly created token value below as PROXMOX_PASSWORD.
+      {{ token_create.stdout }}
+  when: token_create.changed
+- name: Show existing token identity
+  ansible.builtin.debug:
+    msg: PROXMOX_USERNAME=terraform@pve!terraform. The token already exists; Proxmox cannot reveal its value again. Use your saved PROXMOX_PASSWORD.
+  when: not token_create.changed

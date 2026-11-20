@@ -1,0 +1,7 @@
+---
+- name: Use component SSH credentials when supplied
+  ansible.builtin.set_fact:
+    ansible_password: "{{ lookup('ansible.builtin.env', 'TARGET_PASSWORD') }}"
+    ansible_become_password: "{{ lookup('ansible.builtin.env', 'TARGET_PASSWORD') }}"
+  when: lookup('ansible.builtin.env', 'TARGET_PASSWORD') | length > 0
+  no_log: true

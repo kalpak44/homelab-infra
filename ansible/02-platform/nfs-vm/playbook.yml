@@ -1,0 +1,21 @@
+---
+- name: Configure NFS server
+  hosts: nfs
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        sleep: 5
+        timeout: 300
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Enable root SSH + rotate password
+      ansible.builtin.import_tasks: ../../shared/tasks/enable-root-ssh.yml
+
+  roles:
+    - nfs

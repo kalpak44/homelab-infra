@@ -1,0 +1,20 @@
+---
+- name: Enable the QEMU guest agent
+  hosts: all
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Install qemu-guest-agent
+      ansible.builtin.apt:
+        name:
+          - qemu-guest-agent
+        state: present
+        update_cache: true
+    - name: Enable and start qemu-guest-agent
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        state: started
+        enabled: true

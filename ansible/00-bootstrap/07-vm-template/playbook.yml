@@ -1,0 +1,43 @@
+---
+- name: Create the Proxmox VM template
+  hosts: all
+  gather_facts: false
+  vars:
+    template_vm_id: "{{ lookup('ansible.builtin.env', 'TEMPLATE_VM_ID') | default('9000', true) }}"
+    template_vm_name: "{{ lookup('ansible.builtin.env', 'TEMPLATE_VM_NAME') | default('ubuntu-2404-template', true) }}"
+    template_storage: "{{ lookup('ansible.builtin.env', 'TEMPLATE_STORAGE') | default('local-lvm', true) }}"
+    cloud_image_dest: "{{ lookup('ansible.builtin.env', 'CLOUD_IMAGE_DEST') | default('/var/lib/vz/template/iso/noble-server-cloudimg-amd64.img', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: "Check if template VM {{ template_vm_id }} already exists"
+      ansible.builtin.command: "qm status {{ template_vm_id }}"
+      register: template_vm_status
+      changed_when: false
+      failed_when: false
+    - name: "Create template VM {{ template_vm_id }}"
+      when: template_vm_status.rc != 0
+      block:
+        - name: qm create
+          ansible.builtin.command:
+            cmd: "qm create {{ template_vm_id }} --name {{ template_vm_name }} --memory 2048 --cores 2 --net0 virtio,bridge=vmbr0 --ostype l26"
+        - name: qm importdisk (from cloud image)
+          ansible.builtin.command:
+            cmd: "qm importdisk {{ template_vm_id }} {{ cloud_image_dest }} {{ template_storage }}"
+        - name: qm set (disk + cloudinit + boot + serial console)
+          ansible.builtin.command:
+            cmd: "qm set {{ template_vm_id }} --scsihw virtio-scsi-pci --scsi0 {{ template_storage }}:vm-{{ template_vm_id }}-disk-0 --ide2 {{ template_storage }}:cloudinit --boot order=scsi0 --serial0 socket --vga serial0"
+        - name: Convert to template
+          ansible.builtin.command:
+            cmd: "qm template {{ template_vm_id }}"
+    - name: "Check if VM {{ template_vm_id }} already has vendor cicustom set"
+      ansible.builtin.shell: "qm config {{ template_vm_id }} | grep -q cicustom"
+      register: vm_cicustom_check
+      changed_when: false
+      failed_when: false
+    - name: "Apply vendor-data cicustom to VM {{ template_vm_id }} template"
+      ansible.builtin.command:
+        cmd: "qm set {{ template_vm_id }} --cicustom 'vendor=local:snippets/vm-ssh-password.yaml'"
+      when: vm_cicustom_check.rc != 0
+      changed_when: true

@@ -1,0 +1,16 @@
+---
+- name: Prepare Terraform access to Proxmox
+  hosts: all
+  gather_facts: false
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Configure Terraform role
+      ansible.builtin.import_tasks: tasks/role.yml
+    - name: Configure Terraform user
+      ansible.builtin.import_tasks: tasks/user.yml
+    - name: Configure Terraform permissions
+      ansible.builtin.import_tasks: tasks/permissions.yml
+    - name: Configure Terraform token
+      ansible.builtin.import_tasks: tasks/token.yml

@@ -1,0 +1,17 @@
+---
+- name: Download the Ubuntu VM cloud image
+  hosts: all
+  gather_facts: false
+  vars:
+    cloud_image_url: "{{ lookup('ansible.builtin.env', 'CLOUD_IMAGE_URL') | default('https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img', true) }}"
+    cloud_image_dest: "{{ lookup('ansible.builtin.env', 'CLOUD_IMAGE_DEST') | default('/var/lib/vz/template/iso/noble-server-cloudimg-amd64.img', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Download Ubuntu cloud image
+      ansible.builtin.get_url:
+        url: "{{ cloud_image_url }}"
+        dest: "{{ cloud_image_dest }}"
+        mode: '0644'
+        force: false

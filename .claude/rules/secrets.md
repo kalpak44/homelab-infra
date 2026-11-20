@@ -1,7 +1,7 @@
 # Rules – Secrets
 
 **Vault is the source of truth for every infrastructure and service secret.**
-Roles using `ansible/proxmox/_shared/vault-secret.yml` read service credentials at
+Roles using `ansible/shared/tasks/vault-secret.yml` read service credentials at
 configure time. Bootstrap/operator inputs live in `secret/homelab-infra-secrets`;
 the ignored root `.env` and GitHub Actions secrets hold the copies needed before
 Vault is reachable. New service credentials belong in per-service Vault records.
@@ -11,7 +11,7 @@ deny when changing the broader service-secret read policy.
 Proxmox access, Cloudflare/R2 recovery and a protected initial `.env` are sufficient
 for bootstrap recovery into a fresh Vault. Existing Vault-only secrets need a separate
 backup/export or deliberate regeneration. Terraform state stays in R2; Vault data does not. Follow
-`ansible/bootstrap/RECOVERY.md` for first deployment and recovery order.
+`docs/1 - Bootstrap.md` for first deployment and recovery order.
 
 ## Using it in a role
 

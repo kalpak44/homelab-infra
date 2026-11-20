@@ -7,7 +7,7 @@
 # Layers: cloudflare | proxmox | github | stripe | auth0 | aws
 # Resource: subdir under the layer (see `just list`)
 #
-# Env vars (must be set - the workflow injects them, locally they come from your shell).
+# Env vars come from the ignored root .env or your local shell.
 # Names match the GitHub secrets 1:1; this Justfile maps them to what terraform + the
 # AWS-compatible S3 SDK expect (AWS_*, TF_VAR_*) right before terraform runs.
 #
@@ -61,15 +61,14 @@ deploy layer resource:
 
     # A secret resource is gated on its variable being non-empty, so applying from a shell
     # that is missing one deletes the stored credential from the repo rather than leaving
-    # it alone. Refuse instead of applying; the value is a secret of this repo, so the
-    # GitHub - Deploy workflow can always put it back.
+    # it alone. Refuse instead of applying until the local credential is restored.
     for pair in ANDROID_KEYSTORE_BASE64:android_keystore_base64 SONAR_TOKEN:sonar_token; do
       env_name="${pair%%:*}"
       tf_name="${pair##*:}"
       if grep -q "count = var.${tf_name} !=" "{{layer}}/{{resource}}/main.tf" 2>/dev/null \
           && [ -z "${!env_name:-}" ]; then
         echo "error: {{resource}} stores ${env_name}, and it is empty in this shell." >&2
-        echo "       Set it, or run the GitHub - Deploy workflow instead." >&2
+        echo "       Restore it from Vault or set it in the local environment before retrying." >&2
         exit 1
       fi
     done

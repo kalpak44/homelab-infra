@@ -1,0 +1,19 @@
+---
+- name: Grow the runner root filesystem
+  hosts: all
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Grow the root partition to the disk
+      ansible.builtin.command:
+        cmd: growpart /dev/sda 1
+      register: runner_growpart
+      changed_when: runner_growpart.rc == 0
+      failed_when: runner_growpart.rc != 0 and 'NOCHANGE' not in runner_growpart.stdout
+    - name: Grow the root filesystem to the partition
+      ansible.builtin.command:
+        cmd: resize2fs /dev/sda1
+      when: runner_growpart.changed

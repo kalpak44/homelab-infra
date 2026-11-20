@@ -72,13 +72,12 @@ just destroy cloudflare zones/workspaced.online/email
 just output  cloudflare tunnels/homelab tunnel_token
 ```
 
-Via GitHub Actions: **Cloudflare**, **Proxmox**, **GitHub**, **Stripe**, **Auth0** and **AWS** each have a **Deploy** and a **Destroy**
-workflow - pick the resource from the dropdown, one dispatch per resource.
+Run these commands locally from `terraform/`. GitHub Actions does not execute Terraform.
+`just bump-scanners` also runs locally; it applies managed GitHub repositories after updating their pins.
 
 ## Environment variables
 
-Local recipes load the root `.env` automatically; GitHub Actions injects the same
-variable names from repository secrets. Injected variables take precedence over `.env`.
+Local recipes load the root `.env` automatically. Exported shell variables take precedence over `.env`.
 
 All layers need R2 backend credentials:
 
@@ -128,4 +127,4 @@ Auth0 layer: the provider reads `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET` itse
 `MJ_APIKEY_PRIVATE` map to `TF_VAR_mailjet_api_key_{public,private}` for its SMTP mail.
 
 `TF_VAR_*` env vars are silently ignored by directories that don't declare the matching variable – this is why one
-workflow can safely set them all. The Mailjet provider reads its keys from the environment directly, so it needs no `TF_VAR_`.
+local recipe can safely set them all. The Mailjet provider reads its keys from the environment directly, so it needs no `TF_VAR_`.

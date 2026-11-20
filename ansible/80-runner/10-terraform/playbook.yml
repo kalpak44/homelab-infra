@@ -1,0 +1,22 @@
+---
+- name: Install local operator Terraform on the runner
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    terraform_version: "{{ lookup('ansible.builtin.env', 'TERRAFORM_VERSION') | default('1.17.2', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Check for terraform
+      ansible.builtin.stat:
+        path: /usr/local/bin/terraform
+      register: terraform_bin
+    - name: "Install Terraform {{ terraform_version }}"
+      when: not terraform_bin.stat.exists
+      ansible.builtin.unarchive:
+        src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+        dest: /usr/local/bin
+        mode: '0755'
+        remote_src: true

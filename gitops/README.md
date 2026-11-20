@@ -66,7 +66,7 @@ vault kv put secret/crowdsec-secrets \
 | `admin-user` | Grafana admin login |
 | `admin-password` | Grafana admin password |
 
-Read by `ansible/proxmox/grafana-lxc` at configure time; the admin login applies only when
+Read by `ansible/05-services/grafana-lxc` at configure time; the admin login applies only when
 Grafana creates its database.
 
 ```bash

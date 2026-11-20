@@ -1,0 +1,274 @@
+---
+# --- Secrets --------------------------------------------------------------
+
+- name: Read the Grafana admin secret from Vault
+  ansible.builtin.import_tasks: "{{ playbook_dir }}/../../shared/tasks/vault-secret.yml"
+  vars:
+    vault_secret: "{{ grafana_vault_admin_secret }}"
+    vault_secret_generate:
+      admin-user: admin
+      admin-password: ""
+
+- name: Keep the values this role uses
+  ansible.builtin.set_fact:
+    grafana_admin_user: "{{ vault_secret_data['admin-user'] }}"
+    grafana_admin_password: "{{ vault_secret_data['admin-password'] }}"
+  no_log: true
+
+# --- Package --------------------------------------------------------------
+# Grafana's own apt repository: Ubuntu does not package Grafana at all.
+
+# python3-debian is what deb822_repository below needs to write the source file.
+- name: Install apt prerequisites
+  ansible.builtin.apt:
+    name: [apt-transport-https, ca-certificates, python3-debian]
+    state: present
+    update_cache: true
+
+- name: Add the Grafana signing key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /etc/apt/keyrings/grafana.asc
+    mode: "0644"
+
+- name: Add the Grafana apt repository
+  ansible.builtin.deb822_repository:
+    name: grafana
+    types: deb
+    uris: https://apt.grafana.com
+    suites: stable
+    components: main
+    signed_by: /etc/apt/keyrings/grafana.asc
+
+# Left by the one-line format this role used before; apt warns on a repository defined
+# twice.
+- name: Remove the old one-line Grafana source
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/grafana.list
+    state: absent
+
+- name: Install Grafana
+  ansible.builtin.apt:
+    name: "grafana={{ grafana_version }}"
+    state: present
+    update_cache: true
+  notify: Restart Grafana
+
+# --- TLS ------------------------------------------------------------------
+# DNS-01 rather than HTTP-01: grafana.internal resolves only on the LAN, so no ACME
+# server can reach this host to answer an HTTP challenge.
+
+- name: Install certbot and the Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: [certbot, python3-certbot-dns-cloudflare]
+    state: present
+
+- name: Deploy Cloudflare credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Issue the Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 30
+      --non-interactive
+      --agree-tos
+      --email {{ letsencrypt_email }}
+      -d {{ grafana_domain }}
+    creates: "/etc/letsencrypt/live/{{ grafana_domain }}/fullchain.pem"
+
+- name: Create the TLS directory
+  ansible.builtin.file:
+    path: "{{ grafana_tls_dir }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+
+- name: Copy the TLS certificate and key for Grafana
+  ansible.builtin.copy:
+    src: "/etc/letsencrypt/live/{{ grafana_domain }}/{{ item.src }}"
+    dest: "{{ grafana_tls_dir }}/{{ item.dest }}"
+    remote_src: true
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  loop:
+    - { src: fullchain.pem, dest: cert.pem }
+    - { src: privkey.pem, dest: key.pem }
+  notify: Restart Grafana
+
+# certbot renews on its own timer, and Grafana reads its certificate only at startup —
+# without this hook it serves the expired one until someone notices.
+- name: Deploy the certbot renewal hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-grafana.sh
+    content: |
+      #!/bin/bash
+      cp /etc/letsencrypt/live/{{ grafana_domain }}/fullchain.pem {{ grafana_tls_dir }}/cert.pem
+      cp /etc/letsencrypt/live/{{ grafana_domain }}/privkey.pem {{ grafana_tls_dir }}/key.pem
+      chown grafana:grafana {{ grafana_tls_dir }}/cert.pem {{ grafana_tls_dir }}/key.pem
+      chmod 640 {{ grafana_tls_dir }}/cert.pem {{ grafana_tls_dir }}/key.pem
+      systemctl restart grafana-server
+    mode: "0755"
+
+# --- Configuration --------------------------------------------------------
+
+- name: Deploy grafana.ini
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: root
+    group: grafana
+    mode: "0640"
+  no_log: true
+  notify: Restart Grafana
+
+- name: Deploy the provisioned datasources
+  ansible.builtin.template:
+    src: datasources.yaml.j2
+    dest: /etc/grafana/provisioning/datasources/homelab.yaml
+    owner: root
+    group: grafana
+    mode: "0640"
+  no_log: true
+  notify: Restart Grafana
+
+- name: Deploy the dashboard provider
+  ansible.builtin.template:
+    src: dashboards.yaml.j2
+    dest: /etc/grafana/provisioning/dashboards/homelab.yaml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Deploy the provisioned alert rules
+  ansible.builtin.copy:
+    src: alerting/rules.yaml
+    dest: /etc/grafana/provisioning/alerting/homelab.yaml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+# Holds dashboards kept as JSON in files/dashboards/ once there are any. Grafana rescans
+# it on its own, so a dashboard change needs no restart.
+- name: Create the provisioned dashboards directory
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+
+- name: Deploy the provisioned dashboards
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /var/lib/grafana/dashboards/
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  with_fileglob: "dashboards/*.json"
+
+- name: Find provisioned dashboards on disk
+  ansible.builtin.find:
+    paths: /var/lib/grafana/dashboards
+    patterns: "*.json"
+  register: grafana_dashboard_files
+
+# Copy only adds, so a board removed from files/dashboards/ would otherwise stay in Grafana.
+- name: Remove dashboards no longer in the role
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ grafana_dashboard_files.files }}"
+  when: (item.path | basename) not in (query('ansible.builtin.fileglob', 'dashboards/*.json') | map('basename'))
+  loop_control:
+    label: "{{ item.path | basename }}"
+
+- name: Create the host dashboards directory
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards-hosts
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+
+# A lookup and replace rather than a template: the JSON is full of Grafana's own {{ }}
+# legend syntax, which Jinja would try to render.
+- name: Deploy one dashboard per host
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('ansible.builtin.file',
+                'host-dashboards/' ~ ('host-proxmox.json' if item in groups['proxmox_host']
+                                      else 'host-' ~ item ~ '.json' if query('ansible.builtin.fileglob', 'host-dashboards/host-' ~ item ~ '.json')
+                                      else 'host.json'))
+         | replace('__HOST__', item) }}
+    dest: "/var/lib/grafana/dashboards-hosts/{{ item }}.json"
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  loop: "{{ grafana_host_dashboards }}"
+
+- name: Find host dashboards on disk
+  ansible.builtin.find:
+    paths: /var/lib/grafana/dashboards-hosts
+    patterns: "*.json"
+  register: grafana_host_dashboard_files
+
+# A host gone from the inventory would otherwise keep a board showing No data for ever.
+- name: Remove dashboards of hosts no longer in the inventory
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ grafana_host_dashboard_files.files }}"
+  when: (item.path | basename | splitext | first) not in grafana_host_dashboards
+  loop_control:
+    label: "{{ item.path | basename }}"
+
+- name: Create the systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/grafana-server.service.d
+    state: directory
+    mode: "0755"
+
+- name: Let Grafana bind 443
+  ansible.builtin.template:
+    src: override.conf.j2
+    dest: /etc/systemd/system/grafana-server.service.d/override.conf
+    mode: "0644"
+  notify: Restart Grafana
+
+- name: Flush handlers to apply the configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Grafana is running
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for the Grafana API to answer
+  ansible.builtin.uri:
+    url: "https://{{ grafana_domain }}:{{ grafana_port }}/api/health"
+  register: grafana_ready
+  until: grafana_ready.status == 200
+  retries: 12
+  delay: 5
+
+# Repairs a certificate that already exists, which `certbot certonly` above cannot: it is
+# guarded on the file being there.
+- name: Renew and verify the certificate
+  ansible.builtin.import_tasks: "{{ playbook_dir }}/../../shared/tasks/certbot-renew.yml"
+  vars:
+    certbot_domain: "{{ grafana_domain }}"

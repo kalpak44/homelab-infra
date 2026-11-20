@@ -1,64 +1,65 @@
 # Ansible
 
-Post-provisioning configuration for the LXCs and VMs created by `terraform/proxmox/`.
-
-## Layout
+Run the numbered stages in dependency order. Provision hosts with Terraform first;
+Ansible configures them afterward. The complete commands and verification steps are
+in the [numbered build guide](<../docs/0 - Prerequisites.md#build-order>).
 
 ```
 ansible/
+├── 00-bootstrap/       # Proxmox Terraform access and base images
+├── 01-networking/      # AdGuard DNS
+├── 02-platform/        # NFS first, then k3s
+├── 03-vault/           # Vault installation and operator-secret helpers
+├── 04-gitops/          # Flux, after Vault and secret records are ready
+├── 05-services/        # Databases, monitoring, tunnel connectors and other services
+├── 80-runner/          # Optional GitHub runner; independent small components
+├── 81-proxmox-tls/     # Optional Proxmox web-UI certificate components
+├── 90-maintenance/     # OS updates and node exporter after initial setup
+├── inventories/        # Shared host inventory
+├── shared/             # Reused tasks, component launcher and connection handling
 ├── ansible.cfg
-├── Justfile                       # configure / list recipes
-├── inventories/
-│   └── hosts.yml                  # single flat inventory
-└── proxmox/                       # mirrors terraform/proxmox/
-    ├── adguard-lxc/
-    │   ├── playbook.yml
-    │   └── roles/adguard/
-    ├── vault-lxc/
-    │   └── ...
-    ├── postgres-lxc/
-    │   ├── playbook.yml           # runs both roles
-    │   └── roles/{postgresql,pgadmin}/
-    ├── redis-lxc/, nfs-vm/, portainer-vm/
-    └── k3s-cluster/
-        ├── cluster-setup.yml      # 3-phase k3s bootstrap
-        ├── flux-install.yml       # Flux CD bootstrap on the k3s cluster
-        ├── group_vars/k3s.yml     # k3s_version, k3s_server_ip
-        └── roles/k3s/
+└── Justfile            # Stable service commands and secret helpers
 ```
 
-Each service dir is self-contained: playbook + colocated `roles/`. Ansible auto-discovers `roles/` next to a playbook,
-so no path config is needed.
+Stages 00–05 describe the initial configuration order. The Vault container is provisioned
+early with Terraform; its Ansible configuration runs in stage 03, after k3s because the
+current Vault role also configures Kubernetes authentication. Within `02-platform`,
+configure `nfs-vm` before `k3s-cluster`. Stages 80 and 81 are optional; 90 is maintenance.
 
-## Usage
+## Commands and environment ownership
+
+Bootstrap, runner and Proxmox TLS components each own their `.env`, `.env.example`,
+Justfile, playbook and README. Apply one component from its directory:
 
 ```bash
-just configure <resource>       # ansible-playbook against the picked recipe
-just list                       # human-readable listing of all resources
+cd ansible/00-bootstrap/01-terraform-access
+# Edit this component's .env.
+just apply --ask-pass
 ```
 
-Examples:
+Use `just apply` with SSH keys. The shared launcher loads only that component's `.env`.
+
+Existing service commands remain stable and use the root `.env`. From the repository root:
 
 ```bash
-just configure adguard-lxc
-just configure postgres-lxc
-just configure k3s-cluster          # the cluster-setup.yml playbook
-just configure k3s-cluster/flux     # the flux-install.yml playbook
+just --justfile ansible/Justfile configure adguard-lxc
+just --justfile ansible/Justfile configure nfs-vm
+just --justfile ansible/Justfile configure k3s-cluster
+just --justfile ansible/Justfile configure vault-lxc
+just --justfile ansible/Justfile configure k3s-cluster/flux
+just --justfile ansible/Justfile list
 ```
 
-## Environment variables
+A service folder keeps its playbook and colocated `roles/`. Its leaf name still matches
+`terraform/proxmox/<name>/`; the numbered parent records when to configure it.
+`Justfile` explicitly maps resource names to playbooks, so unknown names fail immediately.
 
-Every playbook gets **all** the following as `-e` extra vars. Ansible silently drops undeclared ones, so a single flat
-list works for every service:
+## Keeping the structure maintainable
 
-| Var                                                                  | Used by                                                                |
-|----------------------------------------------------------------------|------------------------------------------------------------------------|
-| `HOST_PASSWORD`                                                      | Every host — SSH auth (root) + become; enforced by `_shared/enable-root-ssh.yml` |
-| `CLOUDFLARE_API_TOKEN`                                               | certbot DNS-01 (any role with TLS)                                     |
-| `LETSENCRYPT_EMAIL`                                                  | certbot registration                                                   |
-| `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`                               | adguard-lxc                                                            |
-| `VAULT_USERNAME`, `VAULT_PASSWORD`                                   | vault-lxc                                                              |
-| `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_DB`            | postgres-lxc (postgresql role)                                         |
-| `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`                                  | postgres-lxc (pgadmin role)                                            |
-| `REDIS_PASSWORD`, `REDIS_COMMANDER_USER`, `REDIS_COMMANDER_PASSWORD` | redis-lxc                                                              |
-| `FLUX_GITHUB_TOKEN`                                                  | k3s-cluster/flux                                                       |
+- Put a new service in the stage whose prerequisites it needs; retain its Terraform resource name.
+- Keep role defaults, tasks, templates and handlers beside that service's playbook.
+- Put reusable tasks in `shared/tasks/`; import them from the playbook directory explicitly.
+- Update the command mapping, inventory, root catalog and the numbered build guide together.
+- Keep setup order in `docs/`; component READMEs document only local inputs and behavior.
+- Keep `.env` files ignored and `.env.example` files free of credentials.
+- Run Terraform and Ansible locally. GitHub Actions must not execute either tool.

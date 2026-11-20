@@ -1,0 +1,43 @@
+---
+- name: Configure the Cloudflare ACME plugin
+  hosts: all
+  gather_facts: false
+  vars:
+    cloudflare_api_token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') | default('', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - cloudflare_api_token | length > 0
+        fail_msg: Fill the required inputs in this component’s .env before running.
+  tasks:
+    - name: Refresh the DNS challenge credential
+      block:
+        - name: Write the Cloudflare DNS credential
+          ansible.builtin.copy:
+            content: |
+              CF_Token={{ cloudflare_api_token }}
+            dest: /tmp/homelab-cf.env
+            mode: '0600'
+          no_log: true
+        - name: Check for existing Cloudflare ACME plugin
+          ansible.builtin.command: pvenode acme plugin list
+          register: acme_plugins
+          changed_when: false
+        - name: Add Cloudflare DNS plugin
+          ansible.builtin.command:
+            cmd: pvenode acme plugin add dns cloudflare --api cf --data /tmp/homelab-cf.env
+          when: '''cloudflare'' not in acme_plugins.stdout'
+          changed_when: true
+        - name: Refresh Cloudflare DNS plugin token
+          ansible.builtin.command:
+            cmd: pvenode acme plugin set cloudflare --data /tmp/homelab-cf.env
+          when: '''cloudflare'' in acme_plugins.stdout'
+          changed_when: true
+      always:
+        - name: Remove the temporary Cloudflare credential
+          ansible.builtin.file:
+            path: /tmp/homelab-cf.env
+            state: absent

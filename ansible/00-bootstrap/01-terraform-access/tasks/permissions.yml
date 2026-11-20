@@ -1,0 +1,21 @@
+---
+- name: Check Terraform ACL at root path
+  ansible.builtin.shell: pveum acl list | grep -E '\s/\s' | grep -qF 'terraform@pve'
+  register: acl_root_check
+  changed_when: false
+  failed_when: false
+- name: Grant Terraform role at root path
+  ansible.builtin.command:
+    cmd: pveum aclmod / --user terraform@pve --role Terraform
+  when: acl_root_check.rc != 0
+  changed_when: true
+- name: Check Terraform ACL at /storage/local
+  ansible.builtin.shell: pveum acl list | grep -F '/storage/local' | grep -qF 'terraform@pve'
+  register: acl_storage_check
+  changed_when: false
+  failed_when: false
+- name: Grant Terraform role on /storage/local
+  ansible.builtin.command:
+    cmd: pveum aclmod /storage/local --user terraform@pve --role Terraform
+  when: acl_storage_check.rc != 0
+  changed_when: true

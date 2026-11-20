@@ -1,0 +1,20 @@
+---
+- name: Grow the runner virtual disk
+  hosts: all
+  gather_facts: false
+  vars:
+    runner_id: "{{ lookup('ansible.builtin.env', 'RUNNER_ID') | default('101', true) }}"
+    runner_disk_gb: "{{ lookup('ansible.builtin.env', 'RUNNER_DISK_GB') | default('20', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Read the runner's root disk size
+      ansible.builtin.shell:
+        cmd: "qm config {{ runner_id }} | sed -n 's/^scsi0:.*size=\\([0-9]*\\)\\([MGT]\\).*/\\1 \\2/p'"
+      register: runner_disk
+      changed_when: false
+    - name: "Grow the runner's root disk to {{ runner_disk_gb }}G"
+      ansible.builtin.command:
+        cmd: "qm resize {{ runner_id }} scsi0 {{ runner_disk_gb }}G"
+      when: '(runner_disk.stdout.split()[0] | int) * {''M'': 1, ''G'': 1024, ''T'': 1048576}[runner_disk.stdout.split()[1]] < (runner_disk_gb | int) * 1024'

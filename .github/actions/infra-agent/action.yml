@@ -1,0 +1,56 @@
+name: Daily infrastructure agent
+description: Collect read-only evidence and publish validated source changes
+inputs:
+  kind:
+    description: update or security
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check runner prerequisites
+      shell: bash
+      run: |
+        set -euo pipefail
+        for tool in python3 kubectl sshpass git npm; do
+          command -v "$tool" >/dev/null || { echo "Missing runner tool: $tool" >&2; exit 1; }
+        done
+        python3 -c 'import yaml'
+        test -n "$HOST_PASSWORD"
+        test -n "$DEEPSEEK_APIKEY"
+        test -n "$GH_TOKEN"
+        mkdir -p "$AGENT_DIRECTORY"
+        chmod 700 "$AGENT_DIRECTORY"
+    - name: Install pinned Codex CLI in temporary directory
+      shell: bash
+      run: |
+        set -euo pipefail
+        npm install --prefix "$AGENT_DIRECTORY/tools" --ignore-scripts --no-audit --no-fund @openai/codex@0.171.0
+        echo "$AGENT_DIRECTORY/tools/node_modules/.bin" >> "$GITHUB_PATH"
+    - name: Collect cluster and upstream evidence
+      shell: bash
+      env:
+        AGENT_KIND: ${{ inputs.kind }}
+      run: python3 .github/scripts/infra_agent.py collect "$AGENT_KIND" "$AGENT_DIRECTORY"
+    - name: Propose source changes without deployment credentials
+      shell: bash
+      env:
+        AGENT_KIND: ${{ inputs.kind }}
+      run: python3 .github/scripts/infra_agent.py propose "$AGENT_KIND" "$AGENT_DIRECTORY"
+    - name: Validate and publish allowed changes
+      shell: bash
+      env:
+        AGENT_KIND: ${{ inputs.kind }}
+      run: python3 .github/scripts/infra_agent.py apply "$AGENT_KIND" "$AGENT_DIRECTORY"
+    - name: Publish daily report
+      if: always()
+      shell: bash
+      run: |
+        if [ -f "$AGENT_DIRECTORY/summary.md" ]; then
+          cat "$AGENT_DIRECTORY/summary.md" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "Agent did not complete. Inspect the failed phase; no successful deployment is implied." >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - name: Discard transient credentials and evidence
+      if: always()
+      shell: bash
+      run: rm -rf -- "$AGENT_DIRECTORY"

@@ -1,40 +1,26 @@
 # homelab-infra
 
-Terraform (state on Cloudflare R2) + Ansible + Flux CD GitOps for a Proxmox homelab. All deploy/destroy runs are
-triggered manually from GitHub Actions on a self-hosted runner, or locally via `just` recipes.
+Terraform (state on Cloudflare R2) + Ansible + Flux CD GitOps for a Proxmox homelab. Terraform and Ansible run
+locally through `just` recipes. GitHub Actions does not execute either tool.
 
 ## Repository layout
 
 ```
 homelab-infra/
+├── docs/          # Setup documentation and prerequisites
 ├── terraform/     # Proxmox, Cloudflare, GitHub repos, Stripe, Auth0, AWS → see terraform/README.md
 ├── ansible/       # Post-provisioning for Proxmox services →  see ansible/README.md
 ├── gitops/        # Flux CD manifests (k3s workloads)      →  see gitops/README.md
 └── .github/workflows/
-    ├── cloudflare-deploy.yml    | Cloudflare - Deploy
-    ├── cloudflare-destroy.yml   | Cloudflare - Destroy
-    ├── proxmox-deploy.yml       | Proxmox    - Deploy
-    ├── proxmox-destroy.yml      | Proxmox    - Destroy
-    ├── github-deploy.yml        | GitHub     - Deploy
-    ├── github-destroy.yml       | GitHub     - Destroy
-    ├── stripe-deploy.yml        | Stripe     - Deploy
-    ├── stripe-destroy.yml       | Stripe     - Destroy
-    ├── auth0-deploy.yml         | Auth0      - Deploy
-    ├── auth0-destroy.yml        | Auth0      - Destroy
-    ├── aws-deploy.yml           | AWS        - Deploy
-    ├── aws-destroy.yml          | AWS        - Destroy
     ├── secrets-sync.yml         | Secrets    - Sync from Vault
-    ├── ansible-configure.yml    | Ansible    - Configure
-    ├── gitops-bump-images.yml   | GitOps     - Bump images
-    ├── scanners-bump-pins.yml   | Scanners   - Bump pins
-    ├── packer-build.yml         | Packer     - Build image
-    ├── ai-security-agent.yml    | AI Security Agent
-    └── ai-update-agent.yml      | AI Update Agent
+    ├── ai-update-agent.yml     | Daily infrastructure update review
+    ├── ai-security-agent.yml   | Daily CrowdSec traffic review
+    └── gitops-bump-images.yml   | GitOps     - Bump images
 ```
 
 Each Terraform resource has its own directory and its own R2 state file. Every service under `terraform/proxmox/` has a
-matching config recipe under `ansible/proxmox/`. Both layers expose a `just` interface (`just deploy`, `just destroy`,
-`just configure`) - the same command the workflows run.
+matching config recipe under its numbered `ansible/<stage>/` directory. Both layers expose a `just` interface (`just deploy`, `just destroy`,
+`just configure`) for local execution. Flux continues reconciling GitOps manifests from Git.
 
 Detailed usage lives in the sub-READMEs. This document covers **one-time setup** and the **service catalog**.
 
@@ -42,13 +28,12 @@ Detailed usage lives in the sub-READMEs. This document covers **one-time setup**
 
 ## Setup
 
-Start with the [deployment and recovery runbook](ansible/bootstrap/RECOVERY.md) for
-the dependency order. Vault is the secret source of truth; `.env` and Actions secrets
-are bootstrap/runtime copies. Terraform state stays in Cloudflare R2. Recovery starts
-with Proxmox and Cloudflare/R2 access plus a protected initial `.env`. Its comments
-explain the inputs and deployment stages; [.env.example](.env.example) is the safe
-template. A Vault backup is needed to preserve Vault-only secrets, not to build a
-fresh Vault from those initial inputs.
+Follow the numbered [step-by-step build guide](<docs/0 - Prerequisites.md#build-order>)
+from Proxmox access through Vault, k3s, Flux and service verification.
+
+Follow [Bootstrap](<docs/1 - Bootstrap.md>), then [Vault](<docs/3 - Vault container.md>). Bootstrap components
+use their own local environments. The next stage is to keep infrastructure and service
+secrets in Vault. Terraform state stays in Cloudflare R2.
 
 ### 1. Cloudflare R2 – create bucket and API token
 
@@ -68,31 +53,26 @@ fresh Vault from those initial inputs.
 
 ### 2. Proxmox – initial node setup
 
-All Proxmox setup is automated by the bootstrap playbook. From `ansible/`, set the required env vars and run:
+Bootstrap components are independent directories under `ansible/00-bootstrap/`. Each has its own
+`.env`, `.env.example`, playbook, README and Justfile. Start with Terraform access:
 
 ```bash
-# SSH key auth (Proxmox node already has your key)
-just bootstrap 192.168.1.50
-
-# Fresh node with no keys yet – prompts for the root password once
-just bootstrap-pw 192.168.1.50
+cd ansible/00-bootstrap/01-terraform-access
+# Edit this directory's .env with your Proxmox SSH connection.
+just apply --ask-pass
 ```
 
-This runs four phases in order (all idempotent – safe to re-run):
+This creates the Terraform role, user, permissions and API token, then prints the new
+credentials. Save the token value as `PROXMOX_PASSWORD` for local Terraform.
 
-| Phase                          | What it does                                                                                                                                        |
-|--------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 – `01-proxmox-setup.yml`     | Create Terraform role + user + API token; enable snippet storage on `local`                                                                         |
-| 2 – `02-proxmox-artifacts.yml` | Download Ubuntu 24.04 LXC template and patch it for SSH password auth; create VM vendor-data snippet; download cloud image; create VM 9000 template |
-| 3 – `03-runner-vm.yml`         | Create runner VM 101 with password auth; install ansible/terraform/just/gh; auto-register the GitHub Actions runner                                 |
-| 4 – `04-proxmox-tls.yml`       | Register Let's Encrypt ACME account via Cloudflare DNS-01; order cert for the Proxmox web UI                                                        |
+Continue with [Bootstrap](<docs/1 - Bootstrap.md>) for templates and optional runner/TLS parts,
+then follow [What to apply next](<docs/2 - LXC template.md>) to prepare the LXC template and provision Vault.
 
-The Terraform API token is printed once at the end of phase 1 — **save it immediately** as `PROXMOX_PASSWORD`.
-See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required env vars and per-phase details.
+### 3. Operator environment
 
-### 3. GitHub – repository secrets
-
-**Settings → Secrets and variables → Actions → New repository secret**:
+Store infrastructure inputs in the ignored root `.env` or export them in your local shell.
+The table below lists operator inputs; Terraform and Ansible no longer need Actions secrets.
+The remaining workflows still use their own GitHub Actions credentials.
 
 | Secret                                                               | Where to get it                                                                                              |
 |----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
@@ -102,7 +82,7 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `R2_SECRET_ACCESS_KEY`                                               | From R2 token page                                                                                           |
 | `PROXMOX_ENDPOINT`                                                   | `https://<proxmox-ip>:8006`                                                                                  |
 | `PROXMOX_USERNAME`                                                   | `terraform@pve!terraform`                                                                                    |
-| `PROXMOX_PASSWORD`                                                   | Proxmox API token secret from bootstrap phase 1                                                              |
+| `PROXMOX_PASSWORD`                                                   | Proxmox API token secret from `01-terraform-access`                                                              |
 | `HOST_PASSWORD`                                                      | Root password for every LXC/VM (SSH + console). Bootstrap bakes it in; Ansible keeps it in sync.             |
 | `CLOUDFLARE_API_TOKEN`                                               | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below)                                      |
 | `LETSENCRYPT_EMAIL`                                                  | Email for Let's Encrypt registration                                                                         |
@@ -179,7 +159,7 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 
 **AdGuard Home** – Point your router's DNS to `192.168.1.2` (or set it per-device). UI at
 `https://adguard.internal.pavel-usanli.online`. To bump versions edit
-`ansible/proxmox/adguard-lxc/roles/adguard/defaults/main.yml`.
+`ansible/01-networking/adguard-lxc/roles/adguard/defaults/main.yml`.
 
 **Vault** - Playbook initializes, unseals, enables userpass auth, and creates the admin. Unseal key and root token are
 saved to `/root/vault-init.json` inside the container - **back this file up**. UI at
@@ -200,14 +180,14 @@ redis-lxc` upgrades to the newest upstream release on every run.
 certificate issued by certbot over DNS-01. The TSDB lives on a dedicated 20G volume at `/var/lib/prometheus`, capped at
 30 days or 15GB, whichever comes first. It scrapes itself and a loopback-bound `node_exporter`; add a target by
 appending to `prometheus_extra_scrape_jobs` in
-`ansible/proxmox/prometheus-lxc/roles/prometheus/defaults/main.yml`. A loopback-bound `blackbox_exporter` probes
+`ansible/05-services/prometheus-lxc/roles/prometheus/defaults/main.yml`. A loopback-bound `blackbox_exporter` probes
 each entry in `prometheus_probes` in that file (HTTPS with certificate checks, DNS), and Grafana's **Service health**
 dashboard draws one timeline per service. All three binaries come from upstream tarballs — Ubuntu noble's `prometheus`
 package is a 2.x that never moves — so bumping a version is editing that same file.
 
 **Grafana** – `https://grafana.internal.pavel-usanli.online`, on 443 with a certbot certificate. The Prometheus
-datasource and the alert rules are provisioned from `ansible/proxmox/grafana-lxc/roles/grafana/`. Dashboards are built
-in the UI, or kept as JSON in that role's `files/`, which `ansible/proxmox/grafana-lxc/generate-dashboards.py`
+datasource and the alert rules are provisioned from `ansible/05-services/grafana-lxc/roles/grafana/`. Dashboards are built
+in the UI, or kept as JSON in that role's `files/`, which `ansible/05-services/grafana-lxc/generate-dashboards.py`
 writes — edit the script, never the JSON. Every inventory host gets its own board in the Hosts folder, and
 *Homelab hosts* links to each. The admin login is read from Vault
 (`secret/grafana-secrets`) at configure time, so the role needs no CI secret of its own.
@@ -222,7 +202,7 @@ inbound LAN access are unaffected. This is the only consumer of the cluster-wide
 declared in `terraform/proxmox/nocobase-lxc/` with ACCEPT policies — a second isolated guest must not redeclare it.
 
 Terraform generates a dedicated ED25519 keypair on first apply and writes it to the gitignored
-`terraform/proxmox/nocobase-lxc/.ssh/`. A CI apply writes those files into the runner's throwaway workspace, so
+`terraform/proxmox/nocobase-lxc/.ssh/`. If the local key files are missing,
 recover them with `just output proxmox nocobase-lxc ssh_private_key` — the state on R2 is the copy of record.
 `just configure nocobase-lxc` then hardens sshd: **port 22022**, key-only, `PermitRootLogin prohibit-password`.
 It deliberately skips `_shared/enable-root-ssh.yml`, which would otherwise force `PasswordAuthentication yes` back
@@ -264,7 +244,7 @@ kubectl get nodes
 **Cloudflare Tunnel** – `cloudflared` daemon running on LXC 210 (`192.168.1.10`). Connects outbound to the
 Cloudflare Zero Trust network; all public traffic for `*.pavel-usanli.online` routes through the tunnel to Traefik
 at `192.168.1.120` — no open WAN ports needed. The tunnel is provisioned by `cloudflare/tunnels/homelab`
-(outputs `tunnel_token`); the daemon is installed and configured by `ansible/proxmox/cloudflared-lxc`.
+(outputs `tunnel_token`); the daemon is installed and configured by `ansible/05-services/cloudflared-lxc`.
 Firewall: outbound restricted to `192.168.1.120` (k3s) + internet only.
 
 To retrieve the tunnel token after deploying `cloudflare/tunnels/homelab`:
@@ -273,7 +253,7 @@ To retrieve the tunnel token after deploying `cloudflare/tunnels/homelab`:
 cd terraform && just output cloudflare tunnels/homelab tunnel_token
 ```
 
-Save the printed value as `CLOUDFLARE_TUNNEL_TOKEN` in the ignored root `.env` and as a GitHub Actions secret.
+Save the printed value as `CLOUDFLARE_TUNNEL_TOKEN` in the ignored root `.env`.
 Then configure the daemon:
 
 ```bash
@@ -557,7 +537,7 @@ Authentication uses temporary SSO credentials. Terraform state
 stays on R2 with separate credentials. Cost alerts will get their own concern later.
 See [AWS setup](terraform/aws/README.md) for local commands and the remaining GitHub
 OIDC setup. `personal/github-actions` configures `AWS_TERRAFORM_ROLE_ARN` automatically;
-run this bootstrap locally with `aws-admin` before dispatching an AWS workflow.
+Terraform runs locally with `aws-admin`; the OIDC resources are no longer used by this repository's workflows.
 
 ## CI
 
@@ -565,30 +545,19 @@ Every workflow runs on the self-hosted runner; the scheduled ones can also be di
 
 | Workflow                 | Picks                           | Runs                                 |
 |--------------------------|---------------------------------|--------------------------------------|
-| `cloudflare-deploy.yml`  | 9 cloudflare/ dirs              | `just deploy cloudflare <resource>`  |
-| `cloudflare-destroy.yml` | 9 cloudflare/ dirs              | `just destroy cloudflare <resource>` |
-| `proxmox-deploy.yml`     | 13 proxmox/ services            | `just deploy proxmox <resource>`     |
-| `proxmox-destroy.yml`    | 13 proxmox/ services            | `just destroy proxmox <resource>`    |
-| `github-deploy.yml`      | 14 github/ repos                | `just deploy github <resource>`      |
-| `github-destroy.yml`     | 14 github/ repos                | `just destroy github <resource>`     |
-| `stripe-deploy.yml`      | `stripe/<account>`                   | `just deploy stripe <resource>`      |
-| `stripe-destroy.yml`     | `stripe/<account>`                   | `just destroy stripe <resource>`     |
-| `auth0-deploy.yml`       | `auth0/<tenant>`                | `just deploy auth0 <resource>`       |
-| `auth0-destroy.yml`      | `auth0/<tenant>`                | `just destroy auth0 <resource>`      |
-| `aws-deploy.yml`         | `aws/<account>/<concern>`       | `just deploy aws <resource>`         |
-| `aws-destroy.yml`        | `aws/<account>/<concern>`       | `just destroy aws <resource>`        |
 | `secrets-sync.yml`       | Vault operator inputs          | `just secrets-sync` (in `ansible/`)   |
-| `ansible-configure.yml`  | 13 services + 2 playbooks       | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
-| `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |
-| `packer-build.yml`       | weekly Mon 03:00 UTC + manual   | `just build <image>` (in `packer/`)  |
+| `ai-update-agent.yml` | daily 06:00 UTC + manual | Infrastructure health and source-version updates |
+| `ai-security-agent.yml` | daily 22:00 UTC + manual | CrowdSec traffic review and defense updates |
 
-Each workflow is a single `just` command - all logic lives in the Justfiles under `terraform/` and `ansible/`. See [
-`terraform/README.md`](terraform/README.md) and [`ansible/README.md`](ansible/README.md).
+Utility workflows call `just` for secret synchronization or GitOps image updates.
+Daily agents collect read-only evidence and publish validated source changes through a shared controller. Packer images are built manually
+with `just --justfile packer/Justfile build workspace-vm`.
+Terraform and Ansible execution is local only. See [Daily maintenance agents](<docs/9 - Daily maintenance agents.md>) for schedules, boundaries and setup.
 
 ## Local development
 
-Same commands the workflows run:
+Run infrastructure commands locally:
 
 ```bash
 cd terraform && just list                              # every deployable

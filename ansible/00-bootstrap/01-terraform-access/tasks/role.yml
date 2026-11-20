@@ -1,0 +1,14 @@
+---
+- name: Create Terraform role
+  ansible.builtin.command:
+    cmd: pveum role add Terraform --privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Mapping.Audit,Mapping.Modify,Mapping.Use,Pool.Allocate,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.GuestAgent.Audit,VM.Migrate,VM.PowerMgmt,SDN.Use"
+  register: role_create
+  changed_when: role_create.rc == 0
+  failed_when:
+    - role_create.rc != 0
+    - '''already exists'' not in role_create.stderr'
+- name: Sync Terraform role privileges (update existing role)
+  ansible.builtin.command:
+    cmd: pveum role modify Terraform --privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Mapping.Audit,Mapping.Modify,Mapping.Use,Pool.Allocate,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.GuestAgent.Audit,VM.Migrate,VM.PowerMgmt,SDN.Use"
+  when: not role_create.changed
+  changed_when: true

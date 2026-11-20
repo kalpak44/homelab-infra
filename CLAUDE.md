@@ -27,20 +27,21 @@ file per resource** on Cloudflare R2 (S3-compatible backend). No monolithic root
 
 ### 2. Ansible - post-provisioning configuration
 
-Located in `ansible/`. Structure mirrors `terraform/proxmox/` 1:1. Every service dir owns its playbook + colocated
-`roles/`.
+Located in `ansible/`, grouped by execution stage: `00-bootstrap`, `01-networking`,
+`02-platform`, `03-vault`, `04-gitops`, and `05-services`. Optional runner and Proxmox
+TLS components live in `80-runner` and `81-proxmox-tls`; ongoing work lives in `90-maintenance`.
 
-- `ansible/proxmox/<name>/playbook.yml` + `roles/<name>/`
-- `ansible/proxmox/k3s-cluster/` has two playbooks (`cluster-setup.yml`, `flux-install.yml`)
-- `ansible/inventories/hosts.yml` - single flat inventory
-- `ansible/bootstrap/` - one-time fresh-Proxmox setup (Terraform user, base template artifacts, runner VM, TLS cert)
-- `ansible/Justfile` - `configure <resource>`, `bootstrap <ip>`, `list`
+- Each service owns its playbook and colocated `roles/`; its leaf name matches Terraform.
+- Bootstrap, runner and Proxmox TLS components own `.env`, `.env.example`, and `Justfile`.
+- `shared/tasks/` holds reusable tasks; `inventories/hosts.yml` holds host addresses.
+- Run component `just apply` locally or stable `just configure <resource>` service commands.
+- Keep the setup sequence and next steps in numbered `docs/` guides, not duplicate stage READMEs.
 
 ### 3. GitOps on k3s (Flux CD)
 
 Located in `gitops/` - reconciled automatically by Flux CD once the k3s cluster is up.
 
-- Flux CD (bootstrapped by `ansible/proxmox/k3s-cluster/flux-install.yml`) watches this repo and applies manifests.
+- Flux CD (bootstrapped by `ansible/04-gitops/flux/playbook.yml`) watches this repo and applies manifests.
 - Traefik ingress; cert-manager issues Let's Encrypt certs via Cloudflare DNS-01.
 - External Secrets Operator syncs from Vault into k8s secrets.
 - CrowdSec provides IDS/IPS + AppSec middleware.
@@ -86,16 +87,18 @@ homelab-infra/
 │   ├── auth0/<tenant>/             # one Auth0 tenant per app
 │   └── modules/{proxmox-lxc,proxmox-vm}/
 ├── ansible/
-│   ├── README.md
-│   ├── ansible.cfg
-│   ├── Justfile                    # just configure | os-update | bootstrap | list
+│   ├── 00-bootstrap/              # Proxmox access and base images
+│   ├── 01-networking/             # DNS
+│   ├── 02-platform/               # NFS and k3s
+│   ├── 03-vault/                  # Vault and secret helpers
+│   ├── 04-gitops/                 # Flux bootstrap
+│   ├── 05-services/               # Remaining standalone services
+│   ├── 80-runner/                 # Optional GitHub runner components
+│   ├── 81-proxmox-tls/            # Optional web-UI TLS components
+│   ├── 90-maintenance/            # Updates and node exporter
+│   ├── shared/                    # Common tasks and component launcher
 │   ├── inventories/hosts.yml
-│   ├── bootstrap/                  # one-time fresh-Proxmox setup (4 phase playbooks)
-│   ├── maintenance/                # os-update.yml - apt upgrade + ordered reboots
-│   └── proxmox/
-│       └── <service>/              # mirrors terraform/proxmox/
-│           ├── playbook.yml
-│           └── roles/<role>/
+│   └── Justfile                   # Stable configure and secret-helper commands
 ├── gitops/
 │   ├── README.md
 │   ├── Justfile                    # just bump-images | list
@@ -104,22 +107,10 @@ homelab-infra/
 │       ├── infrastructure/         # MetalLB, Traefik, cert-manager, NFS, External Secrets, CrowdSec
 │       └── apps/{public,private}/
 ├── .github/workflows/
-│   ├── cloudflare-deploy.yml       # just deploy cloudflare <resource>
-│   ├── cloudflare-destroy.yml      # just destroy cloudflare <resource>
-│   ├── proxmox-deploy.yml          # just deploy proxmox <resource>
-│   ├── proxmox-destroy.yml         # just destroy proxmox <resource>
-│   ├── github-deploy.yml           # just deploy github <repo>
-│   ├── github-destroy.yml          # just destroy github <repo>
-│   ├── stripe-deploy.yml           # just deploy stripe <resource>
-│   ├── stripe-destroy.yml          # just destroy stripe <resource>
-│   ├── auth0-deploy.yml            # just deploy auth0 <tenant>
-│   ├── auth0-destroy.yml           # just destroy auth0 <tenant>
-│   ├── ansible-configure.yml       # just configure <resource>
-│   ├── gitops-bump-images.yml      # just bump-images (daily cron 07:00 UTC)
-│   ├── scanners-bump-pins.yml      # just bump-scanners (weekly cron Mon 05:00 UTC)
-│   ├── packer-build.yml            # just build <image> in packer/ (weekly cron Mon 03:00 UTC)
-│   ├── ai-security-agent.yml       # CrowdSec review agent (nightly cron 22:00 UTC)
-│   └── ai-update-agent.yml         # third-party + OS updates (nightly cron 06:00 UTC)
+│   ├── ai-update-agent.yml         # daily 06:00 UTC; source pins and health
+│   ├── ai-security-agent.yml       # daily 22:00 UTC; CrowdSec traffic/rules
+│   ├── secrets-sync.yml            # manual Vault-to-Actions credential synchronization
+│   └── gitops-bump-images.yml      # GitOps image updates (daily + dispatch)
 └── .github/agent-prompts/
     ├── ai-security-agent.md        # what the security agent may and may not do
     └── ai-update-agent.md          # what the update agent may and may not do
@@ -134,8 +125,8 @@ homelab-infra/
   `backend.tf` with a unique R2 key. No cross-state refs; services reference shared Proxmox artifacts (VM 9000 template,
   LXC template file) by static string ID.
 - **DNS records live under `terraform/cloudflare/dns/{private,public}/<name>/`** - not in a shared file.
-- **Ansible dirs mirror Terraform dirs 1:1** – the Proxmox service that runs a workload has both a
-  `terraform/proxmox/<name>/` and an `ansible/proxmox/<name>/` dir with the same name.
+- **Ansible service names match Terraform** – use `terraform/proxmox/<name>/` and
+  `ansible/<stage>/<name>/`; choose the numbered stage by configuration prerequisites.
 - **`just` is the single entry point** – CI workflows and local shells call the same `just <recipe>` commands.
 - **TF_VAR_ / env-var flow** - workflows expose secrets as job-level env vars; `just` recipes and Terraform pick them
   up. Undeclared TF_VAR_/ansible extra vars are silently ignored, so one workflow can pass a union of vars safely.
@@ -143,10 +134,10 @@ homelab-infra/
 - **TLS**: in-cluster via Traefik + cert-manager (DNS-01); standalone VMs/LXCs via certbot with Cloudflare DNS plugin (
   Ansible roles).
 - **Secrets flow**: Vault → External Secrets Operator → Kubernetes Secret → app. LXC/VM roles read theirs from
-  Vault at configure time through `ansible/proxmox/_shared/vault-secret.yml` — see `.claude/rules/secrets.md`.
+  Vault at configure time through `ansible/shared/tasks/vault-secret.yml` — see `.claude/rules/secrets.md`.
 - **Self-hosted runner** lives at VM 101 on the Proxmox node.
 - **VM 9000 (ubuntu-2404-template) and the Ubuntu LXC template are unmanaged by Terraform** - created manually or by
-  `ansible/bootstrap/`. Deleting a proxmox/ state won't touch them.
+  `ansible/00-bootstrap/`. Deleting a proxmox/ state won't touch them.
 
 ## Adding or removing a service – what stays in sync
 
@@ -156,7 +147,7 @@ There is one dropdown entry, one dir, one description per resource. When adding 
 | What                       | For                            | Which files                                                                                                                    |
 |----------------------------|--------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
 | Terraform dir              | Provisioning                   | `terraform/cloudflare/{tunnels,zones}/...` or `terraform/proxmox/<name>/` (with `backend.tf` key `homelab/<layer>/<path>.tfstate`) |
-| Ansible dir                | Config (Proxmox services only) | `ansible/proxmox/<name>/playbook.yml` + `roles/<name>/`                                                                        |
+| Ansible dir                | Config (Proxmox services only) | `ansible/<stage>/<name>/playbook.yml` + `roles/<name>/`                                                                        |
 | Workflow dropdown          | CI                             | Choice list in the matching `.github/workflows/<layer>-{deploy,destroy}.yml` (and `ansible-configure.yml` when relevant)       |
 | `just list` recipe         | Local UX                       | Description line in `terraform/Justfile` and/or `ansible/Justfile`                                                             |
 | Root README services table | Source of truth                | `README.md`                                                                                                                    |

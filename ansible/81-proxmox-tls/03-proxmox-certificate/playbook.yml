@@ -1,0 +1,35 @@
+---
+- name: Issue the Proxmox TLS certificate
+  hosts: all
+  gather_facts: false
+  vars:
+    acme_account: "{{ lookup('ansible.builtin.env', 'ACME_ACCOUNT') | default('default', true) }}"
+    proxmox_domain: "{{ lookup('ansible.builtin.env', 'PROXMOX_DOMAIN') | default('proxmox.internal.pavel-usanli.online', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - proxmox_domain | length > 0
+        fail_msg: Fill the required inputs in this component’s .env before running.
+  tasks:
+    - name: Check if ACME domain is already bound
+      ansible.builtin.shell: "pvenode config get | grep -qF '{{ proxmox_domain }}'"
+      register: acme_domain_check
+      changed_when: false
+      failed_when: false
+    - name: Bind ACME domain to this node
+      ansible.builtin.command:
+        cmd: "pvenode config set --acme account={{ acme_account }} --acmedomain0 domain={{ proxmox_domain }},plugin=cloudflare"
+      when: acme_domain_check.rc != 0
+      changed_when: true
+    - name: Check current cert validity (skip order if valid for > 30 days)
+      ansible.builtin.shell: test -f /etc/pve/local/pveproxy-ssl.pem && openssl x509 -in /etc/pve/local/pveproxy-ssl.pem -noout -checkend 2592000
+      register: cert_valid
+      changed_when: false
+      failed_when: false
+    - name: Order Let's Encrypt certificate (this takes ~30s)
+      ansible.builtin.command: pvenode acme cert order --force
+      when: cert_valid.rc != 0
+      changed_when: true

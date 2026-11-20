@@ -1,0 +1,25 @@
+---
+- name: Register the Proxmox ACME account
+  hosts: all
+  gather_facts: false
+  vars:
+    acme_account: "{{ lookup('ansible.builtin.env', 'ACME_ACCOUNT') | default('default', true) }}"
+    acme_directory: "{{ lookup('ansible.builtin.env', 'ACME_DIRECTORY') | default('https://acme-v02.api.letsencrypt.org/directory', true) }}"
+    letsencrypt_email: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_EMAIL') | default('', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_email | length > 0
+        fail_msg: Fill the required inputs in this component’s .env before running.
+  tasks:
+    - name: Check for existing ACME account
+      ansible.builtin.command: pvenode acme account list
+      register: acme_accounts
+      changed_when: false
+    - name: "Register ACME account '{{ acme_account }}'"
+      ansible.builtin.command:
+        cmd: "pvenode acme account register {{ acme_account }} {{ letsencrypt_email }} --directory {{ acme_directory }}"
+      when: acme_account not in acme_accounts.stdout

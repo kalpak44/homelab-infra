@@ -1,0 +1,5 @@
+set dotenv-load := false
+
+# Apply only this component with its own environment.
+apply *args:
+    @bash ../../shared/run-component.sh "{{justfile_directory()}}" {{args}}

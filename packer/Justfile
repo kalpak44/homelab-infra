@@ -8,7 +8,7 @@
 # Packer boots a throwaway server, runs the image's setup on it, saves its disk and
 # deletes it.
 #
-# Env vars (the workflow injects them; locally they come from your shell):
+# Env vars come from the local .env or your shell:
 #   VAULT_USERNAME, VAULT_PASSWORD   read the Hetzner token from Vault
 #   (or a `vault login` session, or HCLOUD_TOKEN directly)
 #
@@ -48,7 +48,7 @@ build image:
         Darwin-arm64) platform=darwin_arm64; sha='{{packer_sha256_darwin_arm64}}' ;;
         *) echo "no pinned Packer for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
     esac
-    # Cached per version, so the runner downloads it once rather than on every build.
+    # Cache each version locally to avoid downloading it on every build.
     cache="${XDG_CACHE_HOME:-$HOME/.cache}/homelab-packer/{{packer_version}}"
     packer="$cache/packer"
     if [ ! -x "$packer" ]; then

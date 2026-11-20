@@ -1,14 +1,13 @@
 # Homelab Ansible
 #
 # Usage:
-#   just bootstrap <ip>                # one-time Proxmox setup (see bootstrap/README.md)
+#   Bootstrap: run just apply in 00-bootstrap/<part>/ (see docs/1 - Bootstrap.md)
 #   just configure <resource>          # per-service config, e.g. just configure adguard-lxc
 #   just configure k3s-cluster/flux    # runs the flux-install.yml variant
 #   just list                          # show all configurable resources
 #
-# Env vars (workflow injects them; locally come from your shell):
-#   CLOUDFLARE_API_TOKEN, LETSENCRYPT_EMAIL, PROXMOX_DOMAIN   (bootstrap)
-#   GITHUB_TOKEN (PAT with repo scope), GITHUB_REPO (owner/repo)    (bootstrap - runner auto-register)
+# Env vars come from the ignored root .env or your local shell:
+#   CLOUDFLARE_API_TOKEN, LETSENCRYPT_EMAIL   (service TLS)
 #   ADGUARD_USERNAME/PASSWORD, VAULT_USERNAME/PASSWORD,
 #   POSTGRESQL_USER/PASSWORD/DB, PGADMIN_EMAIL/PASSWORD,
 #   REDIS_PASSWORD, REDIS_COMMANDER_USER/PASSWORD,
@@ -24,19 +23,19 @@ _help:
 
 # Store local operator inputs in Vault without replacing differing values
 secrets-store:
-    @python3 bootstrap/secrets.py store
+    @python3 03-vault/operator-secrets/secrets.py store
 
 # Check that every workflow credential can be recovered from Vault
 secrets-check:
-    @python3 bootstrap/secrets.py check
+    @python3 03-vault/operator-secrets/secrets.py check
 
 # Recreate the ignored root .env from an authenticated Vault session
 secrets-restore:
-    @python3 bootstrap/secrets.py restore-env
+    @python3 03-vault/operator-secrets/secrets.py restore-env
 
 # Repopulate this repository's Actions secrets from Vault
 secrets-sync:
-    @python3 bootstrap/secrets.py sync-github
+    @python3 03-vault/operator-secrets/secrets.py sync-github
 
 # Install passlib + sshpass. Idempotent.
 [private]
@@ -63,10 +62,22 @@ configure resource: setup
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{resource}}" in
-      k3s-cluster)      playbook="proxmox/k3s-cluster/cluster-setup.yml" ;;
-      k3s-cluster/flux) playbook="proxmox/k3s-cluster/flux-install.yml" ;;
-      node-exporter)    playbook="maintenance/node-exporter.yml" ;;
-      *)                playbook="proxmox/{{resource}}/playbook.yml" ;;
+      k3s-cluster) playbook="02-platform/k3s-cluster/cluster-setup.yml" ;;
+      k3s-cluster/flux) playbook="04-gitops/flux/playbook.yml" ;;
+      node-exporter) playbook="90-maintenance/node-exporter.yml" ;;
+      adguard-lxc) playbook="01-networking/adguard-lxc/playbook.yml" ;;
+      nfs-vm) playbook="02-platform/nfs-vm/playbook.yml" ;;
+      vault-lxc) playbook="03-vault/vault-lxc/playbook.yml" ;;
+      cloudflared-lxc) playbook="05-services/cloudflared-lxc/playbook.yml" ;;
+      mihal-lxc) playbook="05-services/mihal-lxc/playbook.yml" ;;
+      postgres-lxc) playbook="05-services/postgres-lxc/playbook.yml" ;;
+      redis-lxc) playbook="05-services/redis-lxc/playbook.yml" ;;
+      prometheus-lxc) playbook="05-services/prometheus-lxc/playbook.yml" ;;
+      grafana-lxc) playbook="05-services/grafana-lxc/playbook.yml" ;;
+      rustfs-lxc) playbook="05-services/rustfs-lxc/playbook.yml" ;;
+      nocobase-lxc) playbook="05-services/nocobase-lxc/playbook.yml" ;;
+      portainer-vm) playbook="05-services/portainer-vm/playbook.yml" ;;
+      *) echo "Unknown resource: {{resource}}. Run just list." >&2; exit 1 ;;
     esac
     # Hosts that refuse password auth (nocobase-lxc) need a key. Harmless elsewhere:
     # sshd still falls back to the password every other host accepts.
@@ -115,38 +126,7 @@ configure resource: setup
       -e "flux_github_token=${FLUX_GITHUB_TOKEN:-}" \
       -e "cloudflare_tunnel_token=${CLOUDFLARE_TUNNEL_TOKEN:-}"
 
-# Bootstrap a fresh Proxmox node (SSH key auth) - see bootstrap/README.md
-bootstrap ip user='root': setup
-    ansible-playbook -i "{{ip}}," -u {{user}} \
-      -e "host_password=${HOST_PASSWORD:-}" \
-      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
-      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
-      -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
-      -e "github_token=${GITHUB_TOKEN:-}" \
-      -e "github_repo=${GITHUB_REPO:-}" \
-      bootstrap/main.yml
-
-# Bootstrap a fresh Proxmox node (SSH password prompt - fresh node with no keys)
-bootstrap-pw ip user='root': setup
-    ansible-playbook -i "{{ip}}," -u {{user}} --ask-pass \
-      -e "host_password=${HOST_PASSWORD:-}" \
-      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
-      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
-      -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
-      -e "github_token=${GITHUB_TOKEN:-}" \
-      -e "github_repo=${GITHUB_REPO:-}" \
-      bootstrap/main.yml
-
-# Re-run only the Proxmox TLS phase (renew cert / refresh a rotated Cloudflare token)
-bootstrap-tls: setup
-    ansible-playbook --limit proxmox_host \
-      -e "host_password=${HOST_PASSWORD:-}" \
-      -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
-      -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
-      -e "proxmox_domain=${PROXMOX_DOMAIN:-proxmox.internal.pavel-usanli.online}" \
-      bootstrap/04-proxmox-tls.yml
-
-# The play order in maintenance/os-update.yml is deliberate - do not narrow it by editing
+# The play order in 90-maintenance/os-update.yml is deliberate - do not narrow it by editing
 # the playbook, pass `host` instead.
 # Patch every LXC/VM and reboot what needs it (host limits the run to one)
 os-update host='': setup
@@ -174,16 +154,14 @@ os-update host='': setup
         echo "warning: SSH_PRIVATE_KEY did not parse; falling back to password auth" >&2
       fi
     fi
-    ansible-playbook maintenance/os-update.yml ${limit_args[@]+"${limit_args[@]}"} \
+    ansible-playbook 90-maintenance/os-update.yml ${limit_args[@]+"${limit_args[@]}"} \
       ${key_args[@]+"${key_args[@]}"} \
       -e "host_password=${HOST_PASSWORD:-}"
 
 # List every configurable resource
 list:
-    @echo "Bootstrap (one-time, fresh Proxmox node):"
-    @printf "  %-24s %s\n" "bootstrap <ip>"    "Full bootstrap - Terraform user, base artifacts, runner VM, TLS cert"
-    @printf "  %-24s %s\n" "bootstrap-pw <ip>" "Same, but prompts for SSH password (no key access yet)"
-    @printf "  %-24s %s\n" "bootstrap-tls" "TLS phase only - renew the cert or refresh a rotated Cloudflare token"
+    @echo "Bootstrap (each component has its own .env and Justfile):"
+    @printf "  %-30s %s\n" "00-bootstrap/<part>/Justfile" "Run just apply in the component directory; see docs/1 - Bootstrap.md"
     @echo
     @echo "Configure (per-service, run after Terraform provisions the host):"
     @printf "  %-24s %s\n" "adguard-lxc"      "AdGuard Home - network-wide DNS ad-blocker"

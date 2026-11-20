@@ -1,0 +1,26 @@
+---
+- name: Install GitHub CLI
+  hosts: all
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Add GitHub CLI apt keyring
+      ansible.builtin.shell:
+        cmd: curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/githubcli-archive-keyring.gpg
+    - name: Add GitHub CLI apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/github-cli.list
+        content: |
+          deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main
+        mode: '0644'
+    - name: Install gh
+      ansible.builtin.apt:
+        name:
+          - gh
+        state: present
+        update_cache: true

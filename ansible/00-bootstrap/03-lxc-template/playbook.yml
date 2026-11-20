@@ -1,0 +1,18 @@
+---
+- name: Download the Ubuntu LXC template
+  hosts: all
+  gather_facts: false
+  vars:
+    lxc_template: "{{ lookup('ansible.builtin.env', 'LXC_TEMPLATE') | default('ubuntu-24.04-standard_24.04-2_amd64.tar.zst', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Refresh pveam catalog
+      ansible.builtin.command: pveam update
+      changed_when: false
+    - name: Download Ubuntu 24.04 LXC template
+      ansible.builtin.command:
+        cmd: "pveam download local {{ lxc_template }}"
+      args:
+        creates: "/var/lib/vz/template/cache/{{ lxc_template }}"

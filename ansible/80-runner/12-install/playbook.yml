@@ -1,0 +1,56 @@
+---
+- name: Install GitHub Actions runner binaries
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    runner_version: "{{ lookup('ansible.builtin.env', 'RUNNER_VERSION') | default('2.338.2', true) }}"
+    runner_dir: "{{ lookup('ansible.builtin.env', 'RUNNER_DIR') | default('/home/ubuntu/actions-runner', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Ensure actions-runner directory exists
+      ansible.builtin.file:
+        path: "{{ runner_dir }}"
+        state: directory
+        mode: '0755'
+        owner: ubuntu
+        group: ubuntu
+    - name: Check installed runner version
+      ansible.builtin.shell: "{{ runner_dir }}/bin/Runner.Listener --version 2>/dev/null || echo \"0.0.0\""
+      register: installed_runner_version
+      changed_when: false
+    - name: Check for an installed runner service
+      ansible.builtin.stat:
+        path: "{{ runner_dir }}/.service"
+      register: runner_service
+    - name: Stop an installed runner before upgrading
+      ansible.builtin.command: ./svc.sh stop
+      args:
+        chdir: "{{ runner_dir }}"
+      when: runner_service.stat.exists and installed_runner_version.stdout | trim != runner_version
+    - name: "Download GitHub Actions runner v{{ runner_version }}"
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        dest: /tmp/actions-runner.tar.gz
+        mode: '0644'
+      when: installed_runner_version.stdout | trim != runner_version
+    - name: Extract runner binary
+      ansible.builtin.unarchive:
+        src: /tmp/actions-runner.tar.gz
+        dest: "{{ runner_dir }}"
+        remote_src: true
+        owner: ubuntu
+        group: ubuntu
+      when: installed_runner_version.stdout | trim != runner_version
+      register: runner_extracted
+    - name: Check whether the runner is registered
+      ansible.builtin.stat:
+        path: "{{ runner_dir }}/.runner"
+      register: runner_config
+    - name: Restart a registered runner after upgrading
+      ansible.builtin.command: ./svc.sh start
+      args:
+        chdir: "{{ runner_dir }}"
+      when: runner_service.stat.exists and runner_config.stat.exists and runner_extracted.changed

@@ -71,7 +71,7 @@ spec:
 ## TLS for standalone VMs / LXCs
 
 Handled by **certbot** with the Cloudflare DNS plugin (provisioned via each service's Ansible role under
-`ansible/proxmox/<name>/roles/<role>/`).
+`ansible/<stage>/<name>/roles/<role>/`).
 Credentials stored at `/etc/letsencrypt/cloudflare.ini` on each host.
 DNS propagation delay: 30 s.
 
@@ -92,7 +92,7 @@ DNS propagation delay: 30 s.
    `terraform/cloudflare/zones/pavel-usanli.online/internal/main.tf`.
 2. Copy an existing Proxmox dir (`terraform/proxmox/adguard-lxc` or `proxmox/portainer-vm`), edit `main.tf` for the new
    host + `backend.tf`.
-3. Copy the matching Ansible dir (`ansible/proxmox/adguard-lxc` etc.), edit playbook + role for the new service. Include
+3. Copy the matching Ansible dir (`ansible/01-networking/adguard-lxc` etc.), edit playbook + role for the new service. Include
    certbot with the Cloudflare DNS plugin for TLS if the service serves HTTPS.
 4. Add the host to `ansible/inventories/hosts.yml`.
 5. Add the new resource name to every relevant workflow dropdown (`proxmox-{deploy,destroy}.yml`,

@@ -1,0 +1,81 @@
+---
+prometheus_version: "3.16.0"
+node_exporter_version: "1.13.1"
+blackbox_exporter_version: "0.29.1"
+
+prometheus_port: 9090
+node_exporter_port: 9100
+blackbox_exporter_port: 9115
+prometheus_config_dir: /etc/prometheus
+blackbox_exporter_config_dir: /etc/blackbox_exporter
+# Matches data_disk_path in terraform/proxmox/prometheus-lxc/main.tf — the TSDB
+# is the only thing on that volume.
+prometheus_data_dir: /var/lib/prometheus
+prometheus_scrape_interval: 15s
+
+# Both caps are enforced, whichever is reached first. The size is held well under
+# the 20G data volume: Prometheus deletes a block only after it is written, so a
+# cap at the disk size fills the disk before the first deletion.
+prometheus_retention_time: 30d
+prometheus_retention_size: 15GB
+
+prometheus_tls_enabled: true
+prometheus_tls_domain: "prometheus.internal.pavel-usanli.online"
+prometheus_cert_path: "/etc/prometheus/tls/cert.pem"
+prometheus_key_path: "/etc/prometheus/tls/key.pem"
+
+# One entry per extra target: {name: <job>, targets: ["host:port"]}, with optional
+# scheme and metrics_path. The server and its own node_exporter are scraped
+# unconditionally.
+prometheus_extra_scrape_jobs:
+  # Status, method and latency per entryPoint, router and service. No client address:
+  # that comes from traefik-requests below.
+  - name: traefik
+    scheme: https
+    targets: ["traefik.internal.pavel-usanli.online"]
+  # Per-source request counters from gitops/.../infrastructure/request-metrics. One
+  # target per k3s node, on its hostPort: a pod only has data on the node running Traefik.
+  - name: traefik-requests
+    targets: ["k3s-1.internal.pavel-usanli.online:9598", "k3s-2.internal.pavel-usanli.online:9598"]
+
+# Scraped as the `hosts` job, one target per inventory host, labeled with its name.
+# Must match the hosts ansible/90-maintenance/node-exporter.yml installs on.
+# Each host is scraped as <inventory name>.<this>, so each needs a record under
+# terraform/cloudflare/zones/pavel-usanli.online/internal/ or its target fails to resolve.
+node_exporter_scrape_domain: internal.pavel-usanli.online
+node_exporter_scrape_hosts: "{{ (groups['proxmox_host'] + groups['lxc'] + groups['k3s'] + groups['vm']) | difference(['prometheus']) | sort }}"
+
+# Probed through blackbox_exporter as the `probes` job. Entries sharing a service form one
+# timeline on the Service health dashboard, down when any of them fails. An https target
+# also fails on an expired or untrusted certificate.
+prometheus_probes:
+  - service: adguard
+    module: http_2xx
+    target: https://adguard.internal.pavel-usanli.online
+  - service: adguard
+    module: dns_udp
+    target: adguard.internal.pavel-usanli.online:53
+  - service: traefik
+    module: http_2xx
+    target: https://traefik.internal.pavel-usanli.online/
+  - service: portainer
+    module: http_2xx
+    target: https://portainer.internal.pavel-usanli.online/api/system/status
+  # 200 only while initialised, unsealed and active: a sealed Vault answers 503.
+  - service: vault
+    module: http_2xx
+    target: https://vault.internal.pavel-usanli.online:8200/v1/sys/health
+  - service: pgadmin
+    module: http_2xx
+    target: https://pgadmin.internal.pavel-usanli.online/pgadmin4/misc/ping
+  - service: rustfs
+    module: http_2xx
+    target: https://rustfs.internal.pavel-usanli.online/health
+  - service: postgres
+    module: tcp_connect
+    target: postgres.internal.pavel-usanli.online:5432
+  # Out through Cloudflare and back in over the tunnel, so it covers the whole public path.
+  # The certificate checked is Cloudflare's edge certificate, not the origin's.
+  - service: personal-web-page
+    module: http_2xx
+    target: https://www.pavel-usanli.online/

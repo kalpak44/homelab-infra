@@ -1,0 +1,22 @@
+---
+- name: Install runner base packages
+  hosts: all
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Install apt packages
+      ansible.builtin.apt:
+        name:
+          - python3-pip
+          - python3-passlib
+          - git
+          - curl
+          - unzip
+          - jq
+          - sshpass
+          - python3-yaml
+        state: present
+        update_cache: true

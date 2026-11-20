@@ -1,0 +1,9 @@
+---
+- name: Create terraform@pve user
+  ansible.builtin.command:
+    cmd: pveum user add terraform@pve --comment "Terraform automation"
+  register: user_create
+  changed_when: user_create.rc == 0
+  failed_when:
+    - user_create.rc != 0
+    - '''already exists'' not in user_create.stderr'

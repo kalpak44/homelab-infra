@@ -1,0 +1,50 @@
+---
+- name: Enable password SSH in the LXC template
+  hosts: all
+  gather_facts: false
+  vars:
+    lxc_template: "{{ lookup('ansible.builtin.env', 'LXC_TEMPLATE') | default('ubuntu-24.04-standard_24.04-2_amd64.tar.zst', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+  tasks:
+    - name: Check if SSH password-auth drop-in already patched into LXC template
+      ansible.builtin.shell: |
+        tar -I zstd -tf /var/lib/vz/template/cache/{{ lxc_template }} \
+          | grep -qF "etc/ssh/sshd_config.d/99-password-login.conf"
+      register: lxc_template_patched
+      changed_when: false
+      failed_when: false
+    - name: Patch LXC template – enable SSH password auth
+      when: lxc_template_patched.rc != 0
+      block:
+        - name: Create temp dir for template extraction
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: lxc-patch
+          register: lxc_patch_dir
+        - name: Extract LXC template
+          ansible.builtin.command:
+            cmd: "tar -I zstd -xf /var/lib/vz/template/cache/{{ lxc_template }} -C {{ lxc_patch_dir.path }}"
+        - name: Ensure sshd_config.d exists in extracted rootfs
+          ansible.builtin.file:
+            path: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d"
+            state: directory
+            mode: '0755'
+        - name: Write SSH password-auth drop-in
+          ansible.builtin.copy:
+            dest: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d/99-password-login.conf"
+            content: |
+              PermitRootLogin yes
+              PasswordAuthentication yes
+              UsePAM yes
+            mode: '0644'
+        - name: Repack LXC template
+          ansible.builtin.command:
+            cmd: "tar -I zstd -cf /var/lib/vz/template/cache/{{ lxc_template }} --numeric-owner -C {{ lxc_patch_dir.path }} ."
+      always:
+        - name: Remove temp extraction dir
+          ansible.builtin.file:
+            path: "{{ lxc_patch_dir.path }}"
+            state: absent
+          when: lxc_patch_dir.path is defined

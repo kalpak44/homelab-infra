@@ -1,0 +1,51 @@
+---
+- name: Create and start the runner VM
+  hosts: all
+  gather_facts: false
+  vars:
+    runner_id: "{{ lookup('ansible.builtin.env', 'RUNNER_ID') | default('101', true) }}"
+    runner_ip: "{{ lookup('ansible.builtin.env', 'RUNNER_IP') | default('192.168.1.101', true) }}"
+    runner_gw: "{{ lookup('ansible.builtin.env', 'RUNNER_GW') | default('192.168.1.1', true) }}"
+    runner_storage: "{{ lookup('ansible.builtin.env', 'RUNNER_STORAGE') | default('local-lvm', true) }}"
+    cloud_image_dest: "{{ lookup('ansible.builtin.env', 'CLOUD_IMAGE_DEST') | default('/var/lib/vz/template/iso/noble-server-cloudimg-amd64.img', true) }}"
+    host_password: "{{ lookup('ansible.builtin.env', 'HOST_PASSWORD') | default('', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - host_password | length > 0
+        fail_msg: Fill the required inputs in this component’s .env before running.
+  tasks:
+    - name: "Check if runner VM {{ runner_id }} already exists"
+      ansible.builtin.command: "qm status {{ runner_id }}"
+      register: runner_vm_status
+      changed_when: false
+      failed_when: false
+    - name: "Create runner VM {{ runner_id }}"
+      when: runner_vm_status.rc != 0
+      block:
+        - name: qm create
+          ansible.builtin.command:
+            cmd: "qm create {{ runner_id }} --name github-runner --memory 2048 --cores 2 --net0 virtio,bridge=vmbr0 --ostype l26"
+        - name: qm importdisk
+          ansible.builtin.command:
+            cmd: "qm importdisk {{ runner_id }} {{ cloud_image_dest }} {{ runner_storage }}"
+        - name: qm set (disk + cloud-init + IP + password auth)
+          ansible.builtin.shell:
+            cmd: "qm set {{ runner_id }} --scsihw virtio-scsi-pci --scsi0 {{ runner_storage }}:vm-{{ runner_id }}-disk-0 --ide2 {{ runner_storage }}:cloudinit --boot order=scsi0 --serial0 socket --vga serial0 --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }} --ciuser ubuntu --cipassword {{ host_password | quote }} --cicustom vendor=local:snippets/vm-ssh-password.yaml --onboot 1 --agent enabled=1"
+          no_log: true
+        - name: qm start
+          ansible.builtin.command:
+            cmd: "qm start {{ runner_id }}"
+    - name: Ensure runner VM is started
+      ansible.builtin.command: "qm start {{ runner_id }}"
+      register: runner_start
+      changed_when: runner_start.rc == 0
+      failed_when: runner_start.rc != 0 and 'already running' not in runner_start.stderr
+    - name: Wait for runner VM SSH to come up
+      ansible.builtin.wait_for:
+        host: "{{ runner_ip }}"
+        port: 22
+        timeout: 300

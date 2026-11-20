@@ -1,0 +1,12 @@
+---
+- name: Configure Redis
+  hosts: redis
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Enable root SSH + rotate password
+      ansible.builtin.import_tasks: ../../shared/tasks/enable-root-ssh.yml
+
+  roles:
+    - redis

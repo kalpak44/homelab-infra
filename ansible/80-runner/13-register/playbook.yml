@@ -1,0 +1,62 @@
+---
+- name: Register and start the GitHub Actions runner
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    runner_dir: "{{ lookup('ansible.builtin.env', 'RUNNER_DIR') | default('/home/ubuntu/actions-runner', true) }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') | default('', true) }}"
+    github_repo: "{{ lookup('ansible.builtin.env', 'GITHUB_REPO') | default('kalpak44/homelab-infra', true) }}"
+  pre_tasks:
+    - name: Read this component’s connection credentials
+      ansible.builtin.import_tasks: ../../shared/connection.yml
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - github_token | length > 0
+          - github_repo | length > 0
+        fail_msg: Fill the required inputs in this component’s .env before running.
+  tasks:
+    - name: Check if runner already configured
+      ansible.builtin.stat:
+        path: "{{ runner_dir }}/.runner"
+      register: runner_config
+    - name: Check if runner service already installed
+      ansible.builtin.shell: systemctl list-units --type=service --all | grep -q 'actions.runner'
+      register: runner_service_check
+      changed_when: false
+      failed_when: false
+    - name: Request a runner registration token
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ github_repo }}/actions/runners/registration-token"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ github_token }}"
+          Accept: application/vnd.github+json
+        status_code: 201
+      register: registration
+      when: not runner_config.stat.exists
+      no_log: true
+    - name: Configure GitHub Actions runner
+      ansible.builtin.command:
+        cmd: "./config.sh --url https://github.com/{{ github_repo }} --token {{ registration.json.token }} --name github-runner --unattended --replace"
+        chdir: "{{ runner_dir }}"
+      become_user: ubuntu
+      when: not runner_config.stat.exists
+      register: runner_configured
+      no_log: true
+    - name: Install runner service
+      ansible.builtin.command:
+        cmd: ./svc.sh install ubuntu
+        chdir: "{{ runner_dir }}"
+      when:
+        - runner_service_check.rc != 0
+        - runner_config.stat.exists or (runner_configured is defined and runner_configured.changed)
+    - name: Start runner service
+      ansible.builtin.command:
+        cmd: ./svc.sh start
+        chdir: "{{ runner_dir }}"
+      when: runner_config.stat.exists or runner_configured.changed
+    - name: Verify runner service is active
+      ansible.builtin.shell: systemctl list-units --type=service --state=active | grep -q 'actions.runner'
+      changed_when: false
