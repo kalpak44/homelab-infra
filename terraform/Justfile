@@ -4,7 +4,7 @@
 #   just deploy  <layer> <resource>   # e.g. just deploy cloudflare zones/pavel-usanli.online/internal
 #   just destroy <layer> <resource>   # e.g. just destroy proxmox adguard-lxc
 #
-# Layers: cloudflare | proxmox | github | stripe | auth0
+# Layers: cloudflare | proxmox | github | stripe | auth0 | aws
 # Resource: subdir under the layer (see `just list`)
 #
 # Env vars (must be set - the workflow injects them, locally they come from your shell).
@@ -21,6 +21,7 @@
 #   MJ_APIKEY_PUBLIC, MJ_APIKEY_PRIVATE                                     (auth0 layer)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set dotenv-load := true
 
 _help:
     @just --list
@@ -29,6 +30,10 @@ _help:
 deploy layer resource:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ "{{layer}}" = aws ]; then
+      exec bash aws/terraform.sh deploy "{{resource}}"
+    fi
+    unset AWS_PROFILE AWS_DEFAULT_PROFILE AWS_CONFIG_FILE AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
     export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
     export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
     export AWS_ENDPOINT_URL_S3="${R2_ENDPOINT:-}"
@@ -77,6 +82,10 @@ deploy layer resource:
 destroy layer resource:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ "{{layer}}" = aws ]; then
+      exec bash aws/terraform.sh destroy "{{resource}}"
+    fi
+    unset AWS_PROFILE AWS_DEFAULT_PROFILE AWS_CONFIG_FILE AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
     export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
     export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
     export AWS_ENDPOINT_URL_S3="${R2_ENDPOINT:-}"
@@ -109,6 +118,10 @@ destroy layer resource:
 output layer resource name:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ "{{layer}}" = aws ]; then
+      exec bash aws/terraform.sh output "{{resource}}" "{{name}}"
+    fi
+    unset AWS_PROFILE AWS_DEFAULT_PROFILE AWS_CONFIG_FILE AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
     export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
     export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
     export AWS_ENDPOINT_URL_S3="${R2_ENDPOINT:-}"
@@ -121,6 +134,14 @@ output layer resource name:
     # it refuses objects and lists outright (saas_customer_onboarding is one), so
     # fall back to -json rather than making every caller know which kind it is.
     terraform output -raw {{name}} 2>/dev/null || terraform output -json {{name}}
+
+# Preview AWS changes without applying them
+plan-aws resource:
+    @bash aws/terraform.sh plan "{{resource}}"
+
+# Refresh the local aws-admin SSO session
+aws-login:
+    @AWS_CONFIG_FILE="{{justfile_directory()}}/aws/config" aws sso login --profile aws-admin
 
 # Point the syft/grype pins at the newest upstream release, then apply what moved
 bump-scanners:
@@ -251,6 +272,9 @@ bump-scanners:
 
 # List every deployable resource with a short description
 list:
+    @echo "AWS - personal account (just deploy aws <account>/<concern>):"
+    @printf "  %-30s %s\n" "personal/account" "039959484327 · aws-admin SSO · Frankfurt · read-only identity check"
+    @echo
     @echo "Cloudflare - tunnels + zones (just deploy cloudflare <resource>):"
     @echo "  tunnels (one state per tunnel: its ingress, the records pointing at it, WARP)"
     @printf "    %-40s %s\n" "tunnels/homelab"                         "k3s tunnel · public hostnames in every zone, SaaS custom hostnames, WARP to nocobase"

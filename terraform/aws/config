@@ -1,0 +1,15 @@
+[profile aws-admin]
+sso_session = homelab
+sso_account_id = 039959484327
+sso_role_name = AdministratorAccess
+region = eu-central-1
+output = json
+
+[sso-session homelab]
+sso_start_url = https://d-9967b02380.awsapps.com/start/
+sso_region = eu-central-1
+sso_registration_scopes = sso:account:access
+
+[profile homelab-r2]
+credential_process = python3 ../../r2-credentials.py
+region = auto

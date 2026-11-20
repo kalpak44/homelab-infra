@@ -26,6 +26,8 @@ id_ed25519*
 vault_pass.txt
 .vault_pass
 .env
+.env.*
+!.env.example
 
 # OS
 .DS_Store
@@ -38,4 +40,5 @@ Thumbs.db
 *.swo
 
 # Scripts
+__pycache__/
 *.log

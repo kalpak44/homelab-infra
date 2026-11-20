@@ -1,10 +1,17 @@
 # Rules – Secrets
 
-**A service's credentials live in Vault, never in the repository and never as a new CI secret.**
-Every role that configures an app with a login, key or token reads it from Vault at configure
-time through `ansible/proxmox/_shared/vault-secret.yml`. The only credentials outside Vault are
-the ones needed to reach it or to build it: `VAULT_USERNAME`/`VAULT_PASSWORD`, `HOST_PASSWORD`,
-the Proxmox, R2 and Cloudflare tokens. A new service adds none of these.
+**Vault is the source of truth for every infrastructure and service secret.**
+Roles using `ansible/proxmox/_shared/vault-secret.yml` read service credentials at
+configure time. Bootstrap/operator inputs live in `secret/homelab-infra-secrets`;
+the ignored root `.env` and GitHub Actions secrets hold the copies needed before
+Vault is reachable. New service credentials belong in per-service Vault records.
+The `external-secrets` policy explicitly denies the bootstrap record; keep that
+deny when changing the broader service-secret read policy.
+
+Proxmox access, Cloudflare/R2 recovery and a protected initial `.env` are sufficient
+for bootstrap recovery into a fresh Vault. Existing Vault-only secrets need a separate
+backup/export or deliberate regeneration. Terraform state stays in R2; Vault data does not. Follow
+`ansible/bootstrap/RECOVERY.md` for first deployment and recovery order.
 
 ## Using it in a role
 
@@ -34,10 +41,16 @@ the Proxmox, R2 and Cloudflare tokens. A new service adds none of these.
 
 ## Managing secrets locally
 
-The Vault CLI reads `VAULT_ADDR` from `~/.zprofile`; log in once and the token is cached in
-`~/.vault-token`:
+Local operator credentials and `VAULT_ADDR` live in the gitignored root `.env` (mode
+`0600`). Justfiles load it automatically without overriding injected CI variables.
+Use the root `.env.example` comment template to distinguish initial bootstrap inputs
+from later service/optional inputs. `secrets-restore` preserves these comments when
+recreating `.env`. Keep its protected recovery copy outside the host being rebuilt.
+For direct Vault commands, source `.env` from the repository root first. The Vault
+token is cached in `~/.vault-token`:
 
 ```bash
+source .env
 vault login -method=userpass username="$VAULT_USERNAME"
 vault kv list secret/
 vault kv get secret/rustfs-secrets
@@ -45,5 +58,5 @@ vault kv put secret/<app>-secrets key=value ...     # replaces every key
 vault kv patch secret/<app>-secrets key=value       # changes one key
 ```
 
-Never paste a value into a file under this repository, a commit message or a PR. A role or
+Never paste a value into a tracked file, a commit message or a PR. A role or
 document that needs to tell a person where a credential is names the Vault path, not the value.

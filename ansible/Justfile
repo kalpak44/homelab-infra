@@ -17,9 +17,26 @@
 #   SSH_PRIVATE_KEY (operator key, base64 or PEM; required where password auth is off)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set dotenv-load := true
 
 _help:
     @just --list
+
+# Store local operator inputs in Vault without replacing differing values
+secrets-store:
+    @python3 bootstrap/secrets.py store
+
+# Check that every workflow credential can be recovered from Vault
+secrets-check:
+    @python3 bootstrap/secrets.py check
+
+# Recreate the ignored root .env from an authenticated Vault session
+secrets-restore:
+    @python3 bootstrap/secrets.py restore-env
+
+# Repopulate this repository's Actions secrets from Vault
+secrets-sync:
+    @python3 bootstrap/secrets.py sync-github
 
 # Install passlib + sshpass. Idempotent.
 [private]

@@ -475,6 +475,13 @@
   ansible.builtin.shell:
     cmd: |
       vault policy write external-secrets - <<'POLICY'
+      # Bootstrap credentials must never be copied into workload namespaces.
+      path "secret/data/homelab-infra-secrets" {
+        capabilities = ["deny"]
+      }
+      path "secret/metadata/homelab-infra-secrets" {
+        capabilities = ["deny"]
+      }
       path "secret/data/*" {
         capabilities = ["read"]
       }

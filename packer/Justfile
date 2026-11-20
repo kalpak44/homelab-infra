@@ -16,6 +16,7 @@
 # manager uses, so building one needs no credential of its own.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set dotenv-load := true
 
 packer_version := "1.16.2"
 # From releases.hashicorp.com/packer/<version>/packer_<version>_SHA256SUMS. Pinned here

@@ -7,7 +7,7 @@ triggered manually from GitHub Actions on a self-hosted runner, or locally via `
 
 ```
 homelab-infra/
-├── terraform/     # Proxmox, Cloudflare, GitHub repos, Stripe, Auth0   →  see terraform/README.md
+├── terraform/     # Proxmox, Cloudflare, GitHub repos, Stripe, Auth0, AWS → see terraform/README.md
 ├── ansible/       # Post-provisioning for Proxmox services →  see ansible/README.md
 ├── gitops/        # Flux CD manifests (k3s workloads)      →  see gitops/README.md
 └── .github/workflows/
@@ -21,6 +21,9 @@ homelab-infra/
     ├── stripe-destroy.yml       | Stripe     - Destroy
     ├── auth0-deploy.yml         | Auth0      - Deploy
     ├── auth0-destroy.yml        | Auth0      - Destroy
+    ├── aws-deploy.yml           | AWS        - Deploy
+    ├── aws-destroy.yml          | AWS        - Destroy
+    ├── secrets-sync.yml         | Secrets    - Sync from Vault
     ├── ansible-configure.yml    | Ansible    - Configure
     ├── gitops-bump-images.yml   | GitOps     - Bump images
     ├── scanners-bump-pins.yml   | Scanners   - Bump pins
@@ -38,6 +41,14 @@ Detailed usage lives in the sub-READMEs. This document covers **one-time setup**
 ---
 
 ## Setup
+
+Start with the [deployment and recovery runbook](ansible/bootstrap/RECOVERY.md) for
+the dependency order. Vault is the secret source of truth; `.env` and Actions secrets
+are bootstrap/runtime copies. Terraform state stays in Cloudflare R2. Recovery starts
+with Proxmox and Cloudflare/R2 access plus a protected initial `.env`. Its comments
+explain the inputs and deployment stages; [.env.example](.env.example) is the safe
+template. A Vault backup is needed to preserve Vault-only secrets, not to build a
+fresh Vault from those initial inputs.
 
 ### 1. Cloudflare R2 – create bucket and API token
 
@@ -95,8 +106,6 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `HOST_PASSWORD`                                                      | Root password for every LXC/VM (SSH + console). Bootstrap bakes it in; Ansible keeps it in sync.             |
 | `CLOUDFLARE_API_TOKEN`                                               | Cloudflare token with `Zone:DNS:Edit` + email routing perms (see below)                                      |
 | `LETSENCRYPT_EMAIL`                                                  | Email for Let's Encrypt registration                                                                         |
-| `GITHUB_TOKEN`                                                       | PAT with `repo` scope – bootstrap auto-registers the runner (optional; skipped if unset)                     |
-| `GITHUB_REPO`                                                        | `owner/repo` slug for runner registration, e.g. `pnueli/homelab-infra` (required when `GITHUB_TOKEN` is set) |
 | `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`                               | AdGuard admin creds                                                                                          |
 | `VAULT_USERNAME`, `VAULT_PASSWORD`                                   | Vault admin creds (alphanumeric)                                                                             |
 | `POSTGRESQL_DB`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`            | Postgres bootstrap creds                                                                                     |
@@ -109,6 +118,11 @@ See [`ansible/bootstrap/README.md`](ansible/bootstrap/README.md) for required en
 | `DEEPSEEK_APIKEY`                                                    | DeepSeek API key – published to each managed repo for the AI maintenance agent                                        |
 | `SONAR_TOKEN`                                                        | SonarCloud token – optional, `bunker-party` only; mirrored into its Dependabot secret store so the quality gate runs on Dependabot PRs |
 | `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`             | The Auth0 tenant's Terraform machine-to-machine app (all Management API scopes) – `auth0/` layer |
+
+Runner bootstrap additionally uses local `.env` entries `GITHUB_TOKEN` (registration
+PAT) and `GITHUB_REPO` (`kalpak44/homelab-infra`). These are not Actions secrets:
+`GITHUB_TOKEN` is reserved for GitHub's built-in job token. The Vault archive also
+retains the local registration inputs for recovery.
 
 ### 4. Cloudflare API token - required scopes
 
@@ -259,7 +273,7 @@ To retrieve the tunnel token after deploying `cloudflare/tunnels/homelab`:
 cd terraform && just output cloudflare tunnels/homelab tunnel_token
 ```
 
-Save the printed value as `CLOUDFLARE_TUNNEL_TOKEN` in your shell (`~/.zshenv`) and as a GitHub Actions secret.
+Save the printed value as `CLOUDFLARE_TUNNEL_TOKEN` in the ignored root `.env` and as a GitHub Actions secret.
 Then configure the daemon:
 
 ```bash
@@ -529,6 +543,19 @@ The built-in `GITHUB_TOKEN` cannot manage other repositories, so this layer need
 
 ---
 
+## AWS account
+
+| Account | Terraform dir | Purpose |
+|---------|---------------|---------|
+| `039959484327` (personal) | `aws/personal/account` | Read-only identity check; `aws-admin` SSO with `AdministratorAccess`, Frankfurt region |
+
+Local environment variables are in the gitignored `.env`; `just` loads it automatically.
+For direct AWS CLI commands, run `source .env` from the repository root.
+Authentication uses temporary SSO credentials. Terraform state
+stays on R2 with separate credentials. Cost alerts will get their own concern later.
+See [AWS setup](terraform/aws/README.md) for local commands and the remaining GitHub
+OIDC setup. The AWS workflows are prepared but need `AWS_TERRAFORM_ROLE_ARN` configured.
+
 ## CI
 
 Every workflow runs on the self-hosted runner; the scheduled ones can also be dispatched by hand:
@@ -545,6 +572,9 @@ Every workflow runs on the self-hosted runner; the scheduled ones can also be di
 | `stripe-destroy.yml`     | `stripe/<account>`                   | `just destroy stripe <resource>`     |
 | `auth0-deploy.yml`       | `auth0/<tenant>`                | `just deploy auth0 <resource>`       |
 | `auth0-destroy.yml`      | `auth0/<tenant>`                | `just destroy auth0 <resource>`      |
+| `aws-deploy.yml`         | `aws/<account>/<concern>`       | `just deploy aws <resource>`         |
+| `aws-destroy.yml`        | `aws/<account>/<concern>`       | `just destroy aws <resource>`        |
+| `secrets-sync.yml`       | Vault operator inputs          | `just secrets-sync` (in `ansible/`)   |
 | `ansible-configure.yml`  | 13 services + 2 playbooks       | `just configure <resource>`          |
 | `gitops-bump-images.yml` | daily 07:00 UTC + manual        | `just bump-images` (in `gitops/`)    |
 | `scanners-bump-pins.yml` | weekly Mon 05:00 UTC + manual   | `just bump-scanners`                 |
@@ -564,7 +594,17 @@ cd ansible   && just configure adguard-lxc             # then configure it
 cd terraform && just destroy proxmox adguard-lxc       # tear down
 ```
 
-Locally you need the same env vars listed in the workflow files (`~/.zshrc` or `~/.zshenv` works).
+Local credentials and configuration live in the repository root's gitignored `.env`
+(permissions `0600`). The Terraform, Ansible, GitOps and Packer Justfiles load it
+automatically from their parent directory. Existing environment variables take precedence,
+so GitHub Actions continues using its injected repository secrets when `.env` is absent.
+Use repository-relative paths in `.env`, interpreted from the repository root.
+
+For commands outside `just`, run `source .env` from the repository root first.
+GitHub workflows still read `${{ secrets.NAME }}`. Use `secrets-store` to archive initial
+inputs in Vault; use `secrets-check` and `secrets-sync` to maintain Actions copies from
+Vault. Changing `.env` alone does not update an Actions secret. See the recovery runbook
+for first deployment, rotation and restore commands.
 
 ## Security
 

@@ -1,6 +1,6 @@
 # Rules – GitHub Actions Workflows
 
-All CI/CDs live in `.github/workflows/`. Sixteen workflows, all running on the **self-hosted** runner (VM 101 on the
+All CI/CDs live in `.github/workflows/`, running on the **self-hosted** runner (VM 101 on the
 Proxmox node). All are `workflow_dispatch` (manual) except the five on a `schedule`: `gitops-bump-images.yml` daily,
 `scanners-bump-pins.yml` and `packer-build.yml` weekly, and `ai-security-agent.yml` and `ai-update-agent.yml` nightly.
 
@@ -16,6 +16,9 @@ Proxmox node). All are `workflow_dispatch` (manual) except the five on a `schedu
 | `stripe-destroy.yml`     | Terraform destroy on a Stripe account      | `just destroy stripe <account>`      |
 | `auth0-deploy.yml`       | Terraform apply on an Auth0 tenant         | `just deploy auth0 <tenant>`         |
 | `auth0-destroy.yml`      | Terraform destroy on an Auth0 tenant       | `just destroy auth0 <tenant>`        |
+| `aws-deploy.yml`        | Terraform apply on an AWS concern          | `just deploy aws <account>/<concern>` |
+| `aws-destroy.yml`       | Terraform destroy on an AWS concern        | `just destroy aws <account>/<concern>` |
+| `secrets-sync.yml`      | Repopulate Actions secrets from Vault      | `just secrets-sync` (in `ansible/`) |
 | `ansible-configure.yml`  | Ansible playbook against a configured host | `just configure <resource>`          |
 | `gitops-bump-images.yml` | Point tracked apps at the newest published image | `just bump-images` (in `gitops/`) |
 | `scanners-bump-pins.yml` | Point the syft/grype pins at the newest release | `just bump-scanners`            |

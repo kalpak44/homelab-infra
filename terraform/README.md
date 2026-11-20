@@ -7,6 +7,8 @@ Provisions all long-lived infrastructure.
 ```
 terraform/
 ├── Justfile                 # deploy / destroy / output / list recipes
+├── aws/                     # AWS accounts, SSO config and backend credential helper
+│   └── personal/account/    # read-only identity check for 039959484327
 ├── modules/                 # reusable primitives (not deployable on their own)
 │   ├── proxmox-lxc/
 │   └── proxmox-vm/          # clones from Proxmox VM template 9000
@@ -62,22 +64,30 @@ just deploy  proxmox    adguard-lxc
 just deploy  github     kalpak44
 just deploy  stripe     workspaced/webhooks
 just deploy  auth0      workspaced
+just plan-aws personal/account
+just deploy  aws        personal/account
 just destroy cloudflare zones/workspaced.online/email
 just output  cloudflare tunnels/homelab tunnel_token
 ```
 
-Via GitHub Actions: **Cloudflare**, **Proxmox**, **GitHub** and **Stripe** each have a **Deploy** and a **Destroy**
+Via GitHub Actions: **Cloudflare**, **Proxmox**, **GitHub**, **Stripe**, **Auth0** and **AWS** each have a **Deploy** and a **Destroy**
 workflow - pick the resource from the dropdown, one dispatch per resource.
 
 ## Environment variables
 
+Local recipes load the root `.env` automatically; GitHub Actions injects the same
+variable names from repository secrets. Injected variables take precedence over `.env`.
+
 All layers need R2 backend credentials:
+
+The AWS layer uses separate SSO or OIDC credentials for the AWS provider. See
+[AWS setup](aws/README.md) for its environment variables and authentication commands.
 
 | Var                     | Purpose                           |
 |-------------------------|-----------------------------------|
-| `AWS_ACCESS_KEY_ID`     | R2 access key                     |
-| `AWS_SECRET_ACCESS_KEY` | R2 secret                         |
-| `AWS_ENDPOINT_URL_S3`   | R2 S3-compat endpoint             |
+| `R2_ACCESS_KEY_ID`     | R2 access key                     |
+| `R2_SECRET_ACCESS_KEY` | R2 secret                         |
+| `R2_ENDPOINT`         | R2 S3-compat endpoint             |
 | `R2_BUCKET_NAME`        | bucket that holds tfstate objects |
 
 Cloudflare layer:

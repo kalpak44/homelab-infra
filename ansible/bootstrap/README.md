@@ -4,6 +4,9 @@ Automates the one-time manual steps documented in the root [`README.md`](../../R
 user + role + API token, downloading base artifacts, provisioning the GitHub Actions runner VM, and issuing a Let's
 Encrypt cert for the Proxmox web UI.
 
+For deployment order, Vault backups, R2 state recovery and GitHub secret synchronization,
+follow [RECOVERY.md](RECOVERY.md).
+
 ## Usage
 
 From `ansible/`:
@@ -44,7 +47,7 @@ standing inventory. Run it whenever `CLOUDFLARE_API_TOKEN` is rotated — the no
 
 ## Required inputs
 
-The Justfile recipes read these from your shell:
+Recipes load these from the ignored root `.env` locally or accept injected CI variables:
 
 | Env var                | Used by  | Notes                                                                                          |
 |------------------------|----------|------------------------------------------------------------------------------------------------|
@@ -86,5 +89,7 @@ idempotent and will repack only if the drop-in is missing.
 
 ## What's still manual after bootstrap
 
-- **Populate GitHub secrets** listed in the root README under _Setup → 3._ (Terraform token from phase 1's output goes
-  in as `PROXMOX_PASSWORD`).
+- **Populate initial GitHub secrets** listed in the root README under _Setup → 3._
+  (phase 1's Terraform token becomes `PROXMOX_PASSWORD`). After Vault exists, archive
+  inputs with `just secrets-store`, verify with `just secrets-check`, and maintain
+  CI copies with `just secrets-sync` or **Secrets - Sync from Vault**.

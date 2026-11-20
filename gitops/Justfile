@@ -24,6 +24,7 @@
 # line, and is bumped the same way — workspaced-ai's harness is started by each VM's supervisor.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set dotenv-load := true
 
 # app layer | gitops app dir | source repo | publish workflow | image(s), no tag
 apps := "public|personal-web-page|kalpak44/kalpak44|publish.yml|ghcr.io/kalpak44/kalpak44
