@@ -99,4 +99,4 @@ DNS propagation delay: 30 s.
    `ansible-configure.yml`) and the two Justfiles' `list` recipes.
 6. Apply order: `just deploy cloudflare zones/pavel-usanli.online/internal` → `just deploy proxmox <name>` →
    `just configure <name>`.
-7. Update `README.md` services table.
+7. Update `docs/10 - Service catalog.md`.

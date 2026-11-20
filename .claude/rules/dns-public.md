@@ -159,4 +159,4 @@ spec:
    `helmrelease.yaml`), `service.yaml`, `ingressroute.yaml` (template above).
 4. If the app needs secrets, add a Vault secret and an `ExternalSecret` manifest.
 5. Let Flux reconcile the k8s manifests.
-6. Update `README.md` services table.
+6. Update `docs/10 - Service catalog.md`.

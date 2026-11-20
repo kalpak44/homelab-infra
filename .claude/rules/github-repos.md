@@ -442,5 +442,5 @@ Secret names cannot start with `GITHUB_` (reserved by GitHub) — hence `GH_ADMI
    Check the live settings first: `gh api repos/<owner>/<repo>`.
 3. Add `<repo>` to the `options:` list in `.github/workflows/github-{deploy,destroy}.yml`.
 4. Add a description line to `terraform/Justfile`'s `list` recipe under the GitHub section.
-5. Add a row to the **Managed GitHub repos** table in `README.md`.
+5. Add a row to the **Managed GitHub repos** table in `docs/11 - Managed repositories.md`.
 6. Apply: `just deploy github <repo>`.

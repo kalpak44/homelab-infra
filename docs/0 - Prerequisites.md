@@ -48,6 +48,26 @@ Terraform and the current service recipes use the ignored root `.env`. Initializ
 it from the root `.env.example` if missing, preserving existing values. Vault
 becomes available in step 6; until then, these local inputs establish initial access.
 
+## Cloudflare token permissions
+
+The single `CLOUDFLARE_API_TOKEN` needs:
+
+| Type    | Resource                | Permission  |
+|---------|-------------------------|-------------|
+| Zone    | DNS                     | Edit        |
+| Account | Cloudflare Tunnel       | Edit        |
+| Account | Zero Trust              | Edit        |
+| Account | Email Routing Addresses | Edit + Read |
+| Zone    | Email Routing Rules     | Edit + Read |
+| Zone    | Zone Settings           | Edit + Read |
+| Zone    | SSL and Certificates    | Edit        |
+
+Zone resource is scoped to your domain (e.g. `pavel-usanli.online`). Account-level permissions cover the Zero Trust
+tunnel (`cloudflare/tunnels/homelab`). **SSL and Certificates** is what the Cloudflare-for-SaaS custom hostnames in
+`saas.tf` need; without it every call to that API returns a bare `Authentication error` rather than a permission
+message, so a token missing it looks like a broken token.
+
+
 ## Build order
 
 Follow the guides in numerical order. Each explains what to apply, the inputs needed,
@@ -70,3 +90,5 @@ Optional runner setup lives in `80-runner`, Proxmox web-UI TLS in `81-proxmox-tl
 and ongoing updates in `90-maintenance`. These are not required for initial Terraform access.
 
 Next: [Bootstrap](<1 - Bootstrap.md>).
+
+Reference: [Service catalog](<10 - Service catalog.md>) · [Managed repositories](<11 - Managed repositories.md>).

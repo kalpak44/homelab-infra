@@ -69,7 +69,7 @@ See `gitops/README.md` for the in-cluster service list.
 
 ```
 homelab-infra/
-├── README.md                       # Setup + service catalog (source of truth for infra services)
+├── README.md                       # Overview, commands and guide links
 ├── CLAUDE.md                       # This file
 ├── LICENSE                         # MIT
 ├── SECURITY.md                     # Vulnerability reporting + scope
@@ -150,7 +150,7 @@ There is one dropdown entry, one dir, one description per resource. When adding 
 | Ansible dir                | Config (Proxmox services only) | `ansible/<stage>/<name>/playbook.yml` + `roles/<name>/`                                                                        |
 | Workflow dropdown          | CI                             | Choice list in the matching `.github/workflows/<layer>-{deploy,destroy}.yml` (and `ansible-configure.yml` when relevant)       |
 | `just list` recipe         | Local UX                       | Description line in `terraform/Justfile` and/or `ansible/Justfile`                                                             |
-| Root README services table | Source of truth                | `README.md`                                                                                                                    |
+| Service catalog | Source of truth                | `docs/10 - Service catalog.md`                                                                                                                    |
 | Inventory                  | Ansible connection             | Host entry in `ansible/inventories/hosts.yml` (Proxmox services only)                                                          |
 | GitOps README              | In-cluster only                | `gitops/README.md` (only for services deployed by Flux)                                                                        |
 
