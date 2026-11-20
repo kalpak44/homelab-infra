@@ -1,13 +1,25 @@
 name: custom/block-cms-admin
 description: "Request for a CMS admin path none of these apps serve"
+# WordPress also exposes its REST routes through a query parameter, so a request
+# for `/?rest_route=/wp/v2/users` has no matching URI path. Judge the parameter too.
 rules:
-  - zones:
-      - URI
-    transform:
-      - lowercase
-    match:
-      type: regex
-      value: "(^|/)(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail|wordpress|wp)([?/]|$)"
+  - or:
+      - zones:
+          - URI
+        transform:
+          - lowercase
+        match:
+          type: regex
+          value: "(^|/)(wp-admin|wp-content|wp-includes|wp-json|xmlrpc|administrator|phpmyadmin|pma|adminer|typo3|drupal|magento|cpanel|webmail|wordpress|wp)([?/]|$)"
+      - zones:
+          - ARGS
+        variables:
+          - rest_route
+        transform:
+          - lowercase
+        match:
+          type: regex
+          value: "^/?(wp/v2|batch/v1)(/|$)"
 labels:
   type: scan
   service: http
