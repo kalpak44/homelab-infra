@@ -3,6 +3,10 @@
 Account `039959484327` (`personal`), workload region `eu-central-1` (Frankfurt).
 The existing `aws-admin` identity signs in through IAM Identity Center with the
 `AdministratorAccess` permission set. Its SSO region is `eu-central-1` (Frankfurt).
+Normal local Terraform runs use profile `aws-terraform`, which assumes the same
+`homelab-infra-terraform` role as GitHub Actions. Both use identical permissions,
+configuration, `just` commands and R2 state. The local-only IAM bootstrap selects
+`aws-admin` separately so the shared deployment role cannot manage its own trust.
 
 ## Local use
 
@@ -21,7 +25,7 @@ On another checkout, set these environment variables instead:
 
 ```bash
 export AWS_CONFIG_FILE="terraform/aws/config"
-export AWS_PROFILE=aws-admin
+export AWS_PROFILE=aws-terraform
 export AWS_REGION=eu-central-1
 export AWS_DEFAULT_REGION=eu-central-1
 ```
@@ -51,22 +55,34 @@ Run Terraform through `just` so the backend receives its bucket and endpoint.
 All AWS leaf directories must stay at `aws/<account>/<concern>/` because the backend
 config and credential helper paths are relative to that working directory.
 
-## GitHub Actions (later setup)
+## GitHub Actions
 
-The manual **AWS - Deploy** and **AWS - Destroy** workflows are prepared for OIDC.
-Before using them:
+The local bootstrap concern `personal/github-actions` manages:
 
-1. Create or reuse the account's GitHub OIDC provider for
-   `https://token.actions.githubusercontent.com`, audience `sts.amazonaws.com`.
-2. Create a Terraform IAM role with trust restricted to
-   `repo:kalpak44/homelab-infra:ref:refs/heads/main` and that audience. Grant only
-   the permissions needed by the Terraform concerns being deployed.
-   Verify the repository's OIDC subject format when creating the trust policy;
-   repositories using GitHub's newer format also include owner and repository IDs.
-3. Set repository Actions **variable** `AWS_TERRAFORM_ROLE_ARN` to that role's ARN.
-   Keep the existing R2 Actions secrets. No persistent AWS access-key secrets are needed.
-4. Commit/push the workflows and dispatch `personal/account` to verify the connection.
+- The GitHub OIDC provider, audience `sts.amazonaws.com`.
+- Role `homelab-infra-terraform`, trusting only
+  `repo:kalpak44/homelab-infra:ref:refs/heads/main` through OIDC and the account's
+  AdministratorAccess SSO role through STS, with one-hour maximum sessions.
+- Repository Actions variable `AWS_TERRAFORM_ROLE_ARN` containing the role ARN.
 
-The OIDC provider, role and repository variable have not been created by this setup.
+Create or restore this configuration with local `aws-admin` SSO and `GH_ADMIN_TOKEN`:
+
+```bash
+just --justfile terraform/Justfile plan-aws personal/github-actions
+just --justfile terraform/Justfile deploy aws personal/github-actions
+```
+
+Its state is `homelab/aws/personal/github-actions.tfstate` in R2. This bootstrap
+is intentionally excluded from CI dropdowns and rejected when `GITHUB_ACTIONS=true`:
+the workflow role cannot change its own trust or permissions. Use a local admin
+session to maintain it. The repository currently uses GitHub's default mutable OIDC
+subject format; if that setting changes, update the trust condition accordingly.
+
+Dispatch **AWS - Deploy** with `personal/account` to verify OIDC and R2 end to end.
+The current identity check requires no resource permissions. Add scoped permissions
+to the bootstrap role as new Terraform concerns are introduced, then apply the
+bootstrap locally before running those concerns in CI. Keep existing R2 Actions
+secrets; no persistent AWS access-key secrets are needed.
+
 Cost alerts will be a separate concern once a monthly amount and notification address
 are chosen.

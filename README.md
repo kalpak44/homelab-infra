@@ -548,13 +548,15 @@ The built-in `GITHUB_TOKEN` cannot manage other repositories, so this layer need
 | Account | Terraform dir | Purpose |
 |---------|---------------|---------|
 | `039959484327` (personal) | `aws/personal/account` | Read-only identity check; `aws-admin` SSO with `AdministratorAccess`, Frankfurt region |
+| GitHub OIDC bootstrap | `aws/personal/github-actions` | Local admin setup of the GitHub OIDC provider, restricted Terraform role and Actions role variable |
 
 Local environment variables are in the gitignored `.env`; `just` loads it automatically.
 For direct AWS CLI commands, run `source .env` from the repository root.
 Authentication uses temporary SSO credentials. Terraform state
 stays on R2 with separate credentials. Cost alerts will get their own concern later.
 See [AWS setup](terraform/aws/README.md) for local commands and the remaining GitHub
-OIDC setup. The AWS workflows are prepared but need `AWS_TERRAFORM_ROLE_ARN` configured.
+OIDC setup. `personal/github-actions` configures `AWS_TERRAFORM_ROLE_ARN` automatically;
+run this bootstrap locally with `aws-admin` before dispatching an AWS workflow.
 
 ## CI
 

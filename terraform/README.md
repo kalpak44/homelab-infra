@@ -8,7 +8,8 @@ Provisions all long-lived infrastructure.
 terraform/
 ├── Justfile                 # deploy / destroy / output / list recipes
 ├── aws/                     # AWS accounts, SSO config and backend credential helper
-│   └── personal/account/    # read-only identity check for 039959484327
+│   ├── personal/account/    # read-only identity check for 039959484327
+│   └── personal/github-actions/ # local admin bootstrap: GitHub OIDC and Actions role variable
 ├── modules/                 # reusable primitives (not deployable on their own)
 │   ├── proxmox-lxc/
 │   └── proxmox-vm/          # clones from Proxmox VM template 9000

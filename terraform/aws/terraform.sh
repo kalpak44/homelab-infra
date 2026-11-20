@@ -11,6 +11,11 @@ if [[ ! "$resource" =~ ^[a-z0-9-]+/[a-z0-9-]+$ ]]; then
   echo "AWS resource must be <account>/<concern>" >&2
   exit 1
 fi
+if [ "$resource" = personal/github-actions ] && [ "${GITHUB_ACTIONS:-}" = true ]; then
+  echo "GitHub OIDC bootstrap requires a local administrator session." >&2
+  exit 1
+fi
+export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"
 
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 : "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
@@ -25,7 +30,11 @@ fi
 export AWS_REGION="${AWS_REGION:-eu-central-1}"
 export AWS_DEFAULT_REGION="$AWS_REGION"
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] && [ -z "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" ]; then
-  export AWS_PROFILE="${AWS_PROFILE:-aws-admin}"
+  if [ "$resource" = personal/github-actions ]; then
+    export AWS_PROFILE="${AWS_BOOTSTRAP_PROFILE:-aws-admin}"
+  else
+    export AWS_PROFILE="${AWS_PROFILE:-aws-terraform}"
+  fi
 fi
 
 # R2's endpoint is backend-only; inheriting it would send AWS S3 calls to Cloudflare.

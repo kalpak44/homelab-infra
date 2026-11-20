@@ -127,7 +127,8 @@ continue deploying locally from `.env` rather than relying on an empty Actions s
 
    Sync checks every workflow input, then updates Actions secrets using the
    Vault-held `GH_ADMIN_TOKEN`. It does not delete other secrets. Retry after an
-   interrupted update. GitHub variables such as `AWS_TERRAFORM_ROLE_ARN` are separate.
+   interrupted update. For AWS, apply the local `personal/github-actions` bootstrap
+   to restore the OIDC resources and `AWS_TERRAFORM_ROLE_ARN` Actions variable.
 9. **Reconcile remaining infrastructure.** Restore service data before configuration.
    Run Terraform and matching Ansible workflows per resource. Verify k3s before
    re-running Vault's Kubernetes integration. Install Flux after Vault, NFS and
