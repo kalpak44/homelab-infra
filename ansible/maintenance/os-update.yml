@@ -15,6 +15,8 @@
   serial: 1
   become: true
   gather_facts: false
+  vars_files:
+    - ../proxmox/postgres-lxc/roles/postgresql/defaults/main.yml
 
   pre_tasks:
     # nocobase's sshd listens on a non-standard port and falls back to 22 on a container
@@ -58,7 +60,7 @@
       mihal: [cloudflared]
       nocobase: [nginx]
       redis: [redis-server, redis-commander]
-      postgres: [postgresql@18-main, apache2]
+      postgres: ["postgresql@{{ postgresql_version }}-main", apache2]
       vault: [vault]
 
 # Reboots while pods hold NFS mounts leave those pods in uninterruptible sleep, so this

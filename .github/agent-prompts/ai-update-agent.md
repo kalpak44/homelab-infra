@@ -379,6 +379,8 @@ link is marked `(deleted)`; otherwise the package moves and the old process keep
 
 `postgresql_version` is a **major** pin, and moving it is a `pg_upgradecluster` on a live
 database rather than a playbook re-run. It is in scope; section 7 is how.
+The OS sweep resolves its health unit from that pin, so a literal old cluster name makes a
+healthy host fail the sweep after a major.
 
 Everything else on these hosts updates by running its playbook, because the role already
 asks for the newest: postgres and pgAdmin, redis and redis-commander,
@@ -576,6 +578,8 @@ Different zones can use different edge IPs, so test the same address against a w
 Retry a timed-out public hostname against another Cloudflare IP and check Traefik directly
 before treating it as an outage. Public Traefik is `192.168.1.120`; `192.168.1.121` is
 private-only and returns 404 for public routes.
+If every edge IP for a zone times out from the runner but the hostname answers from another
+LAN host, the runner's egress is at fault, not the tunnel.
 
 ## 10. When something breaks
 
