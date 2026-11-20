@@ -1,6 +1,6 @@
 ---
 prometheus_version: "3.16.0"
-node_exporter_version: "1.13.0"
+node_exporter_version: "1.13.1"
 blackbox_exporter_version: "0.29.1"
 
 prometheus_port: 9090
