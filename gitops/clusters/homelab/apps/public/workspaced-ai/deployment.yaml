@@ -32,7 +32,7 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: api
-          image: ghcr.io/kalpak44/workspaced-ai-api:57728f3
+          image: ghcr.io/kalpak44/workspaced-ai-api:0ac936b
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
