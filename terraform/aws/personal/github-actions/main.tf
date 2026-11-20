@@ -36,8 +36,24 @@ resource "aws_iam_role" "terraform" {
     }]
   })
 
-  # The current account concern needs only GetCallerIdentity, which requires no policy.
-  # Add scoped resource permissions here when introducing further AWS concerns.
+}
+
+resource "aws_iam_role_policy" "budgets" {
+  name = "monthly-cost-budget"
+  role = aws_iam_role.terraform.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "budgets:ViewBudget",
+        "budgets:ModifyBudget",
+        "budgets:ListTagsForResource",
+      ]
+      Resource = "arn:aws:budgets::039959484327:budget/personal-monthly-20-usd"
+    }]
+  })
 }
 
 resource "github_actions_variable" "terraform_role" {

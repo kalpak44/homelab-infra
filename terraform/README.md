@@ -9,6 +9,7 @@ terraform/
 ├── Justfile                 # deploy / destroy / output / list recipes
 ├── aws/                     # AWS accounts, SSO config and backend credential helper
 │   ├── personal/account/    # read-only identity check for 039959484327
+│   ├── personal/budgets/    # USD 20 monthly actual-cost email alert
 │   └── personal/github-actions/ # local admin bootstrap: GitHub OIDC and Actions role variable
 ├── modules/                 # reusable primitives (not deployable on their own)
 │   ├── proxmox-lxc/

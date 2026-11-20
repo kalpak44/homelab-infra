@@ -548,6 +548,7 @@ The built-in `GITHUB_TOKEN` cannot manage other repositories, so this layer need
 | Account | Terraform dir | Purpose |
 |---------|---------------|---------|
 | `039959484327` (personal) | `aws/personal/account` | Read-only identity check; `aws-admin` SSO with `AdministratorAccess`, Frankfurt region |
+| Monthly AWS cost budget | `aws/personal/budgets` | Account-wide actual costs above USD 20/month → pavel.usanli@gmail.com |
 | GitHub OIDC bootstrap | `aws/personal/github-actions` | Local admin setup of the GitHub OIDC provider, restricted Terraform role and Actions role variable |
 
 Local environment variables are in the gitignored `.env`; `just` loads it automatically.

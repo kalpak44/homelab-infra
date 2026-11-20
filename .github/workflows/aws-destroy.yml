@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - personal/account
+          - personal/budgets
 
 permissions:
   contents: read

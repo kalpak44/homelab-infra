@@ -39,9 +39,9 @@ resolves that path before entering a concern directory. Run direct CLI commands 
 the repository root.
 
 `personal/account` reads the caller identity and exposes `account_id` and `caller_arn`.
-The provider rejects other account IDs. It creates no AWS resources. Future concerns
-such as `personal/budgets` get their own directory and R2 state key, plus entries in
-both workflow dropdowns, `terraform/Justfile` and the root README.
+The provider rejects other account IDs. It creates no AWS resources. Each concern
+gets its own directory and R2 state key, plus entries in both workflow dropdowns,
+`terraform/Justfile` and the root README.
 
 ## R2 state and AWS credentials
 
@@ -79,10 +79,29 @@ session to maintain it. The repository currently uses GitHub's default mutable O
 subject format; if that setting changes, update the trust condition accordingly.
 
 Dispatch **AWS - Deploy** with `personal/account` to verify OIDC and R2 end to end.
-The current identity check requires no resource permissions. Add scoped permissions
+The identity check requires no resource permissions. The shared role can also manage
+the specific `personal-monthly-20-usd` budget. Add scoped permissions
 to the bootstrap role as new Terraform concerns are introduced, then apply the
 bootstrap locally before running those concerns in CI. Keep existing R2 Actions
 secrets; no persistent AWS access-key secrets are needed.
 
-Cost alerts will be a separate concern once a monthly amount and notification address
-are chosen.
+## Monthly cost alert
+
+`personal/budgets` manages an account-wide monthly USD 20 cost budget, across all
+AWS regions and services. Its ACTUAL notification emails `pavel.usanli@gmail.com`
+when the month's recorded charges are greater than USD 20. Taxes, support and
+subscriptions are included; credits, discounts and refunds reduce the total.
+
+```bash
+just --justfile terraform/Justfile plan-aws personal/budgets
+just --justfile terraform/Justfile deploy aws personal/budgets
+```
+
+The same concern is available in **AWS - Deploy** and **AWS - Destroy**. Its state is
+`homelab/aws/personal/budgets.tfstate`. Apply the local `personal/github-actions`
+bootstrap first when restoring the shared role's budget permissions.
+
+The recipient must be verified through AWS User Notifications for account
+`039959484327`; its existing email contact is active. If recreating the setup,
+confirm the verification email while signed into this account. Budget evaluations
+follow AWS billing updates; this alert does not stop services or cap spending.

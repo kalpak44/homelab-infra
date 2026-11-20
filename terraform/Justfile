@@ -274,6 +274,7 @@ bump-scanners:
 list:
     @echo "AWS - personal account (just deploy aws <account>/<concern>):"
     @printf "  %-30s %s\n" "personal/account" "039959484327 · aws-admin SSO · Frankfurt · read-only identity check"
+    @printf "  %-30s %s\n" "personal/budgets" "Account-wide monthly cost alert · actual charges above USD 20 · email notification"
     @printf "  %-30s %s\n" "personal/github-actions" "Local admin bootstrap · GitHub OIDC provider, Terraform role and Actions variable"
     @echo
     @echo "Cloudflare - tunnels + zones (just deploy cloudflare <resource>):"
