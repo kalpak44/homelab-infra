@@ -45,7 +45,9 @@
   ansible.builtin.command: "systemctl is-active {{ item }}"
   register: unit_state
   changed_when: false
-  failed_when: unit_state.stdout != "active"
+  until: unit_state.stdout == "active"
+  retries: 30
+  delay: 5
   loop: "{{ health_units | default([]) }}"
 
 - name: Summarise
