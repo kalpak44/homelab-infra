@@ -1,6 +1,6 @@
 # Turns Traefik's access log into per-source request counters for Prometheus. Traefik's
 # own metrics carry no client address, and the log itself rotates long before a day is
-# over, so this is the only full-day record of who sent what.
+# over. Prometheus keeps source/path-category counters; exact request paths remain logs.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -70,8 +70,47 @@ spec:
             known = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "CONNECT"]
             if !includes(known, method) { method = "OTHER" }
 
+            # Fixed categories only: raw attacker-controlled paths/query strings must
+            # never become labels. These are evidence buckets, not automatic ban rules.
+            path = downcase(string(access.RequestPath) ?? "")
+            path_class = "other"
+            if match(path, r'^/(?:[^?]*/)?(?:\.env(?:[./?]|$)|\.aws(?:/|$)|\.ssh(?:/|$)|\.pgpass(?:[?]|$)|credentials(?:[./?]|$))') {
+              path_class = "secret_file"
+            } else if match(path, r'^/(?:[^?]*/)?\.(?:git|svn|hg)(?:[/?]|$)') {
+              path_class = "vcs"
+            } else if match(path, r'^/(?:wp-admin|wp-login\.php|wp-content|wordpress|xmlrpc\.php|administrator|phpmyadmin)(?:[/?]|$)') {
+              path_class = "cms"
+            } else if match(path, r'(?i)(?:backup|database|dump|archive)[^?]*\.(?:zip|sql|tar|tgz|gz|bak|7z)(?:[?]|$)') {
+              path_class = "backup"
+            } else if match(path, r'\.php(?:[/?]|$)') {
+              path_class = "php"
+            } else if match(path, r'^/(?:actuator|server-status|debug|metrics)(?:[/?]|$)') {
+              path_class = "diagnostic"
+            } else if match(path, r'^/(?:login|signin|sign-in|auth|oauth|oauth2)(?:[/?]|$)') {
+              path_class = "auth"
+            } else if match(path, r'^/(?:api|graphql|mcp)(?:[/?]|$)') {
+              path_class = "api"
+            } else if match(path, r'^/(?:health|healthz|ready|readyz|livez)(?:[/?]|$)') {
+              path_class = "health"
+            } else if match(path, r'^/\.well-known(?:[/?]|$)') {
+              path_class = "well_known"
+            } else if match(path, r'\.(?:css|js|png|jpe?g|svg|ico|woff2?)(?:[?]|$)') {
+              path_class = "static"
+            } else if match(path, r'^/(?:[?].*)?$') {
+              path_class = "root"
+            }
+            status = to_int(access.DownstreamStatus) ?? 0
+            status_class = "other"
+            if status >= 100 && status < 200 { status_class = "1xx" }
+            if status >= 200 && status < 300 { status_class = "2xx" }
+            if status >= 300 && status < 400 { status_class = "3xx" }
+            if status >= 400 && status < 500 { status_class = "4xx" }
+            if status >= 500 && status < 600 { status_class = "5xx" }
+
             . = {
               "client_ip": string(access.ClientHost) ?? "unknown",
+              "path_class": path_class,
+              "status_class": status_class,
               "host": downcase(string(access.RequestHost) ?? ""),
               "method": method,
               "status": to_string(access.DownstreamStatus) ?? "0",
@@ -93,10 +132,25 @@ spec:
                 status: '{{ "{{ status }}" }}'
                 entrypoint: '{{ "{{ entrypoint }}" }}'
 
+        path_requests:
+          type: log_to_metric
+          inputs: [access]
+          metrics:
+            - type: counter
+              field: client_ip
+              namespace: traefik_client
+              name: path_requests_total
+              tags:
+                client_ip: '{{ "{{ client_ip }}" }}'
+                path_class: '{{ "{{ path_class }}" }}'
+                method: '{{ "{{ method }}" }}'
+                status_class: '{{ "{{ status_class }}" }}'
+                entrypoint: '{{ "{{ entrypoint }}" }}'
+
       sinks:
         prometheus:
           type: prometheus_exporter
-          inputs: [requests]
+          inputs: [requests, path_requests]
           address: 0.0.0.0:9598
           # How long a source's counter survives without a request. Under a day, and a
           # source that returns restarts from zero mid-window, which the security
@@ -105,3 +159,148 @@ spec:
           # Vector otherwise stamps each counter with its last update, and Prometheus
           # rejects a sample hours older than the head of its TSDB.
           suppress_timestamp: true
+
+      tests:
+        - name: path-category-secret_file
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/.env?token=fixture\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "secret_file" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-vcs
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/.git/config\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "vcs" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-cms
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/wp-login.php\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "cms" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-backup
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/backup.sql.gz\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "backup" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-php
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/cache/shell.php\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "php" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-diagnostic
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/actuator/env\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "diagnostic" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-auth
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/oauth/callback?code=fixture\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "auth" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-api
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/api/users/12345?token=fixture\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "api" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-health
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/readyz\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "health" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-well_known
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/.well-known/acme-challenge/unique\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "well_known" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-static
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/assets/unique.js\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "static" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-root
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "root" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)
+        - name: path-category-other
+          inputs:
+            - insert_at: access
+              type: log
+              log_fields:
+                message: "{\"ClientHost\": \"203.0.113.7\", \"RequestHost\": \"example.test\", \"RequestMethod\": \"GET\", \"RequestPath\": \"/arbitrary-unique-value?token=fixture\", \"DownstreamStatus\": 404, \"entryPointName\": \"websecure\"}"
+          outputs:
+            - extract_from: access
+              conditions:
+                - type: vrl
+                  source: .path_class == "other" && .status_class == "4xx" && !exists(.path) && !exists(.RequestPath) && !exists(.message)

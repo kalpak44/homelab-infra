@@ -131,8 +131,33 @@ Traefik serves its own `/metrics` (status, method and latency per entryPoint, ro
 service) at `traefik.internal.pavel-usanli.online/metrics`. Those carry no client address, so
 `infrastructure/request-metrics/` runs Vector on every node, reads Traefik's access log and
 exports `traefik_client_requests_total{client_ip,host,method,status,entrypoint}` on hostPort
-9598. Prometheus scrapes both and keeps 30 days, which is what lets the nightly security agent
-see a full day of sources after the log itself has rotated.
+9598. Prometheus scrapes both nodes with a 30-day retention target and a 15 GB size cap,
+which lets the security agent inspect source history after logs rotate, subject to coverage
+and exporter resets.
+
+Vector also exports
+`traefik_client_path_requests_total{client_ip,path_class,method,status_class,entrypoint}`.
+`path_class` is one of `secret_file`, `vcs`, `cms`, `backup`, `php`, `diagnostic`, `auth`,
+`api`, `health`, `well_known`, `static`, `root`, or `other`. Raw paths, IDs, query strings
+and headers never become labels. These buckets describe traffic, not a ban verdict.
+The original host-level counter remains available. Prometheus retains samples for up to
+30 days, subject to its size limit; new counters have no history before deployment.
+
+For the preceding day, aggregate path categories per source with:
+
+```promql
+sum by (client_ip, path_class, status_class) (
+  ((traefik_client_path_requests_total - traefik_client_path_requests_total offset 24h) >= 0)
+  or traefik_client_path_requests_total
+)
+```
+
+Check `resets(traefik_client_path_requests_total[24h])` and target uptime. Exporter restarts
+reset in-memory counters; the expression above keeps the post-reset count but cannot
+reconstruct lost pre-reset increments. Scrape gaps and first-deployment coverage must be
+reported. Exact paths still require retained access logs; do not disable Traefik logging,
+which also feeds CrowdSec. Existing counters reset during a Vector configuration rollout.
+The chart includes native Vector tests for classification and dropping raw request fields.
 
 ### Querying requests for a time range
 

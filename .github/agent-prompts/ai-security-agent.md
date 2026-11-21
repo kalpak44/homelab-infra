@@ -112,6 +112,16 @@ source was checked. Fetch current official CrowdSec releases and the configured 
   the first request, so use current-minus-offset for the chosen interval with a zero fallback,
   rather than `increase()` which can miss a source's initial burst. A restart can still
   undercount. A source with totals but no paths needs stronger evidence before banning.
+- Query `traefik_client_path_requests_total` in Prometheus for durable per-source path
+  categories, methods, status classes and entrypoints. `path_class` has a fixed vocabulary
+  (secret_file, vcs, cms, backup, php, diagnostic, auth, api, health, well_known, static,
+  root, other); it is not the exact request path and is not itself a malicious verdict.
+  The existing `traefik_client_requests_total` retains host-level source totals.
+  Use the selected interval's current-minus-offset with zero fallback for newly observed
+  series, inspect counter resets/target uptime and state resulting undercounts. New
+  path-category counters start at their rollout; do not imply historical backfill or a
+  full interval before that point. Correlate categories with alerts and sanitized retained
+  request evidence; never ban based only on a category, error count or scanner severity.
 - CrowdSec metrics distinguish an installed rule from one actually matching traffic.
   Record unparsed/whitelisted traffic and zero-hit rules as findings, not automatic removals.
 - Missing or refused evidence is a reportable gap. Never invent alerts or access blocked data.

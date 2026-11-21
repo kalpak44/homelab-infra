@@ -43,8 +43,11 @@ It reports combined coverage and any real missing history. No raw requests go in
 Rotation limits are bytes and file counts, not hours. If the retained history is actually
 insufficient, the update bot assesses traffic volume and disk headroom before maintaining
 kubelet or archival configuration through Ansible/GitOps. Pod/node deletion can also remove
-local history; missing coverage must remain explicit. Prometheus counters supplement this
-evidence but cannot recover request paths after the underlying logs have expired.
+local history; missing coverage must remain explicit. Prometheus also retains per-source path-category counters via
+`traefik_client_path_requests_total`, covering secret-file/VCS/CMS/backup probes and normal
+route classes without raw URLs as labels. These supplement exact request evidence but
+cannot recover the original path after logs expire. Counters start at rollout and reset
+when Vector restarts; the bot must report coverage/reset gaps and correlate with alerts.
 
 ## OS updates
 
