@@ -64,6 +64,11 @@ spec:
           memory: 512Mi
 
     trivy:
+      # Chart 0.38.1 still pins 0.76.1. 0.76.2 is a security rebuild with the
+      # fixed Alpine and Go packages, so select it until the chart catches up.
+      image:
+        tag: "0.76.2"
+
       # emptyDir instead of the nfs StorageClass on purpose: trivy-db is a
       # bbolt file that gets mmap'd, which is the one access pattern NFS
       # handles badly. The server pod is long-lived, so the cost is a single
