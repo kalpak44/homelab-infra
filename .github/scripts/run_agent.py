@@ -57,8 +57,11 @@ def progress_event(event):
         (r'ansible-playbook|just.*(?:configure|os-update)', 'Applying Ansible maintenance'),
         (r'rollout status|kubectl.*wait', 'Waiting for cluster readiness'),
         (r'trivy|vulnerabilityreports|configauditreports', 'Inspecting Trivy security findings'),
-        (r'check\.py|kustomize|helm template', 'Validating deployment configuration'),
-        (r'kubectl.*logs|cscli', 'Inspecting cluster logs and security diagnostics'),
+        (r'check\.py', 'Validating CrowdSec rule wiring and blocklist digest'),
+        (r'cscli', 'Inspecting CrowdSec alerts, decisions and metrics'),
+        (r'blocked-ips|traffic\.(?:json|jsonl)|access.*log|/var/log/pods', 'Analyzing traffic and retained access-log evidence'),
+        (r'kustomize|helm template', 'Validating deployment configuration'),
+        (r'kubectl.*logs', 'Inspecting cluster logs and security diagnostics'),
         (r'kubectl', 'Inspecting Kubernetes resources'),
         (r'sshpass|ssh ', 'Inspecting a VM or LXC over SSH'),
         (r'curl|https://', 'Researching upstream sources'),
@@ -78,7 +81,9 @@ def execute_codex(args, instructions, env, directory, timeout=9600, heartbeat=30
         def emit(message):
             nonlocal last_visible
             last_visible = time.monotonic()
-            line = datetime.now(timezone.utc).strftime('%H:%M:%S UTC') + ' | ' + str(int(last_visible - started)) + 's | ' + message
+            agent = env.get('AGENT_KIND', 'maintenance')
+            agent = agent if agent in {'update', 'security'} else 'maintenance'
+            line = datetime.now(timezone.utc).strftime('%H:%M:%S UTC') + ' | ' + agent + ' | ' + str(int(last_visible - started)) + 's | ' + message
             print(line, flush=True)
             progress.write(line + '\n')
             progress.flush()
