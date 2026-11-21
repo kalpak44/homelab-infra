@@ -48,6 +48,14 @@ runs:
         else
           echo "Agent did not complete. Inspect the failed phase; no successful deployment is implied." >> "$GITHUB_STEP_SUMMARY"
         fi
+    - name: Keep the sanitized maintenance report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: infra-agent-report
+        path: ${{ env.AGENT_DIRECTORY }}/summary.md
+        if-no-files-found: ignore
+        retention-days: 14
     - name: Discard transient credentials and evidence
       if: always()
       shell: bash

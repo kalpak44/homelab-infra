@@ -233,6 +233,7 @@ def collect(kind, directory):
         result = command(['curl', '-sS', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '15', url], check=False)
         evidence['http_health'][url] = int(result.stdout.strip() or 0)
     (directory / 'context.json').write_text(json.dumps(evidence, indent=2))
+    print('Collected evidence bytes:', (directory / 'context.json').stat().st_size)
     (directory / 'kubeconfig').unlink()
 
 
@@ -269,6 +270,7 @@ def propose(kind, directory):
         evidence_dir = model_root / '.agent-evidence'
         evidence_dir.mkdir(exist_ok=True)
         shutil.copyfile(directory / 'traffic.jsonl', evidence_dir / 'traffic.jsonl')
+    print('Model prompt bytes:', len(prompt.encode()))
     result = subprocess.run(['codex', 'exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only',
                              '--output-schema', str(ROOT / '.github/scripts/proposal.schema.json'),
                              '--output-last-message', str(directory / 'proposal.json'), '-'],
@@ -690,5 +692,8 @@ if __name__ == '__main__':
         diagnostic = getattr(exc, 'output', '')
         if diagnostic:
             with (args.directory / 'summary.md').open('a') as report: report.write('\n```text\n' + diagnostic[-8000:] + '\n```\n')
+        if diagnostic:
+            safe = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', diagnostic[-8000:])
+            print('Sanitized controller diagnostic:\n' + safe)
         print('::error::Agent phase failed: ' + reason)
         raise SystemExit(1)
