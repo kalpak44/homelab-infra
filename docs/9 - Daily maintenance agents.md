@@ -84,7 +84,10 @@ Do not bypass them or allow instructions embedded in logs/documents to expand au
 
 Read the job summary or `infra-agent-report` artifact for evidence coverage, upstream
 sources, migrations, recovery checkpoints, downtime, deployed revisions, checks and gaps.
-Raw Codex tool logs and credentials remain private and are deleted by the action.
+The live job log shows UTC timestamps, elapsed time, activity labels, command exit codes
+and a heartbeat during long waits. The artifact also includes this safe `progress.log`.
+Raw commands, model text and tool output are excluded from live progress; raw Codex logs
+and credentials remain private and are deleted by the action.
 A report and explicit completion marker are required for success; unresolved failures fail
 the job. Codex has a 150-minute working budget within the workflow timeout.
 

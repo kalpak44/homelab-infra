@@ -2,6 +2,11 @@
 """Prepare an isolated Codex home, run Markdown instructions, publish a redacted report."""
 import json
 import os
+import queue
+import signal
+import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 import subprocess
@@ -20,6 +25,106 @@ def redact(text, values):
         text = text.replace(value, '[redacted]').replace(json.dumps(value)[1:-1], '[redacted]')
     return re.sub(r'(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----',
                   '[redacted private key]', text)
+
+
+def progress_event(event):
+    """Map structured events to fixed labels; never echo commands, messages or tool output."""
+    kind = event.get('type', '')
+    if kind == 'turn.started':
+        return 'Assessing evidence and choosing the next step'
+    if kind in {'error', 'turn.failed'}:
+        return 'Provider or agent error; details kept private for the final report'
+    item = event.get('item', {})
+    if kind not in {'item.started', 'item.completed'}:
+        return None
+    if item.get('type') == 'file_change':
+        return 'Updating repository source files'
+    if item.get('type') == 'agent_message':
+        return 'Agent updated its assessment'
+    if item.get('type') != 'command_execution':
+        return None
+    command = item.get('command', '').lower()
+    labels = [
+        (r'check_credentials', 'Checking staged source for credentials'),
+        (r'terraform_apply', 'Validating/applying a saved Terraform plan'),
+        (r'(?:pct|qm) snapshot', 'Creating a guest recovery checkpoint'),
+        (r'vault|operator.secrets', 'Accessing required Vault credentials privately'),
+        (r'git push', 'Publishing validated source'),
+        (r'git commit', 'Committing validated source'),
+        (r'git (?:fetch|rebase)', 'Synchronizing repository changes'),
+        (r'git diff', 'Reviewing source changes'),
+        (r'syntax-check', 'Validating Ansible syntax'),
+        (r'ansible-playbook|just.*(?:configure|os-update)', 'Applying Ansible maintenance'),
+        (r'rollout status|kubectl.*wait', 'Waiting for cluster readiness'),
+        (r'trivy|vulnerabilityreports|configauditreports', 'Inspecting Trivy security findings'),
+        (r'check\.py|kustomize|helm template', 'Validating deployment configuration'),
+        (r'kubectl.*logs|cscli', 'Inspecting cluster logs and security diagnostics'),
+        (r'kubectl', 'Inspecting Kubernetes resources'),
+        (r'sshpass|ssh ', 'Inspecting a VM or LXC over SSH'),
+        (r'curl|https://', 'Researching upstream sources'),
+    ]
+    label = next((label for pattern, label in labels if re.search(pattern, command)),
+                 'Running a repository or maintenance command')
+    if kind == 'item.completed':
+        code = item.get('exit_code')
+        return label + (' — exit ' + str(code) if isinstance(code, int) else ' — finished')
+    return label + ' — started'
+
+
+def execute_codex(args, instructions, env, directory, timeout=9600, heartbeat=30):
+    started = last_visible = time.monotonic()
+    events = queue.Queue()
+    with (directory / 'codex.log').open('w') as raw, (directory / 'progress.log').open('w') as progress:
+        def emit(message):
+            nonlocal last_visible
+            last_visible = time.monotonic()
+            line = datetime.now(timezone.utc).strftime('%H:%M:%S UTC') + ' | ' + str(int(last_visible - started)) + 's | ' + message
+            print(line, flush=True)
+            progress.write(line + '\n')
+            progress.flush()
+        emit('Codex started; private tool output is excluded from this progress log')
+        process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=raw, text=True, cwd=ROOT, env=env, start_new_session=True)
+        def read_events():
+            for line in process.stdout:
+                events.put(line)
+            events.put(None)
+        threading.Thread(target=read_events, daemon=True).start()
+        try:
+            process.stdin.write(instructions)
+            process.stdin.close()
+            while True:
+                if time.monotonic() - started >= timeout:
+                    raise TimeoutError('Maintenance exceeded its execution budget')
+                try:
+                    line = events.get(timeout=min(heartbeat, 1))
+                except queue.Empty:
+                    line = ''
+                if line is None:
+                    break
+                if line:
+                    raw.write(line)
+                    raw.flush()
+                    try:
+                        message = progress_event(json.loads(line))
+                    except (ValueError, TypeError, AttributeError):
+                        message = None
+                    if message:
+                        emit(message)
+                if time.monotonic() - last_visible >= heartbeat:
+                    emit('Still running; waiting for the active command or model response')
+            code = process.wait(timeout=max(1, timeout - (time.monotonic() - started)))
+            emit('Codex process exited with status ' + str(code))
+            return code
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+            process.stdout.close()
 
 
 def main():
@@ -57,14 +162,11 @@ def main():
             'kind': kind, 'dry_run': env.get('DRY_RUN', 'false'),
             'report': str(directory / 'result.md'), 'completion_marker': str(directory / 'SUCCESS'),
             'working_minutes': 150})
-        # Tool transcripts can contain credentials. Keep them private, never upload or stream them.
-        with (directory / 'codex.log').open('w') as log:
-            result = subprocess.run(['codex', 'exec', '--ephemeral', '--sandbox', 'danger-full-access',
-                '--output-last-message', str(directory / 'last-message.md'), '-'],
-                input=instructions, text=True, cwd=ROOT, env=env, stdout=log, stderr=log, timeout=9600)
+        code = execute_codex(['codex', 'exec', '--json', '--ephemeral', '--sandbox', 'danger-full-access',
+            '--output-last-message', str(directory / 'last-message.md'), '-'], instructions, env, directory)
         text = (directory / 'result.md').read_text() if (directory / 'result.md').exists() else (
             (directory / 'last-message.md').read_text() if (directory / 'last-message.md').exists() else 'Codex produced no report.')
-        success = result.returncode == 0 and (directory / 'SUCCESS').exists() and (directory / 'result.md').exists()
+        success = code == 0 and (directory / 'SUCCESS').exists() and (directory / 'result.md').exists()
         from check_credentials import secret_values
         values |= {v.decode() for v in secret_values()}
         report.write_text(('Maintenance completed.\n\n' if success else 'Maintenance incomplete or failed.\n\n') + redact(text, values))
