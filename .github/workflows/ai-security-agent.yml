@@ -21,13 +21,17 @@ jobs:
   review:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: self-hosted
-    timeout-minutes: 100
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
       HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
+      VAULT_ADDR: https://vault.internal.pavel-usanli.online:8200
+      VAULT_USERNAME: ${{ secrets.VAULT_USERNAME }}
+      VAULT_PASSWORD: ${{ secrets.VAULT_PASSWORD }}
       DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
       K3S_SERVER: ${{ vars.K3S_SERVER || '192.168.1.110' }}
+      PROXMOX_SSH_HOST: ${{ vars.PROXMOX_SSH_HOST || '192.168.1.50' }}
       PROMETHEUS_URL: ${{ vars.PROMETHEUS_URL || 'https://prometheus.internal.pavel-usanli.online:9090' }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}

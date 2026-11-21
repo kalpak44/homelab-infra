@@ -62,4 +62,5 @@ A service folder keeps its playbook and colocated `roles/`. Its leaf name still 
 - Update the command mapping, inventory, root catalog and the numbered build guide together.
 - Keep setup order in `docs/`; component READMEs document only local inputs and behavior.
 - Keep `.env` files ignored and `.env.example` files free of credentials.
-- Run Terraform and Ansible locally. GitHub Actions must not execute either tool.
+- Run routine provisioning locally. The dedicated AI maintenance controller may apply
+  validated autonomous migrations, using private Vault credentials and recovery checkpoints.

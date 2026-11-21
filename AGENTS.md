@@ -118,8 +118,8 @@ homelab-infra/
 - **DNS records live under `terraform/cloudflare/dns/{private,public}/<name>/`** - not in a shared file.
 - **Ansible service names match Terraform** – use `terraform/proxmox/<name>/` and
   `ansible/<stage>/<name>/`; choose the numbered stage by configuration prerequisites.
-- **`just` is the single entry point** – run Terraform and Ansible locally. GitHub Actions must not execute either tool,
-  including through agents or maintenance recipes.
+- **`just` is the single entry point** – routine provisioning stays local. The dedicated AI maintenance controller may execute
+  validated, checkpointed migrations automatically with Vault-backed credentials.
 - **TF_VAR_ / env-var flow** - local recipes load the root `.env` or exported shell variables.
   Undeclared TF_VAR_/ansible extra vars are silently ignored.
 - **Public apps** go in `gitops/clusters/homelab/apps/public/<name>/`; private apps in `.../apps/private/<name>/`.

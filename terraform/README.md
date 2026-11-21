@@ -72,7 +72,8 @@ just destroy cloudflare zones/workspaced.online/email
 just output  cloudflare tunnels/homelab tunnel_token
 ```
 
-Run these commands locally from `terraform/`. GitHub Actions does not execute Terraform.
+Run routine commands locally from `terraform/`. The dedicated AI maintenance controller
+may also apply a validated saved plan for an autonomous migration; deploy/destroy workflows remain removed.
 `just bump-scanners` also runs locally; it applies managed GitHub repositories after updating their pins.
 
 ## Environment variables

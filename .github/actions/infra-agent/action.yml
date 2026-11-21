@@ -7,17 +7,25 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install current stable Helm for migration rendering
+      uses: azure/setup-helm@v5
+      with:
+        version: latest
+        latest-fallback: 'false'
+        checksum-policy: required
     - name: Check runner prerequisites
       shell: bash
       run: |
         set -euo pipefail
-        for tool in python3 kubectl sshpass git npm; do
+        for tool in python3 kubectl sshpass git npm just ansible-playbook terraform helm; do
           command -v "$tool" >/dev/null || { echo "Missing runner tool: $tool" >&2; exit 1; }
         done
         python3 -c 'import yaml'
         test -n "$HOST_PASSWORD"
         test -n "$DEEPSEEK_APIKEY"
         test -n "$GH_TOKEN"
+        test -n "$VAULT_USERNAME"
+        test -n "$VAULT_PASSWORD"
         mkdir -p "$AGENT_DIRECTORY"
         chmod 700 "$AGENT_DIRECTORY"
     - name: Install pinned Codex CLI in temporary directory
@@ -26,21 +34,11 @@ runs:
         set -euo pipefail
         npm install --prefix "$AGENT_DIRECTORY/tools" --ignore-scripts --no-audit --no-fund @openai/codex@0.171.0
         echo "$AGENT_DIRECTORY/tools/node_modules/.bin" >> "$GITHUB_PATH"
-    - name: Collect cluster and upstream evidence
+    - name: Research, migrate, verify and repair autonomously
       shell: bash
       env:
         AGENT_KIND: ${{ inputs.kind }}
-      run: python3 .github/scripts/infra_agent.py collect "$AGENT_KIND" "$AGENT_DIRECTORY"
-    - name: Propose source changes without deployment credentials
-      shell: bash
-      env:
-        AGENT_KIND: ${{ inputs.kind }}
-      run: python3 .github/scripts/infra_agent.py propose "$AGENT_KIND" "$AGENT_DIRECTORY"
-    - name: Validate and publish allowed changes
-      shell: bash
-      env:
-        AGENT_KIND: ${{ inputs.kind }}
-      run: python3 .github/scripts/infra_agent.py apply "$AGENT_KIND" "$AGENT_DIRECTORY"
+      run: python3 .github/scripts/infra_agent.py run "$AGENT_KIND" "$AGENT_DIRECTORY"
     - name: Publish daily report
       if: always()
       shell: bash

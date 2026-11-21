@@ -1,101 +1,101 @@
-# 9. Daily maintenance agents
+# 9. Autonomous maintenance agents
 
-Both workflows run on the self-hosted GitHub runner inside the homelab, once per day.
-Schedules take effect when these files are published to the repository's default branch.
-They also support a manual `dry_run` dispatch.
+Both agents run on the homelab's self-hosted GitHub runner once per day and support
+manual dispatch. There is no human-review approval stage for supported migrations.
 
-| Workflow | Daily UTC time | Work |
-|----------|----------------|------|
-| `ai-update-agent.yml` | 06:00 | Check infrastructure health and upstream versions; propose verified source-pin updates |
-| `ai-security-agent.yml` | 22:00 | Review the last 24 hours of traffic, improve CrowdSec defenses, and check CrowdSec versions |
+| Workflow | Daily UTC time | Responsibility |
+|----------|----------------|----------------|
+| AI Update Agent | 06:00 | Infrastructure health, security updates, host/configuration migrations |
+| AI Security Agent | 22:00 | Traffic-based CrowdSec defenses and CrowdSec version/configuration migrations |
 
-Both share a concurrency group so they cannot publish competing changes simultaneously.
-UTC times stay fixed through daylight-saving changes. Each scheduled workflow runs once
-per day; manual dispatch is an additional operator-triggered run.
+Both share a concurrency group. The AI decides what needs updating from security exposure,
+upstream fixes, compatibility and actual health. It targets the newest stable version,
+including majors, and performs required intermediate migrations. Brief service downtime
+during major upgrades is permitted; it must be planned and verified afterward.
 
-## Runner prerequisites
+## How a run works
 
-Provision the optional runner using `ansible/80-runner/` if it does not already exist.
-It needs Python 3 with PyYAML, kubectl, sshpass, Git and npm. The workflows select Node 22
-and install Codex CLI `0.171.0` into a temporary directory for each run.
+1. Collect actual cluster/host versions, health, package availability, traffic and releases.
+2. Fetch primary upstream migration documentation requested by the AI.
+3. Produce the next coherent migration stage, with evidence, checks and recovery steps.
+4. Validate source, render Helm charts, and syntax-check host playbooks.
+5. Obtain guest/NFS recovery snapshots before changing services. Stateful roles must add
+   application-consistent backup and data-migration steps where filesystem snapshots alone
+   are insufficient. Relevant LXC services may be briefly stopped for a major-upgrade checkpoint.
+6. Commit and publish validated source, then perform the approved controller operation.
+7. Check Flux revision, Helm generation/readiness and CrowdSec rollouts where applicable.
+8. Recollect actual health/version evidence. Repair the failed stage before migrating
+   dependents, or continue until the assessment and required migrations are complete.
 
-The existing `security-agent` and `update-agent` ServiceAccounts and RBAC are declared in
-`gitops/clusters/homelab/infrastructure/crowdsec/agent-rbac.yaml`. Ensure Flux has applied
-them before the first run. The runner must reach the k3s server, LAN hosts, Prometheus,
-GitHub, chart indexes, upstream release APIs and the configured model provider.
+The loop has a 150-minute working window and stops after three consecutive failed repair
+attempts. Failure is reported honestly; the controller does not invent success or wait for
+an approval. After successful verification, the latest three AI-created snapshots per affected guest
+are retained; unrelated/operator snapshots are never pruned. Failed stages keep their checkpoints. It does not blindly downgrade stateful
+binaries or restore shared NFS data after newer writes.
 
-## Required Actions secrets
+## Credentials and prerequisites
 
-| Secret | Use |
-|--------|-----|
-| `GH_ADMIN_TOKEN` | Read release information, check out source, and publish validated changes |
-| `DEEPSEEK_APIKEY` | Model provider authentication |
-| `HOST_PASSWORD` | Fixed collector reads host health and mints a short-lived agent token on k3s |
-| `VAULT_USERNAME`, `VAULT_PASSWORD` | Existing separate Vault-to-Actions synchronization workflow |
+Required Actions secrets are `GH_ADMIN_TOKEN`, `DEEPSEEK_APIKEY`, `HOST_PASSWORD`,
+`VAULT_USERNAME` and `VAULT_PASSWORD`. These same five also cover the remaining utility
+workflows. Deployment credentials are read from the Vault operator archive only when
+needed; Proxmox, R2, Cloudflare and service credentials are not copied back into Actions.
+The model subprocess does not receive those deployment credentials.
 
-No Proxmox API, R2, Cloudflare, Stripe, Auth0 or service credentials are needed by the
-new agents. The model subprocess receives the model key, a read-only checkout and
-sanitized evidence; its environment excludes root SSH, GitHub and Vault credentials.
-The collector removes its kubeconfig before invoking the model and obtains a fresh
-restricted token later if publication needs reconciliation checks.
+The runner needs Python 3 with PyYAML, Git, npm, curl, kubectl, sshpass, just, Terraform
+and Ansible. Workflows install current stable Helm with checksum verification and a pinned
+Codex CLI in temporary directories. The existing restricted agent ServiceAccounts/RBAC
+in the CrowdSec manifests must be reconciled before running. Agent cluster tokens remain
+read-only; fixed controller operations use Vault-backed deployment access separately.
 
-Optional repository variables are `DEEPSEEK_MODEL`, `K3S_SERVER` and `PROMETHEUS_URL`.
-Defaults are `deepseek-v4-flash`, `192.168.1.110`, and
-`https://prometheus.internal.pavel-usanli.online:9090` respectively.
+Optional repository variables are `DEEPSEEK_MODEL`, `K3S_SERVER`, `PROMETHEUS_URL`, and
+`PROXMOX_SSH_HOST`. Defaults use this repository's current LAN addresses and model settings.
+The runner must reach Vault, Proxmox, guest hosts, k3s, Prometheus and upstream sources.
 
-## What may be updated automatically
+## Controller capabilities and boundaries
 
-The prompts under `.github/agent-prompts/` explain repository ownership, evidence limits,
-compatibility requirements, permitted files and the structured proposal format.
-`.github/scripts/infra_agent.py` enforces a separate publication boundary:
+The AI proposes structured plans; it cannot send an arbitrary shell command to the controller.
+Supported update operations are:
 
-- Update agent: verified stable forward versions within the current major in existing
-  infrastructure HelmRelease pins and Ansible defaults/group-variable version keys.
-- Security agent: evidenced CrowdSec bans, scenarios, AppSec rules/configs, profiles,
-  their required wiring, and verified CrowdSec version pins. Trusted and proxy sources
-  cannot be banned. There is no numerical ban quota: behavior and evidence determine
-  whether each source qualifies. Ambiguous sources are watched and reported.
+- `configure`: apply a named service's Ansible configuration/migration.
+- `os-update`: update one supported guest inventory host using the maintenance playbook.
+- `terraform`: initialize, create a saved plan, reject deletion/replacement, and apply that exact plan.
+- `packer`: rebuild the supported workspace VM image.
+- `scanners`: refresh scanner pins/checksums and managed-repository configuration.
 
-The controller validates allowed paths/fields, compares proposed versions with collected
-upstream releases, checks YAML and kustomizations, runs the CrowdSec validator for security
-changes, then commits and pushes. Flux applies GitOps changes. The controller checks the
-published revision and updated HelmRelease generation; security runs also check rollouts
-and pod readiness. It does not automatically downgrade CrowdSec after a failure.
+Resource schema, chart values, roles, templates and migration tasks may change when justified
+by upstream guidance. A committed source pin without its matching deployment is not completion.
+Terraform backends/authentication, operator-secret helpers, agent permissions/validators,
+credential files and unrelated application source remain protected. Hypervisor/controller
+reboots are not performed out from under the running workflow.
 
-Terraform, Ansible playbooks, package upgrades, host restarts/reboots, Cloudflare edge
-changes, major upgrades and Packer builds remain local operations. Ansible source-pin
-updates are committed but not applied to hosts; the daily report lists the local commands.
-Cached host package lists and retained traffic logs have freshness/coverage limits,
-which the report must state explicitly. Own application images remain managed by the
-separate GitOps image-bump workflow.
+The security agent owns CrowdSec. It can migrate compatible chart/configuration schema and
+improve defenses based on actual traffic. Trusted and Cloudflare proxy sources are protected;
+there is no numerical ban quota. Ambiguous sources are watched rather than guessed hostile.
+Cloudflare edge rules are outside this agent's CrowdSec ownership. Application-owned image
+versions remain managed by their separate publish/image-bump workflows.
 
-## Read reports and test a run
+## Prompts, reports and dry runs
 
-In GitHub Actions, select either agent and run it manually with `dry_run=true` first.
-Read the job summary for health findings, checked versions, traffic evidence, proposed
-changes, deferred local work and gaps. Dry runs validate in a separate checkout and
-publish no commits. Failed collection or validation is a failed run, not a clean bill
-of health. Reports distinguish model proposals from controller-confirmed publication.
+The common contract is `.github/agent-prompts/maintenance-contract.md`; each agent adds its
+own scope and decision process. Traffic, release notes and all external content are treated
+as untrusted evidence. The controller validates proposals independently of the prompts.
 
-## Clean up unused Actions secrets
+Read the job summary for research, security rationale, each stage, expected/actual downtime,
+checkpoint names, deployment results, verification and unresolved gaps. Sanitized command
+failures return to the planner; raw credentials and sensitive deployment output do not.
 
-From the repository root, audit consumers by secret name:
+Use manual dispatch with `dry_run=true` to research and validate the next executable stage
+without publishing source changes or performing service upgrades/checkpoints. Host collection
+may refresh package indexes, but it does not install packages. Normal scheduled runs execute
+supported migrations automatically.
+
+## Remove unused Actions secrets
 
 ```bash
 python3 .github/scripts/audit_secrets.py
-```
-
-The audit checks both published default-branch workflows/actions and the proposed local
-ones. It separates secrets unused now from those removable only after old workflows are
-removed from GitHub. No secret values are printed.
-
-After publishing workflow changes, run:
-
-```bash
 python3 .github/scripts/audit_secrets.py --delete-unused
 ```
 
-Deletion is limited to secrets unused by both published and local workflows and present
-in the Vault operator archive. Names without a Vault backup are retained for review.
-The existing secret-sync helper reads current workflow references, so it does not restore
-credentials that no current workflow needs.
+Cleanup checks published and local workflow/action consumers, prints names only, and deletes
+only unused secrets with recovery copies present in Vault. Credentials without an archive
+copy remain for review; the daily bots do not destroy their last recoverable copy.

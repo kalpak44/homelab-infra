@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ import yaml
 
 spec = importlib.util.spec_from_file_location('infra_agent', Path(__file__).with_name('infra_agent.py'))
 agent = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = agent
 spec.loader.exec_module(agent)
 
 
@@ -44,16 +46,15 @@ class ProposalValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.validate('update', path, 'vault_version: "2.4.0"\n')
 
-    def test_rejects_source_configuration_change(self):
+    def test_allows_required_source_schema_migration(self):
         path = 'ansible/03-vault/vault-lxc/roles/vault/defaults/main.yml'
         self.put(path, 'vault_version: "2.2.0"\nport: 8200\n')
-        with self.assertRaises(ValueError):
-            self.validate('update', path, 'vault_version: "2.3.0"\nport: 1234\n')
+        self.validate('update', path, 'vault_version: "2.3.0"\nport: 1234\n')
 
-    def test_rejects_major_upgrade_and_downgrade(self):
-        for value in ['3.0.0', '2.1.0']:
-            with self.assertRaises(ValueError):
-                agent.version_change('2.2.0', value)
+    def test_allows_major_upgrade_but_rejects_downgrade(self):
+        agent.version_change('2.2.0', '3.0.0')
+        with self.assertRaises(ValueError):
+            agent.version_change('2.2.0', '2.1.0')
 
     def test_rejects_terraform_and_traversal(self):
         for kind in ['update', 'security']:
@@ -110,13 +111,15 @@ class ProposalValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.validate('security', path, '')
 
-    def test_helm_updates_are_version_only(self):
+    def test_helm_migrations_preserve_identity(self):
         path = agent.INFRA + 'example/helmrelease.yaml'
         old = {'spec': {'chart': {'spec': {'chart': 'example', 'version': '1.2.x'}}, 'values': {'replicas': 2}}}
         self.put(path, yaml.safe_dump(old))
         new = json.loads(json.dumps(old)); new['spec']['chart']['spec']['version'] = '1.3.x'
         self.validate('update', path, yaml.safe_dump(new))
         new['spec']['values']['replicas'] = 3
+        self.validate('update', path, yaml.safe_dump(new))
+        new['metadata'] = {'name': 'different-identity'}
         with self.assertRaises(ValueError):
             self.validate('update', path, yaml.safe_dump(new))
 
@@ -126,6 +129,7 @@ class ProposalValidationTests(unittest.TestCase):
         (directory / 'context.json').write_text('{}')
         with mock.patch.dict(agent.os.environ, {'DEEPSEEK_APIKEY': 'model-test', 'HOST_PASSWORD': 'host-test',
                              'GH_TOKEN': 'github-test', 'VAULT_PASSWORD': 'vault-test'}), \
+             mock.patch.object(agent.migrations, 'operator_environment', return_value={'DEEPSEEK_APIKEY':'model-test'}), \
              mock.patch.object(agent.subprocess, 'run', return_value=mock.Mock(returncode=0)) as run:
             agent.propose('update', directory)
         env = run.call_args.kwargs['env']
@@ -134,6 +138,83 @@ class ProposalValidationTests(unittest.TestCase):
         self.assertNotIn('VAULT_PASSWORD', env)
         self.assertEqual(env['DEEPSEEK_APIKEY'], 'model-test')
         self.assertIn('read-only', run.call_args.args[0])
+
+
+
+
+class AutonomousLoopTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.context = {'http_health': {'https://service.test/': 200}, 'history': [], 'research': {}}
+        (self.directory / 'context.json').write_text(json.dumps(self.context))
+
+    def proposal(self, complete=False, research=None):
+        return {'report': 'Verified migration assessment', 'complete': complete,
+                'research_urls': research or [], 'plan': {'target': 'vault'},
+                'changes': [], 'operations': [] if complete or research else
+                [{'type': 'configure', 'target': 'vault-lxc', 'layer': ''}]}
+
+    def test_research_execution_and_refreshed_verification_without_review(self):
+        proposals = [self.proposal(research=['https://developer.hashicorp.com/vault/docs']),
+                     self.proposal(), self.proposal(complete=True)]
+        def propose(*args):
+            (self.directory / 'proposal.json').write_text(json.dumps(proposals.pop(0)))
+        def apply(*args):
+            (self.directory / 'summary.md').write_text('Migration executed and checks passed')
+        with mock.patch.object(agent, 'collect'), mock.patch.object(agent, 'propose', side_effect=propose), \
+             mock.patch.object(agent, 'apply', side_effect=apply) as execute, \
+             mock.patch.object(agent.migrations, 'research', return_value={'https://developer.hashicorp.com/vault/docs':'Migration reference'}):
+            agent.run('update', self.directory)
+        execute.assert_called_once()
+        self.assertIn('refreshed health/version verification', (self.directory / 'summary.md').read_text())
+
+    def test_failed_stage_returns_diagnostics_to_repair_loop(self):
+        proposals = [self.proposal(), self.proposal(), self.proposal(complete=True)]
+        diagnostics=[]
+        def propose(*args):
+            diagnostics.append(json.loads((self.directory / 'context.json').read_text()))
+            (self.directory / 'proposal.json').write_text(json.dumps(proposals.pop(0)))
+        calls=[]
+        def apply(*args):
+            calls.append(True)
+            if len(calls)==1:
+                raise agent.CommandFailure('Migration needs a schema repair', mock.Mock(stdout='old schema unsupported',stderr=''))
+            (self.directory / 'summary.md').write_text('Repair succeeded')
+        with mock.patch.object(agent, 'collect'), mock.patch.object(agent, 'propose', side_effect=propose), \
+             mock.patch.object(agent, 'apply', side_effect=apply):
+            agent.run('update', self.directory)
+        self.assertEqual(len(calls), 2)
+        self.assertIn('old schema unsupported', diagnostics[1]['history'][-1]['diagnostic'])
+
+    def test_completion_after_failed_stage_is_rejected(self):
+        proposals = [self.proposal(), self.proposal(complete=True)]
+        def propose(*args):
+            (self.directory / 'proposal.json').write_text(json.dumps(proposals.pop(0)))
+        with mock.patch.object(agent, 'collect'), mock.patch.object(agent, 'propose', side_effect=propose), \
+             mock.patch.object(agent, 'apply', side_effect=RuntimeError('Failed migration')):
+            with self.assertRaises(agent.PolicyError): agent.run('update', self.directory)
+
+    def test_http_regression_prevents_completion(self):
+        def propose(*args):
+            context=json.loads((self.directory / 'context.json').read_text())
+            context['http_health']['https://service.test/']=500
+            (self.directory / 'context.json').write_text(json.dumps(context))
+            (self.directory / 'proposal.json').write_text(json.dumps(self.proposal(complete=True)))
+        with mock.patch.object(agent, 'collect'), mock.patch.object(agent, 'propose', side_effect=propose):
+            with self.assertRaises(RuntimeError): agent.run('update', self.directory)
+
+    def test_dry_run_stops_after_validating_next_executable_stage(self):
+        def propose(*args):
+            (self.directory / 'proposal.json').write_text(json.dumps(self.proposal()))
+        def apply(*args):
+            (self.directory / 'summary.md').write_text('Dry run: no changes published')
+        with mock.patch.dict(agent.os.environ, {'DRY_RUN':'true'}), mock.patch.object(agent, 'collect'), \
+             mock.patch.object(agent, 'propose', side_effect=propose) as planner, \
+             mock.patch.object(agent, 'apply', side_effect=apply):
+            agent.run('update', self.directory)
+        planner.assert_called_once()
 
 
 if __name__ == '__main__':

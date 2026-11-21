@@ -2,7 +2,7 @@
 
 Install local operator Terraform on the runner.
 
-Prerequisites: 05-packages. Optional operator tooling; GitHub Actions does not run Terraform.
+Prerequisites: 05-packages. Operator tooling also used by the dedicated, validated AI maintenance controller.
 
 From this directory:
 

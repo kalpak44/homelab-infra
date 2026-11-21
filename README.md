@@ -34,8 +34,8 @@ just --justfile ansible/Justfile configure <resource>
 ```
 
 Bootstrap components have their own `.env.example`, ignored `.env`, and `just apply`.
-Current Terraform and service recipes load the ignored root `.env`. Neither Terraform
-nor Ansible executes in GitHub Actions. Packer images are built manually.
+Current Terraform and service recipes load the ignored root `.env`. Routine infrastructure commands run locally. The dedicated daily AI controller may execute
+validated migrations automatically with Vault-backed credentials and recovery checkpoints.
 
 ## Automation
 
@@ -48,7 +48,7 @@ All workflows run on the self-hosted runner. Scheduled jobs also support manual 
 | AI Security Agent | Daily 22:00 |
 | Vault-to-Actions secret synchronization | Manual |
 
-Agents publish validated source changes; Flux applies GitOps changes. Host updates
-and infrastructure deployment stay local. See the [agent guide](<docs/9 - Daily maintenance agents.md>) for boundaries and reports.
+Agents publish validated source changes; Flux applies GitOps changes. The AI prioritizes security fixes and performs validated migrations, including major
+upgrades with brief planned downtime. See the [agent guide](<docs/9 - Daily maintenance agents.md>) for boundaries and reports.
 
 [Security policy](SECURITY.md) · [MIT license](LICENSE)

@@ -9,7 +9,9 @@ These workflows run on the self-hosted runner:
 | `ai-update-agent.yml` | Daily 06:00 UTC + manual | Read-only evidence collection and validated source-pin proposals |
 | `ai-security-agent.yml` | Daily 22:00 UTC + manual | Traffic-based CrowdSec defense/version proposals |
 
-Terraform and Ansible execution is local only, including playbooks, OS upgrades, host restarts and provisioning. Agents may commit source pins and GitOps defenses; they do not apply Terraform or Ansible.
+Routine infrastructure provisioning remains local; deploy/destroy dropdown workflows stay
+removed. The dedicated AI controller is authorized to apply validated, checkpointed migrations
+without a human-review gate, including supported Ansible/Terraform maintenance operations.
 Do not add infrastructure deploy/destroy workflows or workflow resource dropdowns.
 The secret-sync recipe executes the Python Vault helper, not an Ansible playbook.
 Its location is `ansible/03-vault/operator-secrets/secrets.py`.
@@ -41,7 +43,7 @@ manifests from Git, and source repositories can still dispatch GitOps image upda
 The shared composite action invokes `.github/scripts/infra_agent.py`. Model runs use
 a read-only checkout and a restricted environment. The controller validates file and
 field allowlists, upstream versions and CrowdSec wiring before publishing; Flux applies
-GitOps changes. Source pins for standalone hosts require a local operator command.
+GitOps changes. Standalone host source changes require the matching controller deployment operation.
 
 There is no numerical ban cap. Each source requires behavioral evidence; trusted and
 Cloudflare proxy addresses are protected. Prompts treat traffic and upstream text as
