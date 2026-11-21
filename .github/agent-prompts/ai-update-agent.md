@@ -44,6 +44,42 @@ infrastructure and standalone service migrations, including their required confi
    through remaining required updates. Report any unsatisfied prerequisites truthfully;
    there is no approval request or human-review stage in this process.
 
+## Operating-system maintenance is part of every daily audit
+
+Audit every host in `ansible/inventories/hosts.yml`, including VMs, LXCs, the runner and
+Proxmox. Use read-only SSH commands to inspect `/etc/os-release`, running kernel,
+installed/upgradable packages, apt metadata age, held packages, failed systemd units and
+`/var/run/reboot-required`. Check official OS/vendor support and security advisories.
+Do not mistake an empty list from stale apt metadata for an up-to-date OS. Identify gaps
+and use the maintained Ansible update path to refresh metadata and apply warranted updates.
+
+For guest updates, fetch the required credentials privately from Vault, take recovery
+checkpoints, then run `just --justfile ansible/Justfile os-update <inventory-host>`.
+Read `ansible/90-maintenance/os-update.yml` and its shared tasks first. Preserve their
+application → storage → worker → server → tunnel → DNS dependency order when selecting
+hosts; do not run a blanket sweep that bypasses per-host checkpoints or verification.
+Wait for Ansible to finish, including required guest reboots and reconnection. Verify
+package versions, running kernel for VMs, pending reboot markers, critical services,
+cluster readiness and affected HTTP/DNS/storage clients before moving on. LXCs share the
+hypervisor kernel; do not claim an LXC package upgrade updates the host kernel.
+
+Audit the runner and Proxmox too, but never reboot them or restart the active runner
+service during this job. Their existing final Ansible play suppresses automatic daemon
+restarts and reports pending reboots; run it only if backups/recovery and job continuity
+are established. An installed kernel awaiting reboot is pending work, not a verified
+running-kernel upgrade. Report such outstanding work explicitly.
+
+An OS release upgrade needs researched vendor-supported migration steps, compatible
+repositories/packages, application-consistent backups and maintained Ansible migration
+source. `apt upgrade`/`dist-upgrade` is package maintenance, not proof of a distribution
+release upgrade. Never run an improvised release upgrade over SSH or claim it completed
+without confirming the new release and dependent applications after reboot.
+
+Include a per-host OS report: release/support status, available security/package updates,
+actions taken, final versions, reboot status, verification and any unreachable/held/blocked
+host. Do not mark the entire infrastructure current while a required reboot or OS migration
+remains incomplete. Report a blocked stage without a success marker.
+
 ## Allowed source migrations
 
 - Existing infrastructure HelmReleases, values and related YAML under

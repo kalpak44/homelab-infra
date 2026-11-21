@@ -15,6 +15,16 @@ checks actual health/versions and repairs regressions. It targets newest stable 
 including majors and intermediate upgrades. No human review is required. Short downtime
 for major upgrades is allowed. Application image workflows retain their ownership.
 
+## OS updates
+
+The daily update audit includes every inventory host's OS support, available security and
+package updates, apt metadata age, held packages, running kernel and pending reboot state.
+Guest patching uses `just --justfile ansible/Justfile os-update <host>` with checkpoints,
+the playbook's dependency order, reboot/reconnection waits and application health checks.
+Proxmox and the active runner are never rebooted during their own job; outstanding reboot
+requirements are reported as unfinished work. Distribution release upgrades require their
+own researched and maintained Ansible migration, not just an apt package upgrade.
+
 ## Access
 
 Required Actions secrets: `GH_ADMIN_TOKEN`, `DEEPSEEK_APIKEY`, `HOST_PASSWORD`,
