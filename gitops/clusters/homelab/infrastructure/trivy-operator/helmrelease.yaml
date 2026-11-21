@@ -20,7 +20,7 @@ spec:
   values:
     # The operator reads its trivy-operator ConfigMap values at startup.
     podAnnotations:
-      homelab.pavel-usanli.online/trivy-config-revision: "r2"
+      homelab.pavel-usanli.online/trivy-config-revision: "r3"
 
     # Empty = every namespace. The operator discovers images itself, so nothing
     # here needs updating when an app is added under apps/{public,private}.
