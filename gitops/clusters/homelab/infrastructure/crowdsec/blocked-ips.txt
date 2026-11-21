@@ -55,3 +55,47 @@
 # ai.workspaced.online, 64 requests in six bursts over 1h23m; it resumed 23 minutes
 # after the automatic 1h threshold ban expired and was banned again
 104.244.74.39
+# 2026-11-20 305 credential/recon probes on ai.workspaced in 3s, 251 alerts
+35.233.14.79
+# 2026-11-20 304 credential/recon probes on planner in 3s, 251 alerts
+34.156.155.78
+# 2026-11-20 304 credential/recon probes on bunker in 11s, 251 alerts
+34.34.175.237
+# 2026-11-20 304 credential/recon probes on www in 2s, 251 alerts
+34.53.254.35
+# 2026-11-20 190 credential/recon probes on proklinator in 2s, 134 alerts
+34.38.144.211
+# 2026-11-20 46 alerts from 49 credential, PHP and actuator probes on workspaced
+213.209.159.133
+# 2026-11-20 36 scanner requests incl. canary and backup paths on www, 23 alerts
+81.171.72.135
+# 2026-11-20 30 secret-file probes and backup paths on mite-assistant, 25 alerts
+81.171.72.93
+# 2026-11-20 32 CVE, proxy-admin and registry probes on mite-assistant, 16 alerts
+138.68.144.227
+# 2026-11-20 32 CVE, proxy-admin and registry probes on mite-assistant, 16 alerts
+68.183.9.16
+# 2026-11-20 12 nested .php cache probes on workspaced, 7 alerts
+206.189.44.49
+# 2026-11-20 PHP webshell probes on www in two bursts over 4h, 4 alerts
+193.34.212.54
+# 2026-11-21 2,984 GETs to mite-assistant, 2,976 denied; admin/API probing
+93.123.109.247
+# 2026-11-21 377 requests on proklinator in 2s; 259 secret-file/recon alerts
+207.175.154.243
+# 2026-11-21 377 requests on proklinator in 2s; 259 secret-file/recon alerts
+34.156.170.51
+# 2026-11-21 310 .env probes on www, all denied, across 14h
+207.175.162.235
+# 2026-11-21 306 credential-file probes on mite-assistant in 24s, 160 alerts
+195.178.110.94
+# 2026-11-21 304 credential/recon probes on planner in 5s, 251 alerts
+34.140.51.102
+# 2026-11-21 304 credential/recon probes on noco-google-connector in 2s, 251 alerts
+34.22.247.194
+# 2026-11-21 274 denied .env, phpinfo and admin probes on ai.workspaced
+34.152.12.226
+# 2026-11-21 Repeated .git/.svn probes on www and mite-assistant, returning after 1h
+45.138.12.6
+# 2026-11-21 12 nested .php cache probes on www in 3m, 4 alerts
+143.198.120.204
