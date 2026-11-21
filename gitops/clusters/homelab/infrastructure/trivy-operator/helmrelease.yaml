@@ -64,9 +64,23 @@ spec:
           memory: 512Mi
 
       # An image-only scanner upgrade must roll the server so the operator
-      # schedules a report for the new workload revision.
+      # schedules a report for the new workload revision. A scheduling change
+      # also needs a fresh report.
       serverAdditionalAnnotations:
         homelab.pavel-usanli.online/trivy-scanner-version: "0.76.2"
+        homelab.pavel-usanli.online/trivy-scan-affinity: "colocated"
+
+    trivyOperator:
+      # Colocate scan jobs with the server: cross-node job RPC timed out while
+      # node-level traffic to the same service succeeded.
+      scanJobAffinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: trivy-server
+                  app.kubernetes.io/name: trivy-server
+              topologyKey: kubernetes.io/hostname
 
     trivy:
       # Chart 0.38.1 still pins 0.76.1. 0.76.2 is a security rebuild with the
