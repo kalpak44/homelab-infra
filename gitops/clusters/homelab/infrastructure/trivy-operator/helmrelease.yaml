@@ -18,9 +18,9 @@ spec:
   upgrade:
     crds: CreateReplace
   values:
-    # The operator reads scanJob.affinity from its ConfigMap at startup.
+    # The operator reads its trivy-operator ConfigMap values at startup.
     podAnnotations:
-      homelab.pavel-usanli.online/trivy-affinity-config: "r1"
+      homelab.pavel-usanli.online/trivy-config-revision: "r2"
 
     # Empty = every namespace. The operator discovers images itself, so nothing
     # here needs updating when an app is added under apps/{public,private}.
@@ -48,12 +48,8 @@ spec:
       # nothing is lost; only the job's logs age out.
       scanJobTTL: "2m"
 
-      # Rescan cadence: 30 days (Go duration, so no day unit - 720h).
-      # This only governs images that have not changed. A new image tag changes
-      # the workload's pod-spec hash, which forces an immediate rescan
-      # regardless of this TTL - so anything gitops-bump-images touches is
-      # still scanned on every bump, and this is the floor for stale images.
-      scannerReportTTL: "720h"
+      # Temporary shorter TTL forces the stale post-rollout reports to refresh.
+      scannerReportTTL: "468h"
 
       # Only the live ReplicaSet of each Deployment, not every old revision.
       vulnerabilityScannerScanOnlyCurrentRevisions: true
@@ -73,18 +69,6 @@ spec:
       serverAdditionalAnnotations:
         homelab.pavel-usanli.online/trivy-scanner-version: "0.76.2"
         homelab.pavel-usanli.online/trivy-scan-affinity: "colocated-r2"
-
-    trivyOperator:
-      # Colocate scan jobs with the server: cross-node job RPC timed out while
-      # node-level traffic to the same service succeeded.
-      scanJobAffinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/instance: trivy-server
-                  app.kubernetes.io/name: trivy-server
-              topologyKey: kubernetes.io/hostname
 
     trivy:
       # Chart 0.38.1 still pins 0.76.1. 0.76.2 is a security rebuild with the
