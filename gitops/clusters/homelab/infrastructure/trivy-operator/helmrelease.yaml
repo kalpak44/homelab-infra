@@ -18,6 +18,10 @@ spec:
   upgrade:
     crds: CreateReplace
   values:
+    # The operator reads scanJob.affinity from its ConfigMap at startup.
+    podAnnotations:
+      homelab.pavel-usanli.online/trivy-affinity-config: "r1"
+
     # Empty = every namespace. The operator discovers images itself, so nothing
     # here needs updating when an app is added under apps/{public,private}.
     targetNamespaces: ""
