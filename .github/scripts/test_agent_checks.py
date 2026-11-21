@@ -63,7 +63,7 @@ class Checks(unittest.TestCase):
                             '-----BEGIN RSA ' + 'PRIVATE KEY-----\nfixture\n-----END RSA ' + 'PRIVATE KEY-----', {value})
         self.assertNotIn('fixture', result)
 
-    def test_progress_never_echoes_commands_output_or_model_messages(self):
+    def test_progress_never_echoes_commands_or_output_and_redacts_messages(self):
         run = load('run_agent')
         secret = 'fixture-private-credential-123'
         event = {'type': 'item.completed', 'item': {'type': 'command_execution',
@@ -71,9 +71,16 @@ class Checks(unittest.TestCase):
             'aggregated_output': secret, 'exit_code': 1}}
         self.assertEqual(run.progress_event(event), 'Inspecting a VM or LXC over SSH — exit 1')
         self.assertNotIn(secret, run.progress_event(event))
-        self.assertNotIn(secret, run.progress_event({'type': 'item.completed',
-            'item': {'type': 'agent_message', 'text': secret}}))
         self.assertNotIn(secret, run.progress_event({'type': 'error', 'message': secret}))
+        message = run.progress_event({'type': 'item.completed', 'item': {'type': 'agent_message',
+            'text': 'Upgrading Trivy with ' + secret + ' and hvs.' + 'A' * 24 + ' password=hunter22x'}},
+            {secret})
+        self.assertTrue(message.startswith('Agent: Upgrading Trivy'))
+        for leaked in [secret, 'hvs.AAAA', 'hunter22x']:
+            self.assertNotIn(leaked, message)
+        plan = run.progress_event({'type': 'item.updated', 'item': {'type': 'todo_list',
+            'items': [{'text': 'Check k3s', 'completed': True}, {'text': 'Audit hosts', 'completed': False}]}})
+        self.assertEqual(plan, 'Plan: [x] Check k3s; [ ] Audit hosts')
 
     def test_live_progress_streams_without_exposing_tool_output(self):
         run = load('run_agent')
@@ -95,14 +102,14 @@ class Checks(unittest.TestCase):
 
     def test_launcher_does_not_preload_vault_and_requires_completion(self):
         run = load('run_agent')
-        for completed in [False, True]:
+        for completed in [False, True, 'ATTENTION']:
             with tempfile.TemporaryDirectory() as folder:
                 def execute(args, instructions, env, directory):
                     self.assertNotIn('CLOUDFLARE_API_TOKEN', env)
                     self.assertIn('direct access', instructions)
                     Path(folder, 'result.md').write_text('Verified assessment.')
                     if completed:
-                        Path(folder, 'SUCCESS').write_text('SUCCESS')
+                        Path(folder, 'SUCCESS').write_text('ATTENTION\n' if completed == 'ATTENTION' else 'SUCCESS')
                     return 0
                 with patch.dict(os.environ, {'PATH': os.environ['PATH']}, clear=True), \
                      patch('sys.argv', ['run_agent.py', 'update', folder]), \

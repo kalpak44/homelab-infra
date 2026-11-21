@@ -155,5 +155,9 @@ expected/actual downtime, commits, executed commands/check results and remaining
 A justified no-change assessment is valid; missing evidence is not proof of health.
 For dry runs distinguish successful assessment from unperformed deployment.
 Only after all required work/checks succeed, write `SUCCESS` to the supplied completion-marker
-path. On unresolved failure write the report but do not create that marker. Your final message
-must also state completion or failure truthfully. The wrapper fails without both report and marker.
+path. When every change you made is verified healthy and the only open items are ones this run
+may not or cannot resolve (a human decision, rebooting the runner executing you, a missing
+upstream release, a prohibited destructive migration), write `ATTENTION` to that path instead
+and list them under a "Needs a human" heading. A change you made that is broken or unverified
+is a failure: write the report but no marker. Your final message must also state the outcome
+truthfully. The wrapper fails without both report and marker.

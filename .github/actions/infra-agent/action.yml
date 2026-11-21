@@ -61,4 +61,7 @@ runs:
     - name: Discard transient credentials and evidence
       if: always()
       shell: bash
-      run: rm -rf -- "$AGENT_DIRECTORY"
+      # Go writes its module cache read-only, which rm -rf alone cannot delete.
+      run: |
+        chmod -R u+w -- "$AGENT_DIRECTORY" 2>/dev/null || true
+        rm -rf -- "$AGENT_DIRECTORY"

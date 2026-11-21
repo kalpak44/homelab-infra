@@ -20,27 +20,54 @@ def private_values(env):
         r'PASSWORD|TOKEN|SECRET|APIKEY|PRIVATE_KEY|KEYSTORE', k)}
 
 
+# Values fetched from Vault mid-run are unknown to the wrapper, so token shapes are scrubbed too.
+TOKEN_PATTERNS = [
+    (r'\b(?:hv[sbr]|gh[pousr])[._][A-Za-z0-9_-]{16,}', '[redacted]'),
+    (r'\b(?:github_pat|sk|xox[abp])[_-][A-Za-z0-9_-]{16,}', '[redacted]'),
+    (r'\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*', '[redacted]'),
+    (r'(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{12,}', r'\1[redacted]'),
+    (r'(?i)((?:password|passwd|secret|token|api[_-]?key)["\']?\s*[=:]\s*["\']?)[^\s"\',;]{6,}',
+     r'\1[redacted]'),
+]
+
+
 def redact(text, values):
     for value in sorted(values, key=len, reverse=True):
         text = text.replace(value, '[redacted]').replace(json.dumps(value)[1:-1], '[redacted]')
+    for pattern, replacement in TOKEN_PATTERNS:
+        text = re.sub(pattern, replacement, text)
     return re.sub(r'(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----',
                   '[redacted private key]', text)
 
 
-def progress_event(event):
-    """Map structured events to fixed labels; never echo commands, messages or tool output."""
+def excerpt(text, values, limit=600):
+    text = ' '.join(redact(str(text), values).split())
+    return text if len(text) <= limit else text[:limit] + ' …'
+
+
+def progress_event(event, values=frozenset()):
+    """Show the agent's narrative and plan redacted; never echo commands or tool output."""
     kind = event.get('type', '')
     if kind == 'turn.started':
         return 'Assessing evidence and choosing the next step'
     if kind in {'error', 'turn.failed'}:
         return 'Provider or agent error; details kept private for the final report'
     item = event.get('item', {})
+    if item.get('type') == 'todo_list' and kind in {'item.started', 'item.updated', 'item.completed'}:
+        steps = [('[x] ' if step.get('completed') else '[ ] ') + excerpt(step.get('text', ''), values, 120)
+                 for step in item.get('items', [])]
+        return 'Plan: ' + '; '.join(steps) if steps else None
     if kind not in {'item.started', 'item.completed'}:
         return None
     if item.get('type') == 'file_change':
-        return 'Updating repository source files'
-    if item.get('type') == 'agent_message':
-        return 'Agent updated its assessment'
+        paths = [change.get('path', '') for change in item.get('changes', [])]
+        paths = [os.path.relpath(path, ROOT) if os.path.isabs(path) else path for path in paths]
+        return 'Editing ' + excerpt(', '.join(paths), values, 300) if paths else 'Updating repository source files'
+    if item.get('type') in {'agent_message', 'reasoning'}:
+        if kind != 'item.completed' or not item.get('text', '').strip():
+            return None
+        prefix = 'Agent: ' if item['type'] == 'agent_message' else 'Thinking: '
+        return prefix + excerpt(item['text'], values)
     if item.get('type') != 'command_execution':
         return None
     command = item.get('command', '').lower()
@@ -76,6 +103,7 @@ def progress_event(event):
 
 def execute_codex(args, instructions, env, directory, timeout=9600, heartbeat=30):
     started = last_visible = time.monotonic()
+    values = private_values(env)
     events = queue.Queue()
     with (directory / 'codex.log').open('w') as raw, (directory / 'progress.log').open('w') as progress:
         def emit(message):
@@ -111,7 +139,7 @@ def execute_codex(args, instructions, env, directory, timeout=9600, heartbeat=30
                     raw.write(line)
                     raw.flush()
                     try:
-                        message = progress_event(json.loads(line))
+                        message = progress_event(json.loads(line), values)
                     except (ValueError, TypeError, AttributeError):
                         message = None
                     if message:
@@ -158,8 +186,9 @@ def main():
         hook = hooks / 'pre-commit'
         hook.write_text('#!/bin/sh\nexec python3 "$AGENT_SOURCE/.github/scripts/check_credentials.py"\n')
         hook.chmod(0o700)
+        # A read-only Go module cache would make the cleanup step's rm -rf fail.
         env.update(HOME=str(home), CODEX_HOME=str(config), AGENT_SOURCE=str(ROOT),
-                   AGENT_DIRECTORY=str(directory),
+                   AGENT_DIRECTORY=str(directory), GOFLAGS='-modcacherw',
                    GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='core.hooksPath', GIT_CONFIG_VALUE_0=str(hooks))
         instructions = (ROOT / '.github/agent-prompts/maintenance-contract.md').read_text()
         instructions += '\n\n' + (ROOT / f'.github/agent-prompts/ai-{kind}-agent.md').read_text()
@@ -171,13 +200,21 @@ def main():
             '--output-last-message', str(directory / 'last-message.md'), '-'], instructions, env, directory)
         text = (directory / 'result.md').read_text() if (directory / 'result.md').exists() else (
             (directory / 'last-message.md').read_text() if (directory / 'last-message.md').exists() else 'Codex produced no report.')
-        success = code == 0 and (directory / 'SUCCESS').exists() and (directory / 'result.md').exists()
+        marker = directory / 'SUCCESS'
+        outcome = marker.read_text().strip().upper() if marker.exists() else ''
+        finished = code == 0 and (directory / 'result.md').exists() and outcome in {'SUCCESS', 'ATTENTION'}
         from check_credentials import secret_values
         values |= {v.decode() for v in secret_values()}
-        report.write_text(('Maintenance completed.\n\n' if success else 'Maintenance incomplete or failed.\n\n') + redact(text, values))
-        if not success:
+        heading = ('Maintenance incomplete or failed.' if not finished else
+                   'Maintenance completed with follow-ups that need a human.' if outcome == 'ATTENTION' else
+                   'Maintenance completed.')
+        report.write_text(heading + '\n\n' + redact(text, values))
+        if not finished:
             print('Codex maintenance did not complete; see the sanitized report.', flush=True)
-        return 0 if success else 1
+        elif outcome == 'ATTENTION':
+            print('::warning title=Maintenance follow-ups::Work verified; open follow-ups need a human. '
+                  'See the job summary.', flush=True)
+        return 0 if finished else 1
     except Exception as error:
         # Exception payloads and subprocess logs may include secrets; expose type only.
         report.write_text('Maintenance failed during setup/execution: ' + type(error).__name__ + '.\n')
