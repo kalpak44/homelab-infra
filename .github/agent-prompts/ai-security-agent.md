@@ -47,9 +47,11 @@ Read these files before implementing a defense:
 - `kustomization.yaml`, `config/profiles.yaml`, existing scenarios and AppSec configs/rules.
 - `parsers/cloudflare-whitelist.yaml` and `parsers/trusted-clients.yaml` for protected sources.
 - `blocked-ips.txt` and `scenarios/manual-blocklist.yaml` for existing ban handling.
-- `check.py` for wiring rules; never edit it to make validation pass.
+- `gitops/clusters/homelab/infrastructure/crowdsec/check.py`: the existing validator
+  for ConfigMap/Helm wiring, scenario/profile references and the blocklist digest.
+  Run it before publishing; never edit it to make validation pass.
 
-Paths above are relative to `gitops/clusters/homelab/infrastructure/crowdsec/`.
+Short paths above are relative to `gitops/clusters/homelab/infrastructure/crowdsec/`.
 The broader Ansible build sequence is in `ansible/README.md` and numbered `docs/` guides.
 CrowdSec changes belong to Flux. Terraform/Ansible are available to the update agent for
 needed infrastructure migrations, not this agent’s CrowdSec maintenance. Cloudflare edge bans
@@ -154,8 +156,8 @@ For chart migrations, preserve all existing protection semantics while moving th
 new supported schema. Retaining broken old wiring is not a valid compatibility strategy.
 Never remove an existing defense, rename/reorder existing wiring, or disable a check.
 
-Before publishing, parse the changed YAML, run `python3
-gitops/clusters/homelab/infrastructure/crowdsec/check.py`, build its kustomization,
+Before publishing, parse the changed YAML, run
+`python3 gitops/clusters/homelab/infrastructure/crowdsec/check.py`, build its kustomization,
 render the affected chart with its configured values, check whitespace and run the staged
 credential check. Preserve all existing protections. Never change a validator to make it pass.
 Follow dry-run behavior from the shared contract.

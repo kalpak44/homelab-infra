@@ -39,7 +39,7 @@ infrastructure and standalone service migrations, including their required confi
 4. Fetch required credentials from Vault and use the shared execution commands to apply host/source changes; do not stop at a
    committed Ansible pin and tell a person to apply it. Package updates and necessary
    guest restarts are allowed through the existing maintenance recipe. Do not reboot
-   the hypervisor or controller runner out from under the current workflow.
+   the hypervisor or active runner out from under the current workflow.
 5. Verify each stage in refreshed evidence, repair forward after failures, and continue
    through remaining required updates. Report any unsatisfied prerequisites truthfully;
    there is no approval request or human-review stage in this process.
