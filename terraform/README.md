@@ -10,7 +10,7 @@ terraform/
 ├── aws/                     # AWS accounts, SSO config and backend credential helper
 │   ├── personal/account/    # read-only identity check for 039959484327
 │   ├── personal/budgets/    # USD 20 monthly actual-cost email alert
-│   └── personal/github-actions/ # local admin bootstrap: GitHub OIDC and Actions role variable
+│   └── personal/iam-bootstrap/  # local SSO deployment role and scoped budget permissions
 ├── modules/                 # reusable primitives (not deployable on their own)
 │   ├── proxmox-lxc/
 │   └── proxmox-vm/          # clones from Proxmox VM template 9000
@@ -82,7 +82,7 @@ Local recipes load the root `.env` automatically. Exported shell variables take 
 
 All layers need R2 backend credentials:
 
-The AWS layer uses separate SSO or OIDC credentials for the AWS provider. See
+The AWS layer uses separate local SSO credentials for the AWS provider. See
 [AWS setup](aws/README.md) for its environment variables and authentication commands.
 
 | Var                     | Purpose                           |

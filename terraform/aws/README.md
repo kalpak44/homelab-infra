@@ -3,10 +3,10 @@
 Account `039959484327` (`personal`), workload region `eu-central-1` (Frankfurt).
 The existing `aws-admin` identity signs in through IAM Identity Center with the
 `AdministratorAccess` permission set. Its SSO region is `eu-central-1` (Frankfurt).
-Normal local Terraform runs use profile `aws-terraform`, which assumes the same
-`homelab-infra-terraform` role as GitHub Actions. Both use identical permissions,
-configuration, `just` commands and R2 state. The local-only IAM bootstrap selects
-`aws-admin` separately so the shared deployment role cannot manage its own trust.
+Normal local Terraform runs use profile `aws-terraform`, which assumes the
+`homelab-infra-terraform` role through local administrator SSO. The local-only IAM
+bootstrap selects `aws-admin` separately so the deployment role cannot manage its
+own trust or permissions.
 
 ## Local use
 
@@ -40,8 +40,8 @@ the repository root.
 
 `personal/account` reads the caller identity and exposes `account_id` and `caller_arn`.
 The provider rejects other account IDs. It creates no AWS resources. Each concern
-gets its own directory and R2 state key, plus entries in both workflow dropdowns,
-`terraform/Justfile` and the root README.
+gets its own directory and R2 state key, plus an entry in `terraform/Justfile`
+and documentation here. AWS provisioning runs locally.
 
 ## R2 state and AWS credentials
 
@@ -55,35 +55,29 @@ Run Terraform through `just` so the backend receives its bucket and endpoint.
 All AWS leaf directories must stay at `aws/<account>/<concern>/` because the backend
 config and credential helper paths are relative to that working directory.
 
-## GitHub Actions
+## Local IAM bootstrap
 
-The local bootstrap concern `personal/github-actions` manages:
+The concern `personal/iam-bootstrap` manages role `homelab-infra-terraform`:
 
-- The GitHub OIDC provider, audience `sts.amazonaws.com`.
-- Role `homelab-infra-terraform`, trusting only
-  `repo:kalpak44/homelab-infra:ref:refs/heads/main` through OIDC and the account's
-  AdministratorAccess SSO role through STS, with one-hour maximum sessions.
-- Repository Actions variable `AWS_TERRAFORM_ROLE_ARN` containing the role ARN.
+- Trusts the account's AdministratorAccess SSO role through STS, with one-hour
+  maximum sessions.
+- Grants access to manage only the `personal-monthly-20-usd` budget.
 
-Create or restore this configuration with local `aws-admin` SSO and `GH_ADMIN_TOKEN`:
+Create or restore this configuration with local `aws-admin` SSO:
 
 ```bash
-just --justfile terraform/Justfile plan-aws personal/github-actions
-just --justfile terraform/Justfile deploy aws personal/github-actions
+just --justfile terraform/Justfile plan-aws personal/iam-bootstrap
+just --justfile terraform/Justfile deploy aws personal/iam-bootstrap
 ```
 
-Its state is `homelab/aws/personal/github-actions.tfstate` in R2. This bootstrap
-is intentionally excluded from CI dropdowns and rejected when `GITHUB_ACTIONS=true`:
-the workflow role cannot change its own trust or permissions. Use a local admin
-session to maintain it. The repository currently uses GitHub's default mutable OIDC
-subject format; if that setting changes, update the trust condition accordingly.
+The directory retains the existing R2 state key
+`homelab/aws/personal/github-actions.tfstate` to preserve managed resources across
+the rename. Do not change that key without migrating the state.
 
-Dispatch **AWS - Deploy** with `personal/account` to verify OIDC and R2 end to end.
-The identity check requires no resource permissions. The shared role can also manage
-the specific `personal-monthly-20-usd` budget. Add scoped permissions
-to the bootstrap role as new Terraform concerns are introduced, then apply the
-bootstrap locally before running those concerns in CI. Keep existing R2 Actions
-secrets; no persistent AWS access-key secrets are needed.
+Bootstrap operations require a local administrator session and are rejected when
+`GITHUB_ACTIONS=true`. Add scoped permissions here as new Terraform concerns are
+introduced, then apply the bootstrap locally before deploying those concerns.
+AWS provisioning does not use GitHub OIDC or an Actions role variable.
 
 ## Monthly cost alert
 
@@ -97,9 +91,9 @@ just --justfile terraform/Justfile plan-aws personal/budgets
 just --justfile terraform/Justfile deploy aws personal/budgets
 ```
 
-The same concern is available in **AWS - Deploy** and **AWS - Destroy**. Its state is
-`homelab/aws/personal/budgets.tfstate`. Apply the local `personal/github-actions`
-bootstrap first when restoring the shared role's budget permissions.
+Its state is `homelab/aws/personal/budgets.tfstate`. Apply the local
+`personal/iam-bootstrap` concern first when restoring the deployment role's budget
+permissions.
 
 The recipient must be verified through AWS User Notifications for account
 `039959484327`; its existing email contact is active. If recreating the setup,

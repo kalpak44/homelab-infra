@@ -274,7 +274,7 @@ list:
     @echo "AWS - personal account (just deploy aws <account>/<concern>):"
     @printf "  %-30s %s\n" "personal/account" "039959484327 · aws-admin SSO · Frankfurt · read-only identity check"
     @printf "  %-30s %s\n" "personal/budgets" "Account-wide monthly cost alert · actual charges above USD 20 · email notification"
-    @printf "  %-30s %s\n" "personal/github-actions" "Local admin bootstrap · GitHub OIDC provider, Terraform role and Actions variable"
+    @printf "  %-30s %s\n" "personal/iam-bootstrap" "Local admin bootstrap · SSO deployment role and scoped budget permissions"
     @echo
     @echo "Cloudflare - tunnels + zones (just deploy cloudflare <resource>):"
     @echo "  tunnels (one state per tunnel: its ingress, the records pointing at it, WARP)"
