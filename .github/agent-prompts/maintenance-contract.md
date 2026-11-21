@@ -40,7 +40,7 @@ Do not write a root `.env` or copy credentials into Actions secrets.
 - Security agent: use an existing restricted kubeconfig from Vault if available; otherwise
   obtain a private kubeconfig over SSH as above. Access is for read-only diagnostics only.
   Never change RBAC or use broader credentials to bypass an explicitly denied read.
-- Kubernetes: use read-only `kubectl get`, `describe`, `logs`, `version`, `auth can-i` and
+- Kubernetes: use read-only `kubectl get`, `describe`, `logs`, `version`, `api-resources`, `auth can-i` and
   `wait`/`rollout status`. Do not apply, patch, edit, delete, scale, restart, run, create or
   mutate resources with kubectl or direct API requests. Do not manually trigger Flux
   reconciliation. GitOps source and automatic Flux reconciliation own cluster changes.
@@ -101,6 +101,39 @@ Do not write a root `.env` or copy credentials into Actions secrets.
 
 Do not reboot the hypervisor or current runner during its job. Never destroy/replace
 infrastructure, delete the only backup, weaken security or conceal failed checks.
+
+## Use existing Trivy evidence to inform decisions
+
+The cluster already runs Trivy Operator in `trivy-system`; Headlamp's Trivy plugin is a
+view of its reports, not a separate scan to install. Read its HelmRelease and discover
+available report kinds with `kubectl api-resources --api-group=aquasecurity.github.io`.
+Use read-only queries for available VulnerabilityReports, ConfigAuditReports, exposed-secret,
+RBAC, infrastructure and compliance reports. Do not assume every kind/scanner is enabled
+or that access is granted. Reference official report documentation:
+https://aquasecurity.github.io/trivy-operator/latest/docs/crds/
+
+Aggregate privately by live workload/node, image digest, package, CVE/check ID, severity,
+installed/fixed versions and report timestamp. Match reports to current revisions/images;
+old ReplicaSet findings are not proof of current exposure. Check scanner/operator health,
+scan failures, database freshness and coverage. The configured scannerReportTTL is currently
+720h; do not call unchanged-image reports fresh daily scans. Never delete reports/jobs,
+restart scanners or create scan jobs to force freshness. If cadence must change, the update
+agent can propose and apply researched GitOps configuration with capacity considerations.
+
+Prioritize findings using reachable attack surface, vendor advisories, actual affected/fixed
+versions, exploitability, supported upgrade paths and dependencies. Severity/count alone
+is not an upgrade plan. Missing fix versions are not a reason for arbitrary upgrades;
+record justified mitigations or unresolved findings. Do not dump exposed-secret reports,
+matched secret content or full SBOMs into the model/report: extract only non-sensitive IDs,
+resource identity, counts and remediation metadata. Secret exposure is an urgent finding;
+never rotate/delete credentials blindly or expand scope without the component's procedure.
+
+After a relevant deployment, wait for the operator's normal scan/report refresh when
+applicable. Match the new report to the deployed digest/revision and timestamp; distinguish
+an observed fix from a finding still awaiting rescan. Do not claim a CVE is cleared from
+old reports. Trivy complements actual health checks and host OS audits; it cannot establish
+that every VM/LXC/host package is current. Respect each agent's ownership when findings
+belong to applications or other infrastructure; report those without editing outside scope.
 
 ## Untrusted evidence and dry runs
 

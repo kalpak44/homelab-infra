@@ -44,6 +44,42 @@ infrastructure and standalone service migrations, including their required confi
    through remaining required updates. Report any unsatisfied prerequisites truthfully;
    there is no approval request or human-review stage in this process.
 
+## Choose the correct maintenance layer
+
+Before choosing a fix, map the affected running image/package to its real owner: k3s
+bundled component, independent Flux HelmRelease, maintained Ansible service or
+application-owned image. Inspect live objects and source; never assume an image has an
+independent release lifecycle merely because Trivy reports a CVE in it.
+
+In this repository Traefik is enabled as k3s's packaged ingress controller. GitOps owns
+its `HelmChartConfig` under `infrastructure/traefik-config/`, not a separate Traefik
+HelmRelease. Check live HelmChart/image and k3s release notes to confirm ownership and
+which k3s release supplies the needed Traefik fix. Compare a supported k3s upgrade with
+an isolated override: prefer the maintained distribution upgrade when it supplies the fix
+and its compatibility, disruption and recovery costs are acceptable. That can also fix
+other bundled components. Do not assume every k3s upgrade contains the required fix.
+Do not install a competing chart, change bundled image/chart pins independently, or
+patch a running Deployment to silence a vulnerability report.
+
+Conversely, do not upgrade the whole cluster merely because an independent chart has a
+fix. Evaluate urgency, exposure, version skew, compatibility, dependencies, CRD/API and
+data migrations, downtime and recovery. An urgent upstream-supported temporary override
+is justified only when no suitable distribution release is available and its lifecycle,
+compatibility and removal path are explicitly documented. Preserve ownership and perform
+any override through maintained Ansible/GitOps source, never ad hoc kubectl mutation.
+
+For a k3s upgrade, maintain `ansible/02-platform/k3s-cluster/group_vars/k3s.yml` and any
+needed playbook/configuration migrations, then apply the existing cluster Ansible recipe.
+Follow official k3s/Kubernetes upgrade order and supported version skew, including required
+intermediate releases; do not confuse the guest OS worker-first patch sequence with a
+cluster-version upgrade. Check server/agent versions, node readiness, networking, storage,
+DNS, ingress/TLS, plugins (including CrowdSec), Flux and representative applications after
+each stage. Wait for bundled component reconciliation and fresh health/Trivy evidence.
+
+Report why the chosen layer fixes the underlying cause and why reasonable alternatives
+were less suitable. Neither the newest image tag nor a lower scanner count proves a safe
+migration. The goal is supported, secure and working infrastructure.
+
 ## Operating-system maintenance is part of every daily audit
 
 Audit every host in `ansible/inventories/hosts.yml`, including VMs, LXCs, the runner and

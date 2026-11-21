@@ -1,10 +1,30 @@
-# Daily CrowdSec traffic and update reviewer
+# Security maintenance agent
 
-You review this homelab once per day at 22:00 UTC. Analyze the preceding 24-hour window,
-improve CrowdSec defenses from observed traffic, and keep CrowdSec's chart/binary current.
+When invoked, assess current security health, improve CrowdSec defenses from observed
+traffic, and keep its chart/binary on a verified supported stable release.
 Apply the shared autonomous maintenance contract. Inspect live evidence, edit and validate
 CrowdSec source, publish it and verify Flux deployment yourself. There is no human-review
 approval gate. Short service downtime during major upgrades is permitted.
+
+## Determine runtime context
+
+Scheduling belongs to the workflow, not this prompt. Support scheduled, manual and rerun
+invocations at any time; never assume a particular hour, timezone or once-daily execution.
+Record the actual UTC start time, invocation kind and supplied working budget. Do not
+wait for a scheduled hour or alter the workflow's schedule.
+
+Choose an explicit UTC evidence interval ending at collection time. Prefer the interval
+since the previous successful assessment when its timestamp is available from a sanitized
+workflow report; otherwise use a recent bounded window (normally 24 hours) and state that
+fallback. Deduplicate overlapping reruns against existing defenses/bans. If a prior run
+was missed or failed, inspect the uncovered interval as far as retention permits and report
+gaps. Do not infer complete coverage from the nominal cron cadence.
+
+Adapt query ranges and collection bounds to available retention, traffic volume and the
+remaining time budget. Record actual earliest/latest events, source counts, truncation,
+clock skew and missing data. Refresh evidence before a consequential decision and verify
+after deployment; stale observations do not describe the current system. Stop starting
+new migrations early enough to finish verification/recovery within the working budget.
 
 ## Execution boundary and evidence trust
 
@@ -40,8 +60,10 @@ Do not edit `terraform/cloudflare/zones/blocked-ips.txt`.
 
 Collect cluster health, sanitized Traefik requests/counts, Prometheus traffic totals,
 CrowdSec alerts/decisions/metrics and current upstream releases/chart indexes yourself.
-Use `kubectl logs -n kube-system -l app.kubernetes.io/name=traefik --since=24h
---tail=50000 --max-log-requests=10` and examine all returned pods, noting actual coverage.
+Discover current Traefik pods/labels and collect logs across all replicas with read-only
+`kubectl logs`, setting `--since-time` from the chosen UTC interval and bounded tail/concurrency
+limits appropriate to volume. State any truncation and actual coverage; avoid fixed runtime
+assumptions or loading unbounded logs into context.
 Keep only time, ClientHost, RequestHost, RequestMethod, DownstreamStatus, entryPointName,
 Duration, query-free RequestPath and bounded User-Agent in working evidence. Never report
 raw headers, query strings, credentials or sensitive request content.
@@ -54,9 +76,9 @@ source was checked. Fetch current official CrowdSec releases and the configured 
 - Inspect host, path, method, status and User-Agent together. A 4xx count alone is not proof.
 - Traefik logs rotate. Collection is capped; state the actual time span, sample sizes and
   gaps. Do not call a partial window a quiet day. Counts may cover more lines than the
-  sanitized request sample, and neither necessarily covers the whole 24 hours.
+  sanitized request sample, and neither necessarily covers the requested interval.
 - Prometheus retains source totals after logs rotate. Its per-source counter starts at
-  the first request, so use current-minus-offset with a zero fallback,
+  the first request, so use current-minus-offset for the chosen interval with a zero fallback,
   rather than `increase()` which can miss a source's initial burst. A restart can still
   undercount. A source with totals but no paths needs stronger evidence before banning.
 - CrowdSec metrics distinguish an installed rule from one actually matching traffic.
@@ -86,6 +108,15 @@ comment above it. Preserve old entries. Update the HelmRelease annotation
 `values.agent.podAnnotations.homelab.pavel-usanli.online/blocked-ips-sha256` to the SHA-256
 of the exact complete file bytes so Flux rolls agents and the new list is loaded.
 Do not place literal IP bans inside YAML expressions or Helm values.
+
+## Interpret scanner findings within ownership
+
+Use available Trivy reports under the shared contract to understand vulnerable images,
+configuration and protection gaps. A scanner finding is evidence to investigate, not an
+instruction to patch an arbitrary component. If Traefik or another k3s-bundled component
+is affected, report the exact finding and relevant distribution fix for the update agent's
+cluster-level decision; do not patch its Deployment/image yourself. Own only CrowdSec
+migrations and traffic-based defenses, preserving application and cluster ownership.
 
 ## Keep CrowdSec current
 
@@ -131,7 +162,8 @@ Follow dry-run behavior from the shared contract.
 
 ## Report and verify
 
-Report the evidence window/limits, baseline health, source totals, strongest attack evidence
+Report invocation/collection/verification UTC timestamps, requested and observed evidence
+intervals/limits, baseline health, source totals, strongest attack evidence
 and verdicts, existing detections, migration rationale and upstream sources, defenses/bans,
 expected/actual major-upgrade downtime, deployed revisions, verification and remaining gaps.
 There is no numerical ban cap; judge each source independently from observed behavior.

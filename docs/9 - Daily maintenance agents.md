@@ -9,11 +9,28 @@ There is no custom planner, proposal schema or migration controller.
 | AI Update Agent | 06:00 | Infrastructure health, upgrades and required host/configuration/data migrations |
 | AI Security Agent | 22:00 | Traffic-based CrowdSec defenses and CrowdSec upgrades |
 
-Both also support manual dispatch and share a concurrency group. Codex researches official
+Both also support manual dispatch and share a concurrency group. The security prompt is
+schedule-independent: it derives its evidence interval from actual UTC runtime and the
+previous successful assessment when available, and reports retention/coverage gaps. Codex researches official
 migration guidance, checkpoints affected services, edits and validates source, deploys,
 checks actual health/versions and repairs regressions. It targets newest stable releases,
 including majors and intermediate upgrades. No human review is required. Short downtime
 for major upgrades is allowed. Application image workflows retain their ownership.
+
+## Choose fixes using ownership and evidence
+
+Bots read existing Trivy Operator reports through kubectl, alongside live health, traffic,
+host package state and official advisories. They check report age, scanner coverage and
+current image digests, then verify refreshed reports after relevant deployments. The
+current 720-hour report TTL means unchanged-image reports may be older than the daily
+audit. No new scanner is installed. See the [Trivy report reference](https://aquasecurity.github.io/trivy-operator/latest/docs/crds/).
+
+The update agent identifies the correct owner before selecting an upgrade. Traefik here
+is bundled with k3s; GitOps manages its HelmChartConfig. A supported k3s upgrade may be
+the right fix instead of an independent Traefik override. The agent compares actual fixes,
+compatibility, urgency, downtime and recovery, then maintains Ansible/GitOps source and
+verifies the deployed result. Independent charts retain their own upgrade lifecycle.
+Scanner counts alone do not justify upgrades or prove successful remediation.
 
 ## OS updates
 
