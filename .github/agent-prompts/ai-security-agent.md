@@ -66,6 +66,35 @@ Discover current Traefik pods/labels and collect logs across all replicas with r
 `kubectl logs`, setting `--since-time` from the chosen UTC interval and bounded tail/concurrency
 limits appropriate to volume. State any truncation and actual coverage; avoid fixed runtime
 assumptions or loading unbounded logs into context.
+`kubectl logs` returns only the current container log file; `--since-time` does not make
+rotated files visible. A current-file span shorter than the interval is not proof the
+node has discarded the older requests. Recover retained rotations before declaring a gap:
+
+1. Read Traefik pod UIDs, node names/addresses, container names and restart counts with
+   read-only kubectl. Include every current replica and retained historical Traefik pod
+   directory on both inventory k3s nodes when a pod has moved/restarted.
+2. Through sshpass/SSH inspect `/var/log/pods/kube-system_traefik-*/traefik/` on those
+   nodes. Stream current `.log` files, dated rotations and `.gz` files read-only; never
+   change permissions, copy raw logs into source, force log rotation or restart Traefik.
+   Read/decompress and filter on the node, returning only the sanitized fields below.
+3. Parse the CRI envelope and access-log JSON. Filter by the chosen UTC interval using
+   valid event/CRI timestamps, rather than file modification time. Reassemble CRI partial
+   records where needed; count malformed/truncated records as gaps. Read each underlying
+   file once (avoid `/var/log/containers` symlink duplicates) and avoid double-counting the
+   same event collected through both kubectl and node-file reads. Identical independent
+   requests are still separate events; do not deduplicate solely by request fields.
+4. Report per-node/pod/file coverage, oldest retained timestamp and the combined interval
+   count. Process a large interval in streaming chunks so a fixed tail limit does not
+   silently discard the start. Counts and sanitization must cover all chunks examined.
+   If files have actually expired, a node is inaccessible, or a deleted pod's files are
+   gone, name that remaining gap rather than claiming a complete 24-hour window.
+
+Kubelet rotation is byte/file-count based, not a 24-hour retention guarantee. Evaluate
+available retained bytes, measured daily/peak volume and node disk headroom before
+recommending more capacity or durable archival. Do not independently patch Traefik to
+fix a collection limitation; report a genuine retention/capacity change to the update
+agent for maintained Ansible/GitOps implementation.
+
 Keep only time, ClientHost, RequestHost, RequestMethod, DownstreamStatus, entryPointName,
 Duration, query-free RequestPath and bounded User-Agent in working evidence. Never report
 raw headers, query strings, credentials or sensitive request content.
@@ -76,9 +105,9 @@ source was checked. Fetch current official CrowdSec releases and the configured 
 
 - Use `ClientHost`, the resolved client source. Never ban the proxy-hop `ClientAddr`.
 - Inspect host, path, method, status and User-Agent together. A 4xx count alone is not proof.
-- Traefik logs rotate. Collection is capped; state the actual time span, sample sizes and
-  gaps. Do not call a partial window a quiet day. Counts may cover more lines than the
-  sanitized request sample, and neither necessarily covers the requested interval.
+- Traefik logs rotate. Recover retained node rotations as above and state actual coverage,
+  bounds and gaps. Do not call a partial interval quiet or mistake a bounded sample for
+  the complete retained history. Prometheus counts and request evidence may differ in scope.
 - Prometheus retains source totals after logs rotate. Its per-source counter starts at
   the first request, so use current-minus-offset for the chosen interval with a zero fallback,
   rather than `increase()` which can miss a source's initial burst. A restart can still

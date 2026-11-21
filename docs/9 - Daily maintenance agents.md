@@ -32,6 +32,20 @@ compatibility, urgency, downtime and recovery, then maintains Ansible/GitOps sou
 verifies the deployed result. Independent charts retain their own upgrade lifecycle.
 Scanner counts alone do not justify upgrades or prove successful remediation.
 
+## Full-window Traefik evidence
+
+`kubectl logs --since=24h` reads only the current container log file. It can report less
+than a day even while older requests remain in kubelet's dated/compressed rotations.
+The security bot therefore reads those retained files over SSH on the relevant k3s nodes,
+filters the requested UTC interval, sanitizes on the node and avoids duplicate collection.
+It reports combined coverage and any real missing history. No raw requests go into Git.
+
+Rotation limits are bytes and file counts, not hours. If the retained history is actually
+insufficient, the update bot assesses traffic volume and disk headroom before maintaining
+kubelet or archival configuration through Ansible/GitOps. Pod/node deletion can also remove
+local history; missing coverage must remain explicit. Prometheus counters supplement this
+evidence but cannot recover request paths after the underlying logs have expired.
+
 ## OS updates
 
 The daily update audit includes every inventory host's OS support, available security and

@@ -80,6 +80,19 @@ Report why the chosen layer fixes the underlying cause and why reasonable altern
 were less suitable. Neither the newest image tag nor a lower scanner count proves a safe
 migration. The goal is supported, secure and working infrastructure.
 
+## Log retention and evidence capacity
+
+If the security audit reports less than its requested traffic interval, distinguish a
+collector limitation from actual loss first. `kubectl logs` exposes only the current file;
+inspect retained rotated/compressed Traefik logs on every relevant node over read-only
+SSH before changing the infrastructure. Keep at least the required daily assessment
+window available with traffic headroom. Kubelet size/count limits do not guarantee a
+number of hours: measure event bytes/peak rates, disk space, rotation and pod/node moves.
+Only change maintained Ansible kubelet settings or GitOps archival configuration when
+evidence shows insufficient retention, and validate capacity, privacy, cleanup and recovery.
+Preserve CrowdSec/Vector stdout consumption; never disable access logs or route them away
+from existing consumers. Do not call a newer log timestamp proof the full window exists.
+
 ## Operating-system maintenance is part of every daily audit
 
 Audit every host in `ansible/inventories/hosts.yml`, including VMs, LXCs, the runner and
