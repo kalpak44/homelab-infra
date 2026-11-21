@@ -48,8 +48,12 @@ spec:
       # nothing is lost; only the job's logs age out.
       scanJobTTL: "2m"
 
-      # Temporary shorter TTL forces the stale post-rollout reports to refresh.
-      scannerReportTTL: "468h"
+      # Rescan cadence: 30 days (Go duration, so no day unit - 720h).
+      # This only governs images that have not changed. A new image tag changes
+      # the workload's pod-spec hash, which forces an immediate rescan
+      # regardless of this TTL - so anything gitops-bump-images touches is
+      # still scanned on every bump, and this is the floor for stale images.
+      scannerReportTTL: "720h"
 
       # Only the live ReplicaSet of each Deployment, not every old revision.
       vulnerabilityScannerScanOnlyCurrentRevisions: true
