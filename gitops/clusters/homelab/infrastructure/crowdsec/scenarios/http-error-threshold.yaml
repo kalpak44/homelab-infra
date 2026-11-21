@@ -1,6 +1,6 @@
 type: leaky
 name: custom/http-error-threshold
-description: "Block IP after 5 4xx HTTP responses, regardless of rate"
+description: "Block IP when 50 non-static 4xx responses overflow a counter draining once per minute"
 
 # Client errors only: a 301 and Traefik's 0 for a disconnected client are ordinary traffic,
 # and counting them bans a visitor who merely followed a redirect and missed a favicon.
@@ -18,11 +18,12 @@ filter: "evt.Meta.service == 'http' && evt.Parsed.static_ressource == 'false' &&
 # Group events by source IP - each IP gets its own bucket
 groupby: evt.Meta.source_ip
 
-# capacity 4 + 1 overflow event = 5 4xx responses trigger a ban
-capacity: 4
+# capacity 49 + 1 overflow event = 50 4xx responses trigger a ban without draining.
+capacity: 49
 
-# leakspeed 6h → effective window = 4 × 6h = 24h (long enough to catch slow, spread-out probing)
-leakspeed: "6h"
+# Drain one error per minute so ordinary authentication and permission errors do not
+# accumulate all day. The separate burst rule still catches rapid automated traffic.
+leakspeed: "1m"
 
 # After firing once, suppress further alerts for this IP for 1 hour (avoid alert spam)
 blackhole: 1h
