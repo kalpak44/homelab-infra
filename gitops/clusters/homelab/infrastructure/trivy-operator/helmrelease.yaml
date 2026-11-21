@@ -63,6 +63,11 @@ spec:
           cpu: 500m
           memory: 512Mi
 
+      # An image-only scanner upgrade must roll the server so the operator
+      # schedules a report for the new workload revision.
+      serverAdditionalAnnotations:
+        homelab.pavel-usanli.online/trivy-scanner-version: "0.76.2"
+
     trivy:
       # Chart 0.38.1 still pins 0.76.1. 0.76.2 is a security rebuild with the
       # fixed Alpine and Go packages, so select it until the chart catches up.
