@@ -217,5 +217,23 @@ class AutonomousLoopTests(unittest.TestCase):
         planner.assert_called_once()
 
 
+class EvidencePrivacyTests(unittest.TestCase):
+    def test_compaction_preserves_health_but_excludes_environment_and_large_annotations(self):
+        data={'items':[{'metadata':{'name':'service','namespace':'test','annotations':{'last-applied':'long private details'}},
+                        'spec':{'containers':[{'name':'app','image':'app:2.0','env':[{'name':'API_KEY','value':'should-not-leak'}]}]},
+                        'status':{'phase':'Running','containerStatuses':[{'name':'app','ready':True,'restartCount':0}]}}]}
+        compact=agent.compact_cluster(data)
+        encoded=json.dumps(compact)
+        self.assertNotIn('should-not-leak',encoded)
+        self.assertNotIn('last-applied',encoded)
+        self.assertEqual(compact['items'][0]['status']['phase'],'Running')
+
+    def test_error_header_survives_large_cli_transcript(self):
+        result=mock.Mock(stdout='',stderr='ERROR: provider rejected request\n'+'prompt-data '*10000)
+        failure=agent.CommandFailure('Model failed',result)
+        self.assertIn('provider rejected request',failure.output)
+        self.assertLess(len(failure.output),15000)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -57,7 +57,7 @@ def redact(text):
 class CommandFailure(RuntimeError):
     def __init__(self, message, result):
         super().__init__(message)
-        self.output = redact((result.stdout + '\n' + result.stderr)[-24000:])
+        self.output = redact('STDERR (beginning):\n' + result.stderr[:7000] + '\nSTDERR (end):\n' + result.stderr[-3000:] + '\nSTDOUT (end):\n' + result.stdout[-3000:])
 
 
 def command(args, *, env=None, cwd=ROOT, timeout=120, check=True):
@@ -131,17 +131,40 @@ def mint(kind, directory):
         raise RuntimeError('Agent RBAC unexpectedly permits mutations')
 
 
+def compact_cluster(data):
+    items = []
+    for item in data.get('items', []):
+        meta = item.get('metadata', {})
+        spec = item.get('spec', {})
+        status = item.get('status', {})
+        compact = {'metadata': {key: meta[key] for key in ['name', 'namespace', 'generation'] if key in meta}}
+        compact['spec'] = {key: spec[key] for key in ['replicas', 'nodeName', 'chart', 'path', 'sourceRef'] if key in spec}
+        containers = spec.get('containers', spec.get('template', {}).get('spec', {}).get('containers', []))
+        compact['containers'] = [{'name': c['name'], 'image': c.get('image')} for c in containers]
+        compact['status'] = {key: status[key] for key in ['phase', 'readyReplicas', 'replicas', 'numberReady',
+                              'desiredNumberScheduled', 'observedGeneration', 'lastAppliedRevision',
+                              'lastAttemptedRevision', 'nodeInfo'] if key in status}
+        compact['status']['conditions'] = [{key: c[key] for key in ['type', 'status', 'reason'] if key in c}
+                                          | {'message': c.get('message', '')[:300]} for c in status.get('conditions', [])]
+        if 'containerStatuses' in status:
+            compact['status']['containerStatuses'] = [{key: c[key] for key in ['name', 'ready', 'restartCount', 'state'] if key in c}
+                                                     for c in status['containerStatuses']]
+        items.append(compact)
+    return {'items': items}
+
+
 def collect(kind, directory):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     directory.chmod(0o700)
     private = migrations.operator_environment(ROOT)
     register_private(private)
+    (directory / 'evidence').mkdir(exist_ok=True)
     mint(kind, directory)
     evidence = {'collected_at': datetime.now(timezone.utc).isoformat(), 'kind': kind,
                 'cluster': {}, 'upstream_releases': {}, 'chart_releases': {}, 'gaps': []}
     for resource in ['nodes', 'pods', 'deployments', 'statefulsets', 'daemonsets', 'helmreleases', 'kustomizations']:
         result = kubectl('get', resource, '-A', '-o', 'json')
-        evidence['cluster'][resource] = json.loads(result.stdout) if not result.returncode else None
+        evidence['cluster'][resource] = compact_cluster(json.loads(result.stdout)) if not result.returncode else None
         if result.returncode:
             evidence['gaps'].append('Cluster read failed: ' + resource)
     for name, repo in RELEASES.items():
@@ -150,7 +173,7 @@ def collect(kind, directory):
                                        os.environ.get('GH_TOKEN')))
             evidence['upstream_releases'][name] = {k: release.get(k) for k in
                                                     ['tag_name', 'published_at', 'html_url', 'body']}
-            evidence['upstream_releases'][name]['body'] = (evidence['upstream_releases'][name]['body'] or '')[:24000]
+            evidence['upstream_releases'][name]['body'] = (evidence['upstream_releases'][name]['body'] or '')[:6000]
         except Exception:
             evidence['gaps'].append('Release lookup failed: ' + repo)
     for path in sorted((ROOT / INFRA).glob('*/helmrepository.yaml')):
@@ -179,17 +202,22 @@ def collect(kind, directory):
             except (ValueError, TypeError):
                 continue
         (directory / 'traffic.jsonl').write_text(''.join(json.dumps(request) + '\n' for request in requests))
-        evidence['traffic'] = requests[-500:]
+        evidence['traffic'] = requests[-100:]
         evidence['traffic_counts'] = dict(Counter(r.get('ClientHost', '') for r in requests).most_common(1000))
         evidence['traffic_evidence_file'] = '.agent-evidence/traffic.jsonl'
         evidence['total_sanitized_requests'] = len(requests)
-        evidence['traffic_note'] = 'At most 50,000 retained log lines per pod; Last 500 sanitized requests and 1,000 busiest sources are inline; the full sanitized JSONL is available as a read-only evidence file. Coverage may be less than 24h.'
+        evidence['traffic_note'] = 'At most 50,000 retained log lines per pod; Last 100 sanitized requests and 1,000 busiest sources are inline; the full sanitized JSONL is available as a read-only evidence file. Coverage may be less than 24h.'
         if logs.returncode:
             evidence['gaps'].append('Traefik logs unavailable')
         for name, args in [('alerts', ['alerts', 'list', '--since', '24h', '-o', 'json']),
                            ('decisions', ['decisions', 'list', '-o', 'json']), ('metrics', ['metrics'])]:
             result = kubectl('exec', '-n', 'crowdsec', 'deploy/crowdsec-lapi', '--', 'cscli', *args)
-            evidence['cluster']['crowdsec_' + name] = result.stdout[:250000] if not result.returncode else None
+            if not result.returncode:
+                filename = 'crowdsec-' + name + '.txt'
+                (directory / 'evidence' / filename).write_text(redact(result.stdout))
+                evidence['cluster']['crowdsec_' + name] = {'preview': redact(result.stdout[:5000]), 'file': '.agent-evidence/' + filename}
+            else:
+                evidence['cluster']['crowdsec_' + name] = None
             if result.returncode:
                 evidence['gaps'].append('CrowdSec read failed: ' + name)
         query = 'topk(100, sum by (client_ip, host, status) ((traefik_client_requests_total - traefik_client_requests_total offset 24h >= 0) or traefik_client_requests_total))'
@@ -232,6 +260,13 @@ def collect(kind, directory):
                 'https://grafana.internal.pavel-usanli.online/']:
         result = command(['curl', '-sS', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '15', url], check=False)
         evidence['http_health'][url] = int(result.stdout.strip() or 0)
+    for category in ['cluster', 'chart_releases']:
+        for key, data in list(evidence[category].items()):
+            encoded = json.dumps(data)
+            if len(encoded) > 20000:
+                filename = category + '-' + key.replace('/', '_') + '.json'
+                (directory / 'evidence' / filename).write_text(encoded)
+                evidence[category][key] = {'file': '.agent-evidence/' + filename, 'note': 'Full sanitized evidence is in the read-only file'}
     (directory / 'context.json').write_text(json.dumps(evidence, indent=2))
     print('Collected evidence bytes:', (directory / 'context.json').stat().st_size)
     (directory / 'kubeconfig').unlink()
@@ -266,6 +301,8 @@ def propose(kind, directory):
                 elif member.isfile() and not Path(member.name).is_absolute() and '..' not in Path(member.name).parts:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(source.extractfile(member).read())
+    if (directory / 'evidence').exists():
+        shutil.copytree(directory / 'evidence', model_root / '.agent-evidence', dirs_exist_ok=True)
     if (directory / 'traffic.jsonl').exists():
         evidence_dir = model_root / '.agent-evidence'
         evidence_dir.mkdir(exist_ok=True)
@@ -439,9 +476,19 @@ def validate_change(kind, path, content, context):
     return old_text
 
 
+def resolved_context(directory):
+    context = json.loads((directory / 'context.json').read_text())
+    for category in ['cluster', 'chart_releases']:
+        for key, value in list(context.get(category, {}).items()):
+            if isinstance(value, dict) and value.get('file', '').startswith('.agent-evidence/'):
+                name = Path(value['file']).name
+                context[category][key] = json.loads((directory / 'evidence' / name).read_text())
+    return context
+
+
 def apply(kind, directory):
     proposal = json.loads((directory / 'proposal.json').read_text())
-    context = json.loads((directory / 'context.json').read_text())
+    context = resolved_context(directory)
     migrations.check_plan(proposal, context, kind)
     if kind == 'security' and proposal['operations']:
         raise PolicyError('CrowdSec security migrations use Flux, not unrelated host operations')
@@ -691,9 +738,9 @@ if __name__ == '__main__':
             report.write(reason + '\n')
         diagnostic = getattr(exc, 'output', '')
         if diagnostic:
-            with (args.directory / 'summary.md').open('a') as report: report.write('\n```text\n' + diagnostic[-8000:] + '\n```\n')
+            with (args.directory / 'summary.md').open('a') as report: report.write('\n```text\n' + diagnostic + '\n```\n')
         if diagnostic:
-            safe = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', diagnostic[-8000:])
+            safe = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', diagnostic)
             print('Sanitized controller diagnostic:\n' + safe)
         print('::error::Agent phase failed: ' + reason)
         raise SystemExit(1)
