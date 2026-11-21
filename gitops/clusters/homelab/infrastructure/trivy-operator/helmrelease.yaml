@@ -20,18 +20,11 @@ spec:
   values:
     # The operator reads its trivy-operator ConfigMap values at startup.
     podAnnotations:
-      homelab.pavel-usanli.online/trivy-config-revision: "r4"
+      homelab.pavel-usanli.online/trivy-config-revision: "r5"
 
     # Empty = every namespace. The operator discovers images itself, so nothing
     # here needs updating when an app is added under apps/{public,private}.
     targetNamespaces: ""
-
-    trivyOperator:
-      # Compressed multi-container reports intermittently arrive truncated from
-      # the log API in operator 0.36.1 and never get persisted. Upstream
-      # recommends using uncompressed scan output until that path is fixed.
-      # Keep this as a string: chart 0.38.1 omits the key for boolean false.
-      scanJobCompressLogs: "false"
 
     operator:
       # Runs one long-lived trivy-server that owns the vulnerability DB; scan
@@ -41,6 +34,13 @@ spec:
       # Setting this also forces trivy.mode to ClientServer and wires
       # trivy.serverURL to the in-cluster service - do not set them by hand.
       builtInTrivyServer: true
+
+      # Operator 0.36.1 reads the CycloneDX buffer before flushing its writer,
+      # so images with a small package set fail report ingestion with an empty
+      # JSON document. Keep vulnerability and secret reports working while the
+      # upstream flush fix is pending; those reports still include all packages
+      # because trivy.listAllPkgs is enabled in the chart defaults.
+      sbomGenerationEnabled: false
 
       # These two are coupled - do not raise scanJobTTL without raising this.
       # The operator's limit check (pkg/operator/jobs/limit_checker.go) counts
