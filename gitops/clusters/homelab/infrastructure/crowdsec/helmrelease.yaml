@@ -136,6 +136,41 @@ spec:
       valuesKey: crs-observe.yaml
       targetPath: 'appsec.configs.crs-observe\.yaml'
       literal: true
+  # The chart reruns registration after a node reboot using the same pod name.
+  # Reuse valid emptyDir credentials; if they were lost, register a unique identity
+  # instead of deleting another machine or waiting for LAPI's stale-record pruning.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              group: apps
+              version: v1
+              name: crowdsec-(agent|appsec)
+            patch: |
+              - op: replace
+                path: /spec/template/spec/initContainers/0/command
+                value:
+                  - sh
+                  - -c
+                  - |
+                    set -eu
+                    until nc "$LAPI_HOST" "$LAPI_PORT" -z; do
+                      echo "Waiting for LAPI"
+                      sleep 5
+                    done
+                    ln -s /staging/etc/crowdsec /etc/crowdsec
+                    if [ -s /tmp_config/local_api_credentials.yaml ]; then
+                      cp /tmp_config/local_api_credentials.yaml /etc/crowdsec/local_api_credentials.yaml
+                      if cscli lapi status >/dev/null 2>&1; then
+                        echo "Reusing authenticated LAPI machine credentials"
+                        exit 0
+                      fi
+                    fi
+                    machine="$USERNAME-$(cat /proc/sys/kernel/random/uuid)"
+                    cscli lapi register --machine "$machine" -u "$LAPI_URL" \
+                      --token "$REGISTRATION_TOKEN" -f /tmp_config/local_api_credentials.yaml.new
+                    chmod 600 /tmp_config/local_api_credentials.yaml.new
+                    mv /tmp_config/local_api_credentials.yaml.new /tmp_config/local_api_credentials.yaml
   values:
     container_runtime: containerd
 
