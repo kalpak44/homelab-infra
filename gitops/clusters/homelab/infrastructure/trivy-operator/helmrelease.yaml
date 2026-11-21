@@ -72,7 +72,7 @@ spec:
       # also needs a fresh report.
       serverAdditionalAnnotations:
         homelab.pavel-usanli.online/trivy-scanner-version: "0.76.2"
-        homelab.pavel-usanli.online/trivy-scan-affinity: "colocated"
+        homelab.pavel-usanli.online/trivy-scan-affinity: "colocated-r2"
 
     trivyOperator:
       # Colocate scan jobs with the server: cross-node job RPC timed out while
