@@ -116,7 +116,9 @@ reconciles everything under `gitops/clusters/homelab/`.
 To use `kubectl` locally on the `192.168.1.0/24` network:
 
 ```bash
-scp ubuntu@192.168.1.110:/etc/rancher/k3s/k3s.yaml ~/.kube/homelab.yaml
+mkdir -p ~/.kube
+(umask 077; ssh root@192.168.1.110 'cat /etc/rancher/k3s/k3s.yaml' > ~/.kube/homelab.yaml)
+chmod 600 ~/.kube/homelab.yaml
 sed -i '' 's/127.0.0.1/192.168.1.110/' ~/.kube/homelab.yaml
 export KUBECONFIG=~/.kube/homelab.yaml
 kubectl get nodes
