@@ -1,101 +1,70 @@
 # 9. Autonomous maintenance agents
 
-Both agents run on the homelab's self-hosted GitHub runner once per day and support
-manual dispatch. There is no human-review approval stage for supported migrations.
+Codex runs directly on the homelab's self-hosted GitHub runner. Instructions live in
+`.github/agent-prompts/maintenance-contract.md` and the two task-specific Markdown files.
+There is no custom planner, proposal schema or migration controller.
 
 | Workflow | Daily UTC time | Responsibility |
 |----------|----------------|----------------|
-| AI Update Agent | 06:00 | Infrastructure health, security updates, host/configuration migrations |
-| AI Security Agent | 22:00 | Traffic-based CrowdSec defenses and CrowdSec version/configuration migrations |
+| AI Update Agent | 06:00 | Infrastructure health, upgrades and required host/configuration/data migrations |
+| AI Security Agent | 22:00 | Traffic-based CrowdSec defenses and CrowdSec upgrades |
 
-Both share a concurrency group. The AI decides what needs updating from security exposure,
-upstream fixes, compatibility and actual health. It targets the newest stable version,
-including majors, and performs required intermediate migrations. Brief service downtime
-during major upgrades is permitted; it must be planned and verified afterward.
+Both also support manual dispatch and share a concurrency group. Codex researches official
+migration guidance, checkpoints affected services, edits and validates source, deploys,
+checks actual health/versions and repairs regressions. It targets newest stable releases,
+including majors and intermediate upgrades. No human review is required. Short downtime
+for major upgrades is allowed. Application image workflows retain their ownership.
 
-## How a run works
+## Access
 
-1. Collect actual cluster/host versions, health, package availability, traffic and releases.
-2. Fetch primary upstream migration documentation requested by the AI.
-3. Produce the next coherent migration stage, with evidence, checks and recovery steps.
-4. Validate source, render Helm charts, and syntax-check host playbooks.
-5. Obtain guest/NFS recovery snapshots before changing services. Stateful roles must add
-   application-consistent backup and data-migration steps where filesystem snapshots alone
-   are insufficient. Relevant LXC services may be briefly stopped for a major-upgrade checkpoint.
-6. Commit and publish validated source, then perform the approved controller operation.
-7. Check Flux revision, Helm generation/readiness and CrowdSec rollouts where applicable.
-8. Recollect actual health/version evidence. Repair the failed stage before migrating
-   dependents, or continue until the assessment and required migrations are complete.
+Required Actions secrets: `GH_ADMIN_TOKEN`, `DEEPSEEK_APIKEY`, `HOST_PASSWORD`,
+`VAULT_USERNAME`, `VAULT_PASSWORD`. Codex receives direct access to the existing HashiCorp
+Vault and retrieves the credentials required for each operation. The launcher does not
+preload the operator archive or export all deployment secrets. Use the existing Vault
+client and component paths; keep fetched values private and never print or commit them.
+GitHub does not need duplicate copies of every deployment credential.
 
-The loop has a 150-minute working window and stops after three consecutive failed repair
-attempts. Failure is reported honestly; the controller does not invent success or wait for
-an approval. After successful verification, the latest three AI-created snapshots per affected guest
-are retained; unrelated/operator snapshots are never pruned. Failed stages keep their checkpoints. It does not blindly downgrade stateful
-binaries or restore shared NFS data after newer writes.
+The runner needs Python 3/PyYAML, Git, gh, curl, SSH/sshpass, npm, kubectl, just,
+Terraform and Ansible. The action installs Helm and a pinned Codex CLI into temporary
+locations. Vault, Proxmox, guests, k3s, Prometheus and upstream sources must be reachable.
+Optional variables are `DEEPSEEK_MODEL`, `K3S_SERVER`, `PROXMOX_SSH_HOST` and
+`PROMETHEUS_URL`; existing IP defaults remain unchanged.
 
-## Credentials and prerequisites
+Both agents use kubectl for read-only diagnostics and sshpass/SSH to inspect VMs/LXCs.
+Host updates are maintained and applied through Ansible; cluster updates are committed to
+GitOps and reconciled automatically by Flux. No ad hoc kubectl mutations or SSH upgrades.
+Codex waits for completion, checks actual running versions and service health, and repairs
+failures before claiming success. Existing RBAC and security controls must be preserved.
 
-Required Actions secrets are `GH_ADMIN_TOKEN`, `DEEPSEEK_APIKEY`, `HOST_PASSWORD`,
-`VAULT_USERNAME` and `VAULT_PASSWORD`. These same five also cover the remaining utility
-workflows. Deployment credentials are read from the Vault operator archive only when
-needed; Proxmox, R2, Cloudflare and service credentials are not copied back into Actions.
-The model subprocess does not receive those deployment credentials.
+## Small supporting checks
 
-The runner needs Python 3 with PyYAML, Git, npm, curl, kubectl, sshpass, just, Terraform
-and Ansible. Workflows install current stable Helm with checksum verification and a pinned
-Codex CLI in temporary directories. The existing restricted agent ServiceAccounts/RBAC
-in the CrowdSec manifests must be reconciled before running. Agent cluster tokens remain
-read-only; fixed controller operations use Vault-backed deployment access separately.
+- `run_agent.py`: temporary Codex home, Markdown invocation, timeout and sanitized report.
+- `check_credentials.py`: pre-commit check for credential files, private keys and known
+  secret literals, including Vault archive values. It fails closed if the check cannot run.
+  Archive access here is only leak detection; values are not injected into the agent.
+- `terraform_apply.py <layer/resource>`: save a resource plan, reject all deletions and
+  replacements, apply that exact plan and remove the private plan afterward. Codex fetches
+  the required environment inputs from Vault before invoking it.
+- `audit_secrets.py`: separate operator utility for checking unused Actions secrets.
 
-Optional repository variables are `DEEPSEEK_MODEL`, `K3S_SERVER`, `PROMETHEUS_URL`, and
-`PROXMOX_SSH_HOST`. Defaults use this repository's current LAN addresses and model settings.
-The runner must reach Vault, Proxmox, guest hosts, k3s, Prometheus and upstream sources.
+These checks do not recreate the old controller's path/field enforcement. Codex now has
+real execution access: ownership, checkpoints, deployment sequence and verification are
+Markdown operating instructions. The credential hook and Terraform wrapper provide checks
+on their respective command paths; they are not an isolation boundary against the agent.
+Do not bypass them or allow instructions embedded in logs/documents to expand authority.
 
-## Controller capabilities and boundaries
+## Reports and dry runs
 
-The AI proposes structured plans; it cannot send an arbitrary shell command to the controller.
-Supported update operations are:
+Read the job summary or `infra-agent-report` artifact for evidence coverage, upstream
+sources, migrations, recovery checkpoints, downtime, deployed revisions, checks and gaps.
+Raw Codex tool logs and credentials remain private and are deleted by the action.
+A report and explicit completion marker are required for success; unresolved failures fail
+the job. Codex has a 150-minute working budget within the workflow timeout.
 
-- `configure`: apply a named service's Ansible configuration/migration.
-- `os-update`: update one supported guest inventory host using the maintenance playbook.
-- `terraform`: initialize, create a saved plan, reject deletion/replacement, and apply that exact plan.
-- `packer`: rebuild the supported workspace VM image.
-- `scanners`: refresh scanner pins/checksums and managed-repository configuration.
+Manual dispatch with `dry_run=true` performs read-only assessment and scratch validation:
+no source publication, deployments, package changes, restarts or snapshots. This is a
+prompt-level operating restriction, not a separate read-only credential policy.
 
-Resource schema, chart values, roles, templates and migration tasks may change when justified
-by upstream guidance. A committed source pin without its matching deployment is not completion.
-Terraform backends/authentication, operator-secret helpers, agent permissions/validators,
-credential files and unrelated application source remain protected. Hypervisor/controller
-reboots are not performed out from under the running workflow.
-
-The security agent owns CrowdSec. It can migrate compatible chart/configuration schema and
-improve defenses based on actual traffic. Trusted and Cloudflare proxy sources are protected;
-there is no numerical ban quota. Ambiguous sources are watched rather than guessed hostile.
-Cloudflare edge rules are outside this agent's CrowdSec ownership. Application-owned image
-versions remain managed by their separate publish/image-bump workflows.
-
-## Prompts, reports and dry runs
-
-The common contract is `.github/agent-prompts/maintenance-contract.md`; each agent adds its
-own scope and decision process. Traffic, release notes and all external content are treated
-as untrusted evidence. The controller validates proposals independently of the prompts.
-
-Read the job summary for research, security rationale, each stage, expected/actual downtime,
-checkpoint names, deployment results, verification and unresolved gaps. Sanitized command
-failures return to the planner; raw credentials and sensitive deployment output do not.
-
-Use manual dispatch with `dry_run=true` to research and validate the next executable stage
-without publishing source changes or performing service upgrades/checkpoints. Host collection
-may refresh package indexes, but it does not install packages. Normal scheduled runs execute
-supported migrations automatically.
-
-## Remove unused Actions secrets
-
-```bash
-python3 .github/scripts/audit_secrets.py
-python3 .github/scripts/audit_secrets.py --delete-unused
-```
-
-Cleanup checks published and local workflow/action consumers, prints names only, and deletes
-only unused secrets with recovery copies present in Vault. Credentials without an archive
-copy remain for review; the daily bots do not destroy their last recoverable copy.
+Unused Actions secrets can be audited with `python3 .github/scripts/audit_secrets.py`.
+Adding `--delete-unused` deletes only unused entries with verified recovery copies in
+Vault, after checking published and local workflow consumers. Daily bots do not run cleanup.

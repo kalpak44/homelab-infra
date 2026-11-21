@@ -4,7 +4,7 @@ Ansible stage: `05-services`.
 
 Provision the standalone services needed by your selected applications. Backing
 services must be ready before enabling dependent applications in Flux; other
-services can be added after [Flux](<7 - Flux and workloads.md>). Run routine setup commands locally; the dedicated AI controller handles supported
+services can be added after [Flux](<7 - Flux and workloads.md>). Run routine setup commands locally; the dedicated Codex agents handles supported
 autonomous maintenance migrations after initial setup.
 
 ## 1. Add standalone services
@@ -49,7 +49,7 @@ no scheduled or manually dispatched GitHub workflow for Packer builds.
 The optional runner components are under `ansible/80-runner/01-vm/` through
 `13-register/`. Each has its own `.env` and `just apply` command. Read each component’s README for its inputs and prerequisites. Start with
 `01-vm`, then apply the guest components you need. Terraform and Ansible on the runner also support the dedicated autonomous maintenance
-controller. Routine deploy/destroy workflows remain removed.
+agents. Routine deploy/destroy workflows remain removed.
 
 GitOps image updates, Vault-to-Actions credential synchronization and the two daily
 maintenance agents run through GitHub Actions. See [Daily maintenance agents](<9 - Daily maintenance agents.md>) for schedules and setup. Set up the runner and their

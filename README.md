@@ -34,7 +34,7 @@ just --justfile ansible/Justfile configure <resource>
 ```
 
 Bootstrap components have their own `.env.example`, ignored `.env`, and `just apply`.
-Current Terraform and service recipes load the ignored root `.env`. Routine infrastructure commands run locally. The dedicated daily AI controller may execute
+Current Terraform and service recipes load the ignored root `.env`. Routine infrastructure commands run locally. The dedicated daily Codex agents may execute
 validated migrations automatically with Vault-backed credentials and recovery checkpoints.
 
 ## Automation

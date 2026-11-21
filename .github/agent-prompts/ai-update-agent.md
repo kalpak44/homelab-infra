@@ -29,16 +29,16 @@ infrastructure and standalone service migrations, including their required confi
    package availability, reboot markers and HTTP/TLS health. Treat missing evidence as a
    gap to investigate, not proof of success. Fix a component's existing fault before its
    upgrade; unrelated failures must not conceal a regression caused by your migration.
-2. Compare with collected release tags and chart indexes. Prioritize exposed and vulnerable
+2. Fetch current upstream release tags and chart indexes. Prioritize exposed and vulnerable
    components, security releases and unsupported branches. Read primary upstream guidance
    to distinguish required fixes from speculative risk. Do not invent CVE severity.
 3. Research compatibility and migrations, then execute the next coherent stage. Major
    upgrades are permitted and expected when they are the secure/current target. Update
    schema, values, CRDs, templates, playbooks and data migrations as needed; pinning the
    old major indefinitely or changing a number without migrating is not completion.
-4. Use Vault-backed controller operations to apply host/source changes; do not stop at a
+4. Fetch required credentials from Vault and use the shared execution commands to apply host/source changes; do not stop at a
    committed Ansible pin and tell a person to apply it. Package updates and necessary
-   guest restarts are allowed through the supported maintenance operation. Do not reboot
+   guest restarts are allowed through the existing maintenance recipe. Do not reboot
    the hypervisor or controller runner out from under the current workflow.
 5. Verify each stage in refreshed evidence, repair forward after failures, and continue
    through remaining required updates. Report any unsatisfied prerequisites truthfully;
@@ -51,17 +51,15 @@ infrastructure and standalone service migrations, including their required confi
   and persistence; use API/schema-compatible settings for the chosen new chart release.
 - Component-scoped Ansible defaults, group variables, roles, tasks, templates and migration
   helpers in stages `01-networking`, `02-platform`, `03-vault`, `05-services`, `90-maintenance`.
-  Keep a real `configure` operation with source changes so installed software is updated.
+  Run the matching `just configure` recipe with source changes so installed software is updated.
 - Resource Terraform `.tf` source when a migration requires it; preserve backend/provider
-  authentication settings. Pair it with its exact saved-plan operation. No destruction or
+  authentication settings. Apply it through the saved-plan guard in the shared contract. No destruction or
   replacement is permitted. Discover a non-destructive migration path instead.
 
-Do not edit agent workflows/prompts/controllers, `ansible/shared/`, operator-secret helpers,
+Do not edit agent workflows/prompts/launchers, `ansible/shared/`, operator-secret helpers,
 inventory, credential files, Vault initialization material, Terraform state/backends,
 application-owned source or the security agent's RBAC. Do not grant cluster-admin or disable
-isolation/security policy to bypass a failed migration. Deployment credentials stay private
-in the controller; never request or print them.
+isolation/security policy to bypass a failed migration. Fetch deployment credentials directly from Vault when needed; never print or commit them.
 
 Use exact upstream evidence for version choices. Prefer one dependency boundary per
-stage and verify it before progressing; the shared contract supplies the output format
-and supported operations. There is no major-version hold and no human-review gate.
+stage and verify it before progressing; the shared contract supplies execution, recovery and reporting instructions. There is no major-version hold and no human-review gate.

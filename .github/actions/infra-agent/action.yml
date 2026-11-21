@@ -1,5 +1,5 @@
 name: Daily infrastructure agent
-description: Collect read-only evidence and publish validated source changes
+description: Run Codex directly with shared and task-specific Markdown instructions
 inputs:
   kind:
     description: update or security
@@ -17,7 +17,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        for tool in python3 kubectl sshpass git npm just ansible-playbook terraform helm; do
+        for tool in python3 kubectl sshpass ssh git gh curl npm just ansible-playbook terraform helm; do
           command -v "$tool" >/dev/null || { echo "Missing runner tool: $tool" >&2; exit 1; }
         done
         python3 -c 'import yaml'
@@ -34,11 +34,11 @@ runs:
         set -euo pipefail
         npm install --prefix "$AGENT_DIRECTORY/tools" --ignore-scripts --no-audit --no-fund @openai/codex@0.171.0
         echo "$AGENT_DIRECTORY/tools/node_modules/.bin" >> "$GITHUB_PATH"
-    - name: Research, migrate, verify and repair autonomously
+    - name: Run Codex maintenance from Markdown instructions
       shell: bash
       env:
         AGENT_KIND: ${{ inputs.kind }}
-      run: python3 .github/scripts/infra_agent.py run "$AGENT_KIND" "$AGENT_DIRECTORY"
+      run: python3 .github/scripts/run_agent.py "$AGENT_KIND" "$AGENT_DIRECTORY"
     - name: Publish daily report
       if: always()
       shell: bash
