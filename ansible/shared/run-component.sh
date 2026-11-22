@@ -19,4 +19,16 @@ set +a
 : "${TARGET_HOST:?Set TARGET_HOST in this component's .env}"
 : "${TARGET_USER:?Set TARGET_USER in this component's .env}"
 export ANSIBLE_CONFIG="$ansible_dir/ansible.cfg"
-exec ansible-playbook -i "$TARGET_HOST," -u "$TARGET_USER" "$component/playbook.yml" "$@"
+# SSH_PRIVATE_KEY may come from the component's .env or the caller's shell. Without it,
+# only --ask-pass reaches a host, which is how a fresh Proxmox node is first contacted.
+key_args=()
+if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+    keyfile="$(mktemp)"
+    trap 'rm -f "$keyfile"' EXIT
+    bash "$ansible_dir/shared/operator-key.sh" "$keyfile"
+    OPERATOR_PUBLIC_KEY="$(ssh-keygen -y -f "$keyfile")"
+    export OPERATOR_PUBLIC_KEY
+    key_args=(--private-key "$keyfile")
+fi
+ansible-playbook -i "$TARGET_HOST," -u "$TARGET_USER" ${key_args[@]+"${key_args[@]}"} \
+    "$component/playbook.yml" "$@"

@@ -21,9 +21,7 @@ Fill these inputs:
 | `PROXMOX_ENDPOINT` | Proxmox HTTPS API, for example `https://192.168.1.50:8006` |
 | `PROXMOX_USERNAME` | `terraform@pve!terraform`, printed by bootstrap |
 | `PROXMOX_PASSWORD` | New API token value printed by bootstrap |
-| `HOST_PASSWORD` | Initial guest password used by the current provisioning setup |
-| `SSH_PUBLIC_KEY` | Operator public SSH key installed in the guest |
-| `SSH_PRIVATE_KEY` | Matching key when required by the Proxmox provider SSH connection |
+| `SSH_PRIVATE_KEY` | Base64 operator key; Terraform installs its public half for root and passes it to the provider |
 
 See [Terraform inputs](../terraform/README.md) for the complete environment reference.
 
@@ -58,8 +56,8 @@ ssh root@192.168.1.50 'pct status 201'
 ssh root@192.168.1.3 'hostname'
 ```
 
-The container should be running and reachable as `vault`. Use the initial guest
-password or your installed SSH key.
+The container should be running and reachable as `vault`. Root logs in with the operator
+key only; guests are created without a password.
 
 Next: [Networking](<4 - Networking.md>), then [storage and k3s](<5 - Storage and k3s.md>).
 After those prerequisites, [step 6](<6 - Vault secrets.md>) configures Vault and stores secrets.

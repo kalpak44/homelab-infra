@@ -15,6 +15,4 @@ module "lxc" {
   unprivileged = true
 
   ssh_public_keys = [var.ssh_public_key]
-
-  password = var.host_password
 }

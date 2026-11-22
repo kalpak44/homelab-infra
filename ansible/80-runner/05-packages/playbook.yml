@@ -16,7 +16,6 @@
           - curl
           - unzip
           - jq
-          - sshpass
           - python3-yaml
         state: present
         update_cache: true

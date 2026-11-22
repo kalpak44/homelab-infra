@@ -7,13 +7,14 @@ Start after [Networking](<4 - Networking.md>). Run commands from the repository 
 Edit the `.env` in each component with the same Proxmox address and SSH user, then run:
 
 ```bash
-just --justfile ansible/00-bootstrap/02-snippet-storage/Justfile apply --ask-pass
-just --justfile ansible/00-bootstrap/05-vm-ssh-snippet/Justfile apply --ask-pass
-just --justfile ansible/00-bootstrap/06-cloud-image/Justfile apply --ask-pass
-just --justfile ansible/00-bootstrap/07-vm-template/Justfile apply --ask-pass
+just --justfile ansible/00-bootstrap/02-snippet-storage/Justfile apply
+just --justfile ansible/00-bootstrap/05-vm-ssh-snippet/Justfile apply
+just --justfile ansible/00-bootstrap/06-cloud-image/Justfile apply
+just --justfile ansible/00-bootstrap/07-vm-template/Justfile apply
 ```
 
-Omit `--ask-pass` when SSH keys work. The final part creates VM template 9000; the
+Each logs in with `SSH_PRIVATE_KEY` from its `.env` or your shell. The VM snippet makes
+new VMs accept only that key for root. The final part creates VM template 9000; the
 Terraform VM module uses it as its clone source. Keep storage and image paths consistent
 between the component environments and the Terraform modules.
 

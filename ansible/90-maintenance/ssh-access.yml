@@ -1,0 +1,14 @@
+# Applies the shared sshd policy to every LXC and VM without running their service
+# roles. Run by `just ssh-access [host]`.
+#
+# nocobase is excluded because its ssh-hardening role owns the same drop-in and adds
+# the non-standard port; this play would move its sshd back to 22.
+
+- name: Enforce key-only root SSH
+  hosts: lxc:k3s:vm:!nocobase
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply the shared sshd policy
+      ansible.builtin.import_tasks: ../shared/tasks/enable-root-ssh.yml

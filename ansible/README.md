@@ -34,10 +34,15 @@ Justfile, playbook and README. Apply one component from its directory:
 ```bash
 cd ansible/00-bootstrap/01-terraform-access
 # Edit this component's .env.
-just apply --ask-pass
+just apply
 ```
 
-Use `just apply` with SSH keys. The shared launcher loads only that component's `.env`.
+The shared launcher loads only that component's `.env`, and logs in with `SSH_PRIVATE_KEY`
+(base64) from that file or your shell. Add `--ask-pass` only for a host without the key yet.
+
+Every LXC and VM accepts only the operator key for root. `just ssh-access [host]` applies
+that policy without running service roles; mihal-lxc keeps password login
+(`ssh_password_login` in the inventory).
 
 Existing service commands remain stable and use the root `.env`. From the repository root:
 

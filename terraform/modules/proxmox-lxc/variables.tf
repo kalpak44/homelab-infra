@@ -70,13 +70,6 @@ variable "unprivileged" {
   default     = true
 }
 
-variable "password" {
-  description = "Root password baked in at container init; runtime rotation handled by Ansible"
-  type        = string
-  default     = "ubuntu"
-  sensitive   = true
-}
-
 variable "data_disk_size_gb" {
   description = "Extra data volume in GiB, mounted at data_disk_path. 0 means no data volume."
   type        = number

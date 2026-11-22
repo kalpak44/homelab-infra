@@ -5,7 +5,7 @@
   gather_facts: true
 
   pre_tasks:
-    - name: Enable root SSH + rotate password
+    - name: Apply the shared sshd policy
       ansible.builtin.import_tasks: ../../shared/tasks/enable-root-ssh.yml
 
   roles:

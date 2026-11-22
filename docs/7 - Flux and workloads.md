@@ -19,7 +19,7 @@ domains, NFS exports and Vault endpoint settings against your environment.
 ## 2. Set Flux bootstrap inputs
 
 In the ignored root `.env`, set `FLUX_GITHUB_TOKEN`, `CLOUDFLARE_API_TOKEN`,
-`LETSENCRYPT_EMAIL`, and `HOST_PASSWORD`. The Flux token needs access to bootstrap
+`LETSENCRYPT_EMAIL`, and `SSH_PRIVATE_KEY`. The Flux token needs access to bootstrap
 `kalpak44/homelab-infra`; review the owner, repository, branch and path in
 `ansible/04-gitops/flux/playbook.yml` if using a different repository.
 

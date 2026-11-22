@@ -6,17 +6,19 @@
     - name: Read this component’s connection credentials
       ansible.builtin.import_tasks: ../../shared/connection.yml
   tasks:
-    - name: Create VM vendor-data snippet for SSH password auth
+    # Every existing VM's cicustom names this file, so it keeps its old name: renaming it
+    # leaves those VMs pointing at a missing volume.
+    - name: Create VM vendor-data snippet for key-only root SSH
       ansible.builtin.copy:
         dest: /var/lib/vz/snippets/vm-ssh-password.yaml
         content: |
           #cloud-config
           write_files:
-            - path: /etc/ssh/sshd_config.d/00-password-login.conf
+            - path: /etc/ssh/sshd_config.d/00-homelab.conf
               content: |
-                PermitRootLogin yes
-                PasswordAuthentication yes
-                UsePAM yes
+                PermitRootLogin prohibit-password
+                PasswordAuthentication no
+                KbdInteractiveAuthentication no
               permissions: '0644'
           runcmd:
             - systemctl restart ssh

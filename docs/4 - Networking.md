@@ -26,7 +26,7 @@ for Vault. Your resolver must allow these private responses.
 
 ## 2. Provision and configure AdGuard
 
-Set `HOST_PASSWORD`, `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`, `LETSENCRYPT_EMAIL` and
+Set `SSH_PRIVATE_KEY`, `ADGUARD_USERNAME`, `ADGUARD_PASSWORD`, `LETSENCRYPT_EMAIL` and
 `CLOUDFLARE_API_TOKEN` in the local service environment, then run:
 
 ```bash

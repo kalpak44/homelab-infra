@@ -90,7 +90,7 @@ def progress_event(event, values=frozenset()):
         (r'kustomize|helm template', 'Validating deployment configuration'),
         (r'kubectl.*logs', 'Inspecting cluster logs and security diagnostics'),
         (r'kubectl', 'Inspecting Kubernetes resources'),
-        (r'sshpass|ssh ', 'Inspecting a VM or LXC over SSH'),
+        (r'\bssh ', 'Inspecting a VM or LXC over SSH'),
         (r'curl|https://', 'Researching upstream sources'),
     ]
     label = next((label for pattern, label in labels if re.search(pattern, command)),

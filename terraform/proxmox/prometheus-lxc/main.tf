@@ -20,6 +20,4 @@ module "lxc" {
   data_disk_path    = "/var/lib/prometheus"
 
   ssh_public_keys = [var.ssh_public_key]
-
-  password = var.host_password
 }

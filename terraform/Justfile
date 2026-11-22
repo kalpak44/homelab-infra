@@ -14,7 +14,7 @@
 #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_NAME     (all layers)
 #   CLOUDFLARE_API_TOKEN                                                     (cloudflare layer)
 #   PROXMOX_ENDPOINT, PROXMOX_USERNAME, PROXMOX_PASSWORD,
-#   SSH_PUBLIC_KEY, SSH_PRIVATE_KEY, HOST_PASSWORD                          (proxmox layer)
+#   SSH_PRIVATE_KEY (base64; the public half is derived from it)            (proxmox layer)
 #   GH_ADMIN_TOKEN, GH_OWNER, DEEPSEEK_APIKEY, SONAR_TOKEN,
 #   ANDROID_KEYSTORE_BASE64                                                 (github layer)
 #   AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, CLOUDFLARE_API_TOKEN,
@@ -42,9 +42,13 @@ deploy layer resource:
     export TF_VAR_proxmox_endpoint="${PROXMOX_ENDPOINT:-}"
     export TF_VAR_proxmox_username="${PROXMOX_USERNAME:-}"
     export TF_VAR_proxmox_password="${PROXMOX_PASSWORD:-}"
-    export TF_VAR_ssh_public_key="${SSH_PUBLIC_KEY:-}"
-    export TF_VAR_ssh_private_key="${SSH_PRIVATE_KEY:-}"
-    export TF_VAR_host_password="${HOST_PASSWORD:-ubuntu}"
+    if [ "{{layer}}" = proxmox ]; then
+      keyfile="$(mktemp)"
+      trap 'rm -f "$keyfile"' EXIT
+      bash ../ansible/shared/operator-key.sh "$keyfile"
+      export TF_VAR_ssh_private_key="$(cat "$keyfile")"
+      export TF_VAR_ssh_public_key="$(ssh-keygen -y -f "$keyfile")"
+    fi
 
     export TF_VAR_github_owner="${GH_OWNER:-kalpak44}"
     export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"
@@ -93,9 +97,13 @@ destroy layer resource:
     export TF_VAR_proxmox_endpoint="${PROXMOX_ENDPOINT:-}"
     export TF_VAR_proxmox_username="${PROXMOX_USERNAME:-}"
     export TF_VAR_proxmox_password="${PROXMOX_PASSWORD:-}"
-    export TF_VAR_ssh_public_key="${SSH_PUBLIC_KEY:-}"
-    export TF_VAR_ssh_private_key="${SSH_PRIVATE_KEY:-}"
-    export TF_VAR_host_password="${HOST_PASSWORD:-ubuntu}"
+    if [ "{{layer}}" = proxmox ]; then
+      keyfile="$(mktemp)"
+      trap 'rm -f "$keyfile"' EXIT
+      bash ../ansible/shared/operator-key.sh "$keyfile"
+      export TF_VAR_ssh_private_key="$(cat "$keyfile")"
+      export TF_VAR_ssh_public_key="$(ssh-keygen -y -f "$keyfile")"
+    fi
 
     export TF_VAR_github_owner="${GH_OWNER:-kalpak44}"
     export TF_VAR_github_token="${GH_ADMIN_TOKEN:-}"

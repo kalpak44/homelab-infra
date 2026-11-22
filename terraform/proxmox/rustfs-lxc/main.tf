@@ -19,6 +19,4 @@ module "lxc" {
   data_disk_path    = "/data"
 
   ssh_public_keys = [var.ssh_public_key]
-
-  password = var.host_password
 }

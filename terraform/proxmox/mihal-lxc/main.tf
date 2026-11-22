@@ -24,8 +24,6 @@ module "lxc" {
   firewall_enabled = true
 
   ssh_public_keys = [var.ssh_public_key]
-
-  password = var.host_password
 }
 
 resource "proxmox_virtual_environment_firewall_options" "mihal" {

@@ -2,8 +2,9 @@
 
 Start with [Prerequisites](<0 - Prerequisites.md>). Bootstrap runs on your local computer
 and connects to Proxmox over SSH. It does not depend on GitHub Actions or Vault.
-Install Ansible and `just` locally. Password SSH needs `sshpass`; password hashing
-in the optional runner SSH component also needs Python `passlib` in Ansible's environment.
+Install Ansible and `just` locally. Every guest accepts only the operator key, kept as
+`SSH_PRIVATE_KEY` (base64) in the root `.env` and in Vault. Password login is needed only
+for the first contact with a freshly installed Proxmox node.
 
 ## 1. Set the connection inputs
 
@@ -16,7 +17,8 @@ and edit these values:
 |-------|-------|
 | `TARGET_HOST` | Proxmox node address, currently `192.168.1.50` |
 | `TARGET_USER` | Administrative SSH user, normally `root` |
-| `TARGET_PASSWORD` | Optional SSH/sudo password; leave empty for SSH keys or prompts |
+| `TARGET_PASSWORD` | SSH password; only for a node that does not have the operator key yet |
+| `SSH_PRIVATE_KEY` | Base64 operator key; set here or export it from the root `.env` |
 
 ## 2. Apply Terraform access
 
@@ -26,7 +28,9 @@ From the repository root:
 just --justfile ansible/00-bootstrap/01-terraform-access/Justfile apply --ask-pass
 ```
 
-Omit `--ask-pass` when SSH keys already work. Alternatively, enter the component
+Omit `--ask-pass` once the node has the operator key. Append its public half
+(`ssh-keygen -y` on the decoded key) to the node's `/root/.ssh/authorized_keys` after this
+first run, and every later component logs in by key. Alternatively, enter the component
 directory and run its dedicated `just apply` command.
 
 The playbook applies `tasks/role.yml`, `tasks/user.yml`, `tasks/permissions.yml`,

@@ -73,7 +73,7 @@ node has discarded the older requests. Recover retained rotations before declari
 1. Read Traefik pod UIDs, node names/addresses, container names and restart counts with
    read-only kubectl. Include every current replica and retained historical Traefik pod
    directory on both inventory k3s nodes when a pod has moved/restarted.
-2. Through sshpass/SSH inspect `/var/log/pods/kube-system_traefik-*/traefik/` on those
+2. Through SSH inspect `/var/log/pods/kube-system_traefik-*/traefik/` on those
    nodes. Stream current `.log` files, dated rotations and `.gz` files read-only; never
    change permissions, copy raw logs into source, force log rotation or restart Traefik.
    Read/decompress and filter on the node, returning only the sanitized fields below.

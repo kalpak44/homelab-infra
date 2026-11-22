@@ -1,5 +1,5 @@
 ---
-- name: Enable password SSH in the LXC template
+- name: Make the LXC template accept key-only root SSH
   hosts: all
   gather_facts: false
   vars:
@@ -8,14 +8,17 @@
     - name: Read this component’s connection credentials
       ansible.builtin.import_tasks: ../../shared/connection.yml
   tasks:
-    - name: Check if SSH password-auth drop-in already patched into LXC template
+    - name: Check whether the template already carries the key-only drop-in
       ansible.builtin.shell: |
-        tar -I zstd -tf /var/lib/vz/template/cache/{{ lxc_template }} \
-          | grep -qF "etc/ssh/sshd_config.d/99-password-login.conf"
+        listing="$(tar -I zstd -tf /var/lib/vz/template/cache/{{ lxc_template }})"
+        grep -qF "etc/ssh/sshd_config.d/00-homelab.conf" <<<"$listing" \
+          && ! grep -qF "etc/ssh/sshd_config.d/99-password-login.conf" <<<"$listing"
+      args:
+        executable: /bin/bash
       register: lxc_template_patched
       changed_when: false
       failed_when: false
-    - name: Patch LXC template – enable SSH password auth
+    - name: Patch LXC template – key-only root SSH
       when: lxc_template_patched.rc != 0
       block:
         - name: Create temp dir for template extraction
@@ -31,14 +34,20 @@
             path: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d"
             state: directory
             mode: '0755'
-        - name: Write SSH password-auth drop-in
+        # Same file and content as ansible/shared/tasks/enable-root-ssh.yml writes, so a
+        # new container is key-only before its first Ansible run.
+        - name: Write the key-only sshd drop-in
           ansible.builtin.copy:
-            dest: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d/99-password-login.conf"
+            dest: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d/00-homelab.conf"
             content: |
-              PermitRootLogin yes
-              PasswordAuthentication yes
-              UsePAM yes
+              PermitRootLogin prohibit-password
+              PasswordAuthentication no
+              KbdInteractiveAuthentication no
             mode: '0644'
+        - name: Remove the password-login drop-in
+          ansible.builtin.file:
+            path: "{{ lxc_patch_dir.path }}/etc/ssh/sshd_config.d/99-password-login.conf"
+            state: absent
         - name: Repack LXC template
           ansible.builtin.command:
             cmd: "tar -I zstd -cf /var/lib/vz/template/cache/{{ lxc_template }} --numeric-owner -C {{ lxc_patch_dir.path }} ."

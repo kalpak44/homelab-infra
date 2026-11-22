@@ -12,8 +12,7 @@
 #   POSTGRESQL_USER/PASSWORD/DB, PGADMIN_EMAIL/PASSWORD,
 #   REDIS_PASSWORD, REDIS_COMMANDER_USER/PASSWORD,
 #   FLUX_GITHUB_TOKEN
-#   HOST_PASSWORD (root password for all LXCs/VMs - used for SSH + sudo)
-#   SSH_PRIVATE_KEY (operator key, base64 or PEM; required where password auth is off)
+#   SSH_PRIVATE_KEY (base64 of the operator key; the only way into every LXC/VM)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 set dotenv-load := true
@@ -37,22 +36,19 @@ secrets-restore:
 secrets-sync:
     @python3 03-vault/operator-secrets/secrets.py sync-github
 
-# Install passlib + sshpass. Idempotent.
+# Install passlib, which the AdGuard and mihal roles hash passwords with. Idempotent.
 [private]
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
-    missing=()
-    python3 -c 'import passlib' 2>/dev/null || missing+=(python3-passlib)
-    command -v sshpass >/dev/null 2>&1 || missing+=(sshpass)
-    if [[ ${#missing[@]} -gt 0 ]]; then
+    if ! python3 -c 'import passlib' 2>/dev/null; then
       if command -v apt-get >/dev/null 2>&1; then
         sudo apt-get update -qq
-        sudo apt-get install -y "${missing[@]}"
+        sudo apt-get install -y python3-passlib
       elif command -v brew >/dev/null 2>&1; then
-        brew install hudochenkov/sshpass/sshpass python-passlib 2>/dev/null || true
+        brew install python-passlib 2>/dev/null || true
       else
-        echo "install manually: ${missing[*]}" >&2
+        echo "install manually: python3-passlib" >&2
         exit 1
       fi
     fi
@@ -79,26 +75,9 @@ configure resource: setup
       portainer-vm) playbook="05-services/portainer-vm/playbook.yml" ;;
       *) echo "Unknown resource: {{resource}}. Run just list." >&2; exit 1 ;;
     esac
-    # Hosts that refuse password auth (nocobase-lxc) need a key. Harmless elsewhere:
-    # sshd still falls back to the password every other host accepts.
-    # SSH_PRIVATE_KEY is stored base64-encoded, but accept a raw PEM too. A key that
-    # will not parse is dropped rather than passed on, so it cannot break other hosts.
-    key_args=()
-    if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-      keyfile="$(mktemp)"
-      trap 'rm -f "$keyfile"' EXIT
-      if printf '%s' "$SSH_PRIVATE_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
-        printf '%s\n' "$SSH_PRIVATE_KEY" > "$keyfile"
-      else
-        printf '%s' "$SSH_PRIVATE_KEY" | base64 -d > "$keyfile" 2>/dev/null || true
-      fi
-      chmod 600 "$keyfile"
-      if ssh-keygen -y -f "$keyfile" >/dev/null 2>&1; then
-        key_args=(--private-key "$keyfile")
-      else
-        echo "warning: SSH_PRIVATE_KEY did not parse; falling back to password auth" >&2
-      fi
-    fi
+    keyfile="$(mktemp)"
+    trap 'rm -f "$keyfile"' EXIT
+    bash shared/operator-key.sh "$keyfile"
     # mihal-lxc's cloudflared points at its own dedicated Tunnel, not the shared
     # homelab one, so its token is read live from that dir's Terraform state
     # rather than stored as a second GitHub secret.
@@ -106,8 +85,7 @@ configure resource: setup
     if [[ "{{resource}}" == "mihal-lxc" ]]; then
       cloudflare_tunnel_token_mihal="$(cd ../terraform && just output cloudflare tunnels/mihal tunnel_token)"
     fi
-    ansible-playbook "$playbook" ${key_args[@]+"${key_args[@]}"} \
-      -e "host_password=${HOST_PASSWORD:-}" \
+    ansible-playbook "$playbook" --private-key "$keyfile" \
       -e "cloudflare_tunnel_token_mihal=${cloudflare_tunnel_token_mihal}" \
       -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN:-}" \
       -e "letsencrypt_email=${LETSENCRYPT_EMAIL:-}" \
@@ -129,34 +107,32 @@ configure resource: setup
 # The play order in 90-maintenance/os-update.yml is deliberate - do not narrow it by editing
 # the playbook, pass `host` instead.
 # Patch every LXC/VM and reboot what needs it (host limits the run to one)
-os-update host='': setup
+os-update host='':
     #!/usr/bin/env bash
     set -euo pipefail
     limit_args=()
     if [[ -n "{{host}}" ]]; then
       limit_args=(--limit "{{host}}")
     fi
-    # nocobase accepts only the operator key, so the sweep needs the same credential path
-    # as `configure`; password-only inventory cannot reach it on 22022.
-    key_args=()
-    if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-      keyfile="$(mktemp)"
-      trap 'rm -f "$keyfile"' EXIT
-      if printf '%s' "$SSH_PRIVATE_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
-        printf '%s\n' "$SSH_PRIVATE_KEY" > "$keyfile"
-      else
-        printf '%s' "$SSH_PRIVATE_KEY" | base64 -d > "$keyfile" 2>/dev/null || true
-      fi
-      chmod 600 "$keyfile"
-      if ssh-keygen -y -f "$keyfile" >/dev/null 2>&1; then
-        key_args=(--private-key "$keyfile")
-      else
-        echo "warning: SSH_PRIVATE_KEY did not parse; falling back to password auth" >&2
-      fi
-    fi
+    keyfile="$(mktemp)"
+    trap 'rm -f "$keyfile"' EXIT
+    bash shared/operator-key.sh "$keyfile"
     ansible-playbook 90-maintenance/os-update.yml ${limit_args[@]+"${limit_args[@]}"} \
-      ${key_args[@]+"${key_args[@]}"} \
-      -e "host_password=${HOST_PASSWORD:-}"
+      --private-key "$keyfile"
+
+# Enforce key-only root SSH on every LXC/VM (host limits the run to one)
+ssh-access host='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    limit_args=()
+    if [[ -n "{{host}}" ]]; then
+      limit_args=(--limit "{{host}}")
+    fi
+    keyfile="$(mktemp)"
+    trap 'rm -f "$keyfile"' EXIT
+    bash shared/operator-key.sh "$keyfile"
+    ansible-playbook 90-maintenance/ssh-access.yml ${limit_args[@]+"${limit_args[@]}"} \
+      --private-key "$keyfile"
 
 # List every configurable resource
 list:
@@ -182,3 +158,4 @@ list:
     @echo
     @echo "Maintenance:"
     @printf "  %-24s %s\n" "os-update [host]" "apt upgrade every LXC/VM, reboot what needs it (host limits the run)"
+    @printf "  %-24s %s\n" "ssh-access [host]" "key-only root SSH on every LXC/VM; mihal keeps password login"

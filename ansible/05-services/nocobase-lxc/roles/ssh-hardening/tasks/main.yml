@@ -1,9 +1,7 @@
 ---
-# Deliberately does NOT import ../_shared/enable-root-ssh.yml. That file writes
-# 00-homelab.conf with `PermitRootLogin yes` + `PasswordAuthentication yes`, and
-# because sshd applies the first match per keyword it would win over anything we
-# wrote later. We reuse the same filename so this host gets the hardened content
-# in the same first-wins slot.
+# Deliberately does NOT import ansible/shared/tasks/enable-root-ssh.yml. Both write
+# 00-homelab.conf, the first-wins slot, and the shared one carries no `Port`, so it
+# would move this host's sshd back to 22.
 
 - name: Install openssh-server
   ansible.builtin.apt:

@@ -23,8 +23,8 @@ the k3s virtual machines inside Proxmox later.
 
 Install `just`, Terraform and Ansible on the operator computer. Use an Ansible
 installation that includes the collections used by the repository; its NFS role
-uses `community.general`. Password SSH requires `sshpass`, and guest password hashing
-requires Python `passlib` in the Python environment running Ansible.
+uses `community.general` and `ansible.posix`. The AdGuard and mihal roles hash passwords,
+which requires Python `passlib` in the Python environment running Ansible.
 
 You also need:
 

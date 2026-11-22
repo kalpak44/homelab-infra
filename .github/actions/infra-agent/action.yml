@@ -17,17 +17,29 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        for tool in python3 kubectl sshpass ssh git gh curl npm just ansible-playbook terraform helm; do
+        for tool in python3 kubectl ssh ssh-agent git gh curl npm just ansible-playbook terraform helm; do
           command -v "$tool" >/dev/null || { echo "Missing runner tool: $tool" >&2; exit 1; }
         done
         python3 -c 'import yaml'
-        test -n "$HOST_PASSWORD"
         test -n "$DEEPSEEK_APIKEY"
         test -n "$GH_TOKEN"
         test -n "$VAULT_USERNAME"
         test -n "$VAULT_PASSWORD"
         mkdir -p "$AGENT_DIRECTORY"
         chmod 700 "$AGENT_DIRECTORY"
+    # Every guest accepts only the operator key. The agent keeps it in ssh-agent, so plain
+    # ssh needs no key argument; SSH_PRIVATE_KEY stays set for the just recipes.
+    - name: Load the operator SSH key from Vault
+      shell: bash
+      run: |
+        set -euo pipefail
+        keyfile="$AGENT_DIRECTORY/operator-key"
+        trap 'rm -f "$keyfile"' EXIT
+        python3 .github/scripts/load_operator_key.py "$keyfile"
+        eval "$(ssh-agent -s)" >/dev/null
+        echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+        echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+        ssh-add -q "$keyfile"
     - name: Install pinned Codex CLI in temporary directory
       shell: bash
       run: |
@@ -63,5 +75,6 @@ runs:
       shell: bash
       # Go writes its module cache read-only, which rm -rf alone cannot delete.
       run: |
+        if [ -n "${SSH_AGENT_PID:-}" ]; then ssh-agent -k >/dev/null 2>&1 || true; fi
         chmod -R u+w -- "$AGENT_DIRECTORY" 2>/dev/null || true
         rm -rf -- "$AGENT_DIRECTORY"

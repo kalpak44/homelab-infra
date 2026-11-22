@@ -8,15 +8,15 @@
     runner_gw: "{{ lookup('ansible.builtin.env', 'RUNNER_GW') | default('192.168.1.1', true) }}"
     runner_storage: "{{ lookup('ansible.builtin.env', 'RUNNER_STORAGE') | default('local-lvm', true) }}"
     cloud_image_dest: "{{ lookup('ansible.builtin.env', 'CLOUD_IMAGE_DEST') | default('/var/lib/vz/template/iso/noble-server-cloudimg-amd64.img', true) }}"
-    host_password: "{{ lookup('ansible.builtin.env', 'HOST_PASSWORD') | default('', true) }}"
+    operator_public_key: "{{ lookup('ansible.builtin.env', 'OPERATOR_PUBLIC_KEY') }}"
   pre_tasks:
     - name: Read this component’s connection credentials
       ansible.builtin.import_tasks: ../../shared/connection.yml
     - name: Check required inputs
       ansible.builtin.assert:
         that:
-          - host_password | length > 0
-        fail_msg: Fill the required inputs in this component’s .env before running.
+          - operator_public_key | length > 0
+        fail_msg: Set SSH_PRIVATE_KEY (base64) in this component’s .env or your shell.
   tasks:
     - name: "Check if runner VM {{ runner_id }} already exists"
       ansible.builtin.command: "qm status {{ runner_id }}"
@@ -32,10 +32,18 @@
         - name: qm importdisk
           ansible.builtin.command:
             cmd: "qm importdisk {{ runner_id }} {{ cloud_image_dest }} {{ runner_storage }}"
-        - name: qm set (disk + cloud-init + IP + password auth)
-          ansible.builtin.shell:
-            cmd: "qm set {{ runner_id }} --scsihw virtio-scsi-pci --scsi0 {{ runner_storage }}:vm-{{ runner_id }}-disk-0 --ide2 {{ runner_storage }}:cloudinit --boot order=scsi0 --serial0 socket --vga serial0 --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }} --ciuser ubuntu --cipassword {{ host_password | quote }} --cicustom vendor=local:snippets/vm-ssh-password.yaml --onboot 1 --agent enabled=1"
-          no_log: true
+        - name: Stage the operator public key for cloud-init
+          ansible.builtin.copy:
+            dest: "/tmp/runner-{{ runner_id }}.pub"
+            content: "{{ operator_public_key }}\n"
+            mode: '0600'
+        - name: qm set (disk + cloud-init + IP + operator key)
+          ansible.builtin.command:
+            cmd: "qm set {{ runner_id }} --scsihw virtio-scsi-pci --scsi0 {{ runner_storage }}:vm-{{ runner_id }}-disk-0 --ide2 {{ runner_storage }}:cloudinit --boot order=scsi0 --serial0 socket --vga serial0 --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }} --ciuser ubuntu --sshkeys /tmp/runner-{{ runner_id }}.pub --cicustom vendor=local:snippets/vm-ssh-password.yaml --onboot 1 --agent enabled=1"
+        - name: Remove the staged key
+          ansible.builtin.file:
+            path: "/tmp/runner-{{ runner_id }}.pub"
+            state: absent
         - name: qm start
           ansible.builtin.command:
             cmd: "qm start {{ runner_id }}"

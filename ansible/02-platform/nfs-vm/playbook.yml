@@ -14,7 +14,7 @@
     - name: Gather facts
       ansible.builtin.setup:
 
-    - name: Enable root SSH + rotate password
+    - name: Apply the shared sshd policy
       ansible.builtin.import_tasks: ../../shared/tasks/enable-root-ssh.yml
 
   roles:

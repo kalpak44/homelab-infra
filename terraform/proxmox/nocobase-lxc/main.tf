@@ -54,8 +54,6 @@ module "lxc" {
     trimspace(var.ssh_public_key),
     trimspace(tls_private_key.ssh.public_key_openssh),
   ])
-
-  password = var.host_password
 }
 
 # Cluster-wide singleton — Proxmox allows exactly one of these, so it lives in this

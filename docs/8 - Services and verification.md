@@ -62,9 +62,9 @@ account, configure the Cloudflare DNS challenge, and issue the certificate. Edit
 component's `.env` and apply them in order:
 
 ```bash
-just --justfile ansible/81-proxmox-tls/01-acme-account/Justfile apply --ask-pass
-just --justfile ansible/81-proxmox-tls/02-acme-cloudflare/Justfile apply --ask-pass
-just --justfile ansible/81-proxmox-tls/03-proxmox-certificate/Justfile apply --ask-pass
+just --justfile ansible/81-proxmox-tls/01-acme-account/Justfile apply
+just --justfile ansible/81-proxmox-tls/02-acme-cloudflare/Justfile apply
+just --justfile ansible/81-proxmox-tls/03-proxmox-certificate/Justfile apply
 ```
 
 The Proxmox hostname must already resolve. Reapply `02-acme-cloudflare` after rotating

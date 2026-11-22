@@ -20,7 +20,7 @@ client is `ansible/03-vault/operator-secrets/secrets.py`: import it with importl
 construct `Vault(dict(os.environ))`, request `GET` on `helper.SECRET`, select only the
 needed key via `helper.key("SECRET_NAME")`, and always `vault.close()` in finally.
 Keep the response in process memory and pass the selected value to a child environment
-or private file; never print the response/value. Use `HOST_PASSWORD`, `GH_TOKEN` and
+or private file; never print the response/value. Use `SSH_PRIVATE_KEY`, `GH_TOKEN` and
 `DEEPSEEK_APIKEY` already supplied by the workflow where applicable. For other secret
 paths inspect the component's existing Vault lookups and policy. Do not broaden Vault
 policy, list/dump unrelated secrets or create permanent copies. Missing access is a
@@ -30,10 +30,10 @@ messages, reports or source. Never use shell tracing. Keep private evidence and 
 keys/configuration under `$AGENT_DIRECTORY` with mode 600/700; cleanup runs after the job.
 Do not write a root `.env` or copy credentials into Actions secrets.
 
-- SSH: use `SSHPASS="$HOST_PASSWORD" sshpass -e ssh` with
+- SSH: the operator key is already loaded in `ssh-agent`, so use plain `ssh root@<host>` with
   `-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10`. Proxmox is
   `$PROXMOX_SSH_HOST`; k3s server is `$K3S_SERVER`; guest addresses/ports are in inventory.
-  Use private-key credentials when a component requires them. Never put passwords in arguments.
+  Guests refuse passwords. Never write the key to a file outside `$AGENT_DIRECTORY`.
 - Update agent: obtain k3s admin kubeconfig over SSH from `/etc/rancher/k3s/k3s.yaml`,
   save privately, replace its loopback server with `$K3S_SERVER` and export `KUBECONFIG`.
   Use kubectl only for read-only inspection; credentials never authorize ad hoc cluster writes.
@@ -45,7 +45,7 @@ Do not write a root `.env` or copy credentials into Actions secrets.
   mutate resources with kubectl or direct API requests. Do not manually trigger Flux
   reconciliation. GitOps source and automatic Flux reconciliation own cluster changes.
   Read-only `cscli` diagnostics via kubectl exec are permitted; no mutating exec commands.
-- Hosts: use sshpass/SSH to inspect running versions, package availability and service health
+- Hosts: use SSH to inspect running versions, package availability and service health
   on VMs/LXCs. Express service/OS changes in maintained Ansible source and apply its recipe,
   rather than upgrading packages or editing configuration through ad hoc SSH commands.
   SSH checkpoint/backup operations remain allowed under the recovery procedure below.

@@ -24,7 +24,6 @@ jobs:
     timeout-minutes: 180
     env:
       GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
-      HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
       VAULT_ADDR: https://vault.internal.pavel-usanli.online:8200
       VAULT_USERNAME: ${{ secrets.VAULT_USERNAME }}
       VAULT_PASSWORD: ${{ secrets.VAULT_PASSWORD }}

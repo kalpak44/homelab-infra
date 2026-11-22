@@ -67,7 +67,7 @@ class Checks(unittest.TestCase):
         run = load('run_agent')
         secret = 'fixture-private-credential-123'
         event = {'type': 'item.completed', 'item': {'type': 'command_execution',
-            'command': 'sshpass -p ' + secret + ' ssh guest',
+            'command': 'ssh root@guest echo ' + secret,
             'aggregated_output': secret, 'exit_code': 1}}
         self.assertEqual(run.progress_event(event), 'Inspecting a VM or LXC over SSH — exit 1')
         self.assertNotIn(secret, run.progress_event(event))

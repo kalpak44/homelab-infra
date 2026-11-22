@@ -7,7 +7,7 @@ The current Vault role configures Kubernetes authentication as part of installat
 
 ## 1. Set the initial operator inputs
 
-In the ignored root `.env`, set `HOST_PASSWORD`, `VAULT_USERNAME`, `VAULT_PASSWORD`,
+In the ignored root `.env`, set `SSH_PRIVATE_KEY`, `VAULT_USERNAME`, `VAULT_PASSWORD`,
 `CLOUDFLARE_API_TOKEN`, and `LETSENCRYPT_EMAIL`. The Vault username and password create
 its initial operator login. Use `VAULT_ADDR=https://vault.internal.pavel-usanli.online:8200`
 for the local secret helper and Vault CLI.

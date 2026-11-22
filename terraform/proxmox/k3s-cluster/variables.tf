@@ -33,10 +33,3 @@ variable "vm_template_id" {
   type        = number
   default     = 9000
 }
-
-variable "host_password" {
-  description = "Password baked in at LXC/VM init; runtime rotation handled by Ansible"
-  type        = string
-  sensitive   = true
-  default     = "ubuntu"
-}

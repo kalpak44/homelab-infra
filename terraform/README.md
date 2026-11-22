@@ -106,7 +106,9 @@ Proxmox layer:
 | `TF_VAR_proxmox_endpoint`, `_username`, `_password` | proxmox provider auth           |
 | `TF_VAR_ssh_public_key`                             | injected via cloud-init         |
 | `TF_VAR_ssh_private_key`                            | proxmox provider SSH connection |
-| `TF_VAR_host_password`                              | root password baked into LXC/VM |
+
+Both come from `SSH_PRIVATE_KEY` (base64): the Justfile decodes it and derives the public
+half. Guests get no password, so root logs in with that key only.
 
 GitHub layer:
 

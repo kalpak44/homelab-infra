@@ -1,7 +1,6 @@
 ---
-# SSH bootstrap (openssh install, root password rotation, PermitRootLogin,
-# PasswordAuthentication) is handled by the shared pre_task
-# ansible/shared/tasks/enable-root-ssh.yml — imported from playbook.yml.
+# The sshd policy is the shared pre_task ansible/shared/tasks/enable-root-ssh.yml,
+# imported from playbook.yml.
 
 - name: Disable systemd-resolved
   ansible.builtin.systemd:

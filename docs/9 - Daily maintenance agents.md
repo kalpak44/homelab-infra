@@ -61,20 +61,21 @@ own researched and maintained Ansible migration, not just an apt package upgrade
 
 ## Access
 
-Required Actions secrets: `GH_ADMIN_TOKEN`, `DEEPSEEK_APIKEY`, `HOST_PASSWORD`,
-`VAULT_USERNAME`, `VAULT_PASSWORD`. Codex receives direct access to the existing HashiCorp
+Required Actions secrets: `GH_ADMIN_TOKEN`, `DEEPSEEK_APIKEY`, `VAULT_USERNAME`,
+`VAULT_PASSWORD`. Before Codex starts, the action reads `ssh-private-key` from Vault, masks
+it, and loads it into `ssh-agent`; guests accept no password. Codex receives direct access to the existing HashiCorp
 Vault and retrieves the credentials required for each operation. The launcher does not
 preload the operator archive or export all deployment secrets. Use the existing Vault
 client and component paths; keep fetched values private and never print or commit them.
 GitHub does not need duplicate copies of every deployment credential.
 
-The runner needs Python 3/PyYAML, Git, gh, curl, SSH/sshpass, npm, kubectl, just,
+The runner needs Python 3/PyYAML, Git, gh, curl, SSH with ssh-agent, npm, kubectl, just,
 Terraform and Ansible. The action installs Helm and a pinned Codex CLI into temporary
 locations. Vault, Proxmox, guests, k3s, Prometheus and upstream sources must be reachable.
 Optional variables are `DEEPSEEK_MODEL`, `K3S_SERVER`, `PROXMOX_SSH_HOST` and
 `PROMETHEUS_URL`; existing IP defaults remain unchanged.
 
-Both agents use kubectl for read-only diagnostics and sshpass/SSH to inspect VMs/LXCs.
+Both agents use kubectl for read-only diagnostics and SSH to inspect VMs/LXCs.
 Host updates are maintained and applied through Ansible; cluster updates are committed to
 GitOps and reconciled automatically by Flux. No ad hoc kubectl mutations or SSH upgrades.
 Codex waits for completion, checks actual running versions and service health, and repairs
@@ -89,6 +90,8 @@ failures before claiming success. Existing RBAC and security controls must be pr
 - `terraform_apply.py <layer/resource>`: save a resource plan, reject all deletions and
   replacements, apply that exact plan and remove the private plan afterward. Codex fetches
   the required environment inputs from Vault before invoking it.
+- `load_operator_key.py`: read `ssh-private-key` from Vault, mask it, and hand it to
+  `ssh-agent` before Codex starts.
 - `audit_secrets.py`: separate operator utility for checking unused Actions secrets.
 
 These checks do not recreate the old controller's path/field enforcement. Codex now has

@@ -38,6 +38,11 @@ delegated to Cloudflare. Deploy order: Terraform (creates the box + DNS record) 
 
 ### Per-service notes
 
+**SSH access** – Root on every LXC and VM logs in with the operator key only (`SSH_PRIVATE_KEY`, base64, in the
+root `.env` and Vault); `just ssh-access [host]` enforces it. Exceptions: mihal-lxc keeps password login for its
+user, and nocobase-lxc listens on 22022. Guests created before the switch still have their old root password,
+which now works only on the Proxmox console.
+
 **AdGuard Home** – Point your router's DNS to `192.168.1.2` (or set it per-device). UI at
 `https://adguard.internal.pavel-usanli.online`. To bump versions edit
 `ansible/01-networking/adguard-lxc/roles/adguard/defaults/main.yml`.
@@ -86,9 +91,9 @@ Terraform generates a dedicated ED25519 keypair on first apply and writes it to 
 `terraform/proxmox/nocobase-lxc/.ssh/`. If the local key files are missing,
 recover them with `just output proxmox nocobase-lxc ssh_private_key` — the state on R2 is the copy of record.
 `just configure nocobase-lxc` then hardens sshd: **port 22022**, key-only, `PermitRootLogin prohibit-password`.
-It deliberately skips `_shared/enable-root-ssh.yml`, which would otherwise force `PasswordAuthentication yes` back
-on, and it disables `ssh.socket` — Ubuntu 24.04 socket-activates sshd, which makes the `Port` directive a silent
-no-op until systemd hands the port back. Root keeps its password for `pct enter 207` from the node as break-glass.
+It deliberately skips `shared/tasks/enable-root-ssh.yml`, which writes the same drop-in without the port, and it
+disables `ssh.socket` — Ubuntu 24.04 socket-activates sshd, which makes the `Port` directive a silent no-op until
+systemd hands the port back. `pct enter 207` from the node is the break-glass and needs no password.
 
 The same run installs an nftables ruleset: inbound on the container's `eth0` is default-deny, with **80, 443 and SSH
 (22022) open** and nothing else — notably not NocoBase's own `0.0.0.0:13000`, which every LAN and WARP client could

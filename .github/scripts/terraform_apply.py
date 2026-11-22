@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Apply an exact saved maintenance plan, refusing every deletion or replacement."""
+import base64
 import json
 import os
 from pathlib import Path
@@ -26,7 +27,6 @@ def main():
                AWS_ENDPOINT_URL_S3=env['R2_ENDPOINT'])
     mapping = {'cloudflare_api_token': 'CLOUDFLARE_API_TOKEN', 'proxmox_endpoint': 'PROXMOX_ENDPOINT',
         'proxmox_username': 'PROXMOX_USERNAME', 'proxmox_password': 'PROXMOX_PASSWORD',
-        'ssh_public_key': 'SSH_PUBLIC_KEY', 'ssh_private_key': 'SSH_PRIVATE_KEY', 'host_password': 'HOST_PASSWORD',
         'github_owner': 'GH_OWNER', 'github_token': 'GH_ADMIN_TOKEN', 'deepseek_api_key': 'DEEPSEEK_APIKEY',
         'sonar_token': 'SONAR_TOKEN', 'android_keystore_base64': 'ANDROID_KEYSTORE_BASE64',
         'stripe_api_key': 'STRIPE_API_KEY', 'mailjet_api_key_public': 'MJ_APIKEY_PUBLIC',
@@ -34,6 +34,18 @@ def main():
     for key, source in mapping.items():
         if source in env:
             env['TF_VAR_' + key] = env[source]
+    # SSH_PRIVATE_KEY is base64; the provider needs the PEM, and guests the public half.
+    if env.get('SSH_PRIVATE_KEY'):
+        pem = base64.b64decode(env['SSH_PRIVATE_KEY'], validate=True)
+        env['TF_VAR_ssh_private_key'] = pem.decode()
+        descriptor, keyfile = tempfile.mkstemp(dir=os.environ.get('AGENT_DIRECTORY'))
+        try:
+            os.write(descriptor, pem)
+            os.close(descriptor)
+            env['TF_VAR_ssh_public_key'] = subprocess.check_output(
+                ['ssh-keygen', '-y', '-f', keyfile]).decode().strip()
+        finally:
+            os.unlink(keyfile)
     def terraform(*args):
         return subprocess.check_output(['terraform', *args], cwd=resource, env=env)
     # JSON plans contain secrets; never log them or leave them in the checkout.
