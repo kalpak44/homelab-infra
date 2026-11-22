@@ -10,7 +10,7 @@ gitops/clusters/homelab/
 ├── infrastructure/
 │   ├── metallb/          # Bare-metal load balancer (IP pool: 192.168.1.120–130)
 │   ├── metallb-config/   # IPAddressPool + L2Advertisement
-│   ├── nfs-provisioner/  # StorageClass "nfs" backed by 192.168.1.108:/srv/nfs/k8s
+│   ├── nfs-csi/          # NFS CSI driver; default "nfs-csi" and legacy alias "nfs"
 │   ├── external-secrets/ # External Secrets Operator (syncs Vault → k8s secrets)
 │   ├── external-secrets-config/  # ClusterSecretStore pointing at Vault
 │   ├── traefik-config/   # Traefik ingress config, Cloudflare DNS-01 TLS, CrowdSec middleware
