@@ -1,47 +1,39 @@
 # AWS
 
 Account `039959484327` (`personal`), workload region `eu-central-1` (Frankfurt).
-The existing `aws-admin` identity signs in through IAM Identity Center with the
-`AdministratorAccess` permission set. Its SSO region is `eu-central-1` (Frankfurt).
-Normal local Terraform runs use profile `aws-terraform`, which assumes the
-`homelab-infra-terraform` role through local administrator SSO. The local-only IAM
-bootstrap selects `aws-admin` separately so the deployment role cannot manage its
-own trust or permissions.
+Authentication is split in two, and `terraform.sh` enforces which one a concern gets:
+
+| Concern | Credential | Command |
+|---------|------------|---------|
+| `<account>/admin` | `aws-admin` SSO (IAM Identity Center, `AdministratorAccess`), browser sign-in | `just deploy-aws-admin <account>` |
+| every other concern | key of IAM user `homelab-infra-terraform` | `just deploy aws <account>/<concern>` |
+
+The admin concern creates that user, its policy and its key, so the key can never widen
+its own permissions. The wrapper clears the key for admin runs and refuses SSO for the
+others, and refuses admin runs in GitHub Actions.
 
 ## Local use
 
-From the repository root, load the local, gitignored `.env` for direct CLI commands.
-The `just` recipes load it automatically:
+The `just` recipes load the gitignored root `.env`. Workload concerns need only the key:
 
 ```bash
-source .env
-just --justfile terraform/Justfile aws-login
-aws sts get-caller-identity
 just --justfile terraform/Justfile plan-aws personal/account
-just --justfile terraform/Justfile deploy aws personal/account
+just --justfile terraform/Justfile deploy aws personal/budgets
 ```
 
-On another checkout, set these environment variables instead:
+| Variable | Where it lives |
+|----------|----------------|
+| `AWS_TERRAFORM_ACCESS_KEY_ID` | root `.env`; Vault `secret/homelab-infra-secrets` key `aws-terraform-access-key-id` |
+| `AWS_TERRAFORM_SECRET_ACCESS_KEY` | root `.env`; Vault key `aws-terraform-secret-access-key` |
 
-```bash
-export AWS_CONFIG_FILE="terraform/aws/config"
-export AWS_PROFILE=aws-terraform
-export AWS_REGION=eu-central-1
-export AWS_DEFAULT_REGION=eu-central-1
-```
-
-The CLI caches and refreshes temporary credentials in your home directory. Run
-`aws-login` again when the SSO session expires. Clear any old `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` variables before using SSO;
-environment credentials take precedence over a selected profile.
-`AWS_CONFIG_FILE` in `.env` is relative to the repository root; the Terraform wrapper
-resolves that path before entering a concern directory. Run direct CLI commands from
-the repository root.
+The wrapper maps them to `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` only for the run,
+so other tools never see an AWS key in the environment. `AWS_CONFIG_FILE` in `.env` is
+relative to the repository root; the wrapper resolves it before entering a concern.
 
 `personal/account` reads the caller identity and exposes `account_id` and `caller_arn`.
 The provider rejects other account IDs. It creates no AWS resources. Each concern
 gets its own directory and R2 state key, plus an entry in `terraform/Justfile`
-and documentation here. AWS provisioning runs locally.
+and documentation here.
 
 ## R2 state and AWS credentials
 
@@ -55,29 +47,28 @@ Run Terraform through `just` so the backend receives its bucket and endpoint.
 All AWS leaf directories must stay at `aws/<account>/<concern>/` because the backend
 config and credential helper paths are relative to that working directory.
 
-## Local IAM bootstrap
+## Admin concern and the Terraform key
 
-The concern `personal/iam-bootstrap` manages role `homelab-infra-terraform`:
-
-- Trusts the account's AdministratorAccess SSO role through STS, with one-hour
-  maximum sessions.
-- Grants access to manage only the `personal-monthly-20-usd` budget.
-
-Create or restore this configuration with local `aws-admin` SSO:
+`personal/admin` manages IAM user `homelab-infra-terraform`, an inline policy allowing
+only the `personal-monthly-20-usd` budget, and the user's access key. Add permissions
+here as new concerns are introduced, then apply it before deploying them.
 
 ```bash
-just --justfile terraform/Justfile plan-aws personal/iam-bootstrap
-just --justfile terraform/Justfile deploy aws personal/iam-bootstrap
+just --justfile terraform/Justfile aws-login
+just --justfile terraform/Justfile plan-aws-admin personal
+just --justfile terraform/Justfile deploy-aws-admin personal
+just --justfile terraform/Justfile output aws personal/admin terraform_access_key_id
+just --justfile terraform/Justfile output aws personal/admin terraform_secret_access_key
 ```
 
-The directory retains the existing R2 state key
-`homelab/aws/personal/github-actions.tfstate` to preserve managed resources across
-the rename. Do not change that key without migrating the state.
+Copy both outputs into `.env` and Vault (`just --justfile ansible/Justfile secrets-store
+--replace-existing`, or `vault kv patch`). To rotate, apply the admin concern with
+`-replace=aws_iam_access_key.terraform` and copy the new pair the same way; the old key
+stops working on that apply. The secret is also held in the R2 state, like every other
+Terraform-generated credential here.
 
-Bootstrap operations require a local administrator session and are rejected when
-`GITHUB_ACTIONS=true`. Add scoped permissions here as new Terraform concerns are
-introduced, then apply the bootstrap locally before deploying those concerns.
-AWS provisioning does not use GitHub OIDC or an Actions role variable.
+The directory keeps the R2 state key `homelab/aws/personal/github-actions.tfstate`
+from before two renames. Do not change that key without migrating the state.
 
 ## Monthly cost alert
 
@@ -91,9 +82,8 @@ just --justfile terraform/Justfile plan-aws personal/budgets
 just --justfile terraform/Justfile deploy aws personal/budgets
 ```
 
-Its state is `homelab/aws/personal/budgets.tfstate`. Apply the local
-`personal/iam-bootstrap` concern first when restoring the deployment role's budget
-permissions.
+Its state is `homelab/aws/personal/budgets.tfstate`. Apply `personal/admin` first
+when restoring the Terraform user's budget permissions.
 
 The recipient must be verified through AWS User Notifications for account
 `039959484327`; its existing email contact is active. If recreating the setup,

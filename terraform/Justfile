@@ -19,6 +19,7 @@
 #   ANDROID_KEYSTORE_BASE64                                                 (github layer)
 #   AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, CLOUDFLARE_API_TOKEN,
 #   MJ_APIKEY_PUBLIC, MJ_APIKEY_PRIVATE                                     (auth0 layer)
+#   AWS_TERRAFORM_ACCESS_KEY_ID, AWS_TERRAFORM_SECRET_ACCESS_KEY            (aws layer)
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 set dotenv-load := true
@@ -146,7 +147,15 @@ output layer resource name:
 plan-aws resource:
     @bash aws/terraform.sh plan "{{resource}}"
 
-# Refresh the local aws-admin SSO session
+# Apply an AWS account's admin concern (the scoped Terraform user) with the SSO session
+deploy-aws-admin account:
+    @AWS_ADMIN_RUN=1 bash aws/terraform.sh deploy "{{account}}/admin"
+
+# Preview an AWS account's admin concern with the SSO session
+plan-aws-admin account:
+    @AWS_ADMIN_RUN=1 bash aws/terraform.sh plan "{{account}}/admin"
+
+# Refresh the local aws-admin SSO session (needed only for the admin concern)
 aws-login:
     @AWS_CONFIG_FILE="{{justfile_directory()}}/aws/config" aws sso login --profile aws-admin
 
@@ -280,9 +289,9 @@ bump-scanners:
 # List every deployable resource with a short description
 list:
     @echo "AWS - personal account (just deploy aws <account>/<concern>):"
-    @printf "  %-30s %s\n" "personal/account" "039959484327 · aws-admin SSO · Frankfurt · read-only identity check"
+    @printf "  %-30s %s\n" "personal/account" "039959484327 · Terraform user key · Frankfurt · read-only identity check"
     @printf "  %-30s %s\n" "personal/budgets" "Account-wide monthly cost alert · actual charges above USD 20 · email notification"
-    @printf "  %-30s %s\n" "personal/iam-bootstrap" "Local admin bootstrap · SSO deployment role and scoped budget permissions"
+    @printf "  %-30s %s\n" "personal/admin" "just deploy-aws-admin personal · aws-admin SSO · the scoped Terraform user and its key"
     @echo
     @echo "Cloudflare - tunnels + zones (just deploy cloudflare <resource>):"
     @echo "  tunnels (one state per tunnel: its ingress, the records pointing at it, WARP)"

@@ -5,12 +5,6 @@ sso_role_name = AdministratorAccess
 region = eu-central-1
 output = json
 
-[profile aws-terraform]
-role_arn = arn:aws:iam::039959484327:role/homelab-infra-terraform
-source_profile = aws-admin
-region = eu-central-1
-output = json
-
 [sso-session homelab]
 sso_start_url = https://d-9967b02380.awsapps.com/start/
 sso_region = eu-central-1

@@ -10,7 +10,7 @@ terraform/
 ├── aws/                     # AWS accounts, SSO config and backend credential helper
 │   ├── personal/account/    # read-only identity check for 039959484327
 │   ├── personal/budgets/    # USD 20 monthly actual-cost email alert
-│   └── personal/iam-bootstrap/  # local SSO deployment role and scoped budget permissions
+│   └── personal/admin/      # SSO-only: scoped Terraform IAM user, its policy and key
 ├── modules/                 # reusable primitives (not deployable on their own)
 │   ├── proxmox-lxc/
 │   └── proxmox-vm/          # clones from Proxmox VM template 9000
@@ -68,6 +68,7 @@ just deploy  stripe     workspaced/webhooks
 just deploy  auth0      workspaced
 just plan-aws personal/account
 just deploy  aws        personal/account
+just deploy-aws-admin   personal          # SSO sign-in; manages the Terraform user
 just destroy cloudflare zones/workspaced.online/email
 just output  cloudflare tunnels/homelab tunnel_token
 ```
@@ -125,6 +126,10 @@ Stripe layer:
 | Var                                | From env var                | Where used                                               |
 |------------------------------------|-----------------------------|----------------------------------------------------------|
 | `TF_VAR_stripe_api_key`            | `STRIPE_API_KEY`            | every `stripe/workspaced/` dir: that account's `terraform` key |
+
+AWS layer: `AWS_TERRAFORM_ACCESS_KEY_ID` and `AWS_TERRAFORM_SECRET_ACCESS_KEY`, the scoped
+Terraform user's key, mapped to the provider by `aws/terraform.sh`. The `admin` concern uses
+the `aws-admin` SSO session instead; see [`aws/README.md`](aws/README.md).
 
 Auth0 layer: the provider reads `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET` itself, and `MJ_APIKEY_PUBLIC` /
 `MJ_APIKEY_PRIVATE` map to `TF_VAR_mailjet_api_key_{public,private}` for its SMTP mail.
