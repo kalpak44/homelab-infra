@@ -6,6 +6,7 @@ resources:
   - metallb-config.yaml
   - traefik-config.yaml
   - nfs-provisioner.yaml
+  - nfs-csi.yaml
   - external-secrets.yaml
   - external-secrets-config.yaml
   - crowdsec.yaml
