@@ -226,13 +226,14 @@ spec:
           storageClassName: nfs
           size: 100Mi
 
+      # 500Mi was OOM-killed under a busy alert burst while idle use sits near 250Mi.
       resources:
         limits:
-          memory: 500Mi
+          memory: 768Mi
           cpu: 500m
         requests:
           cpu: 100m
-          memory: 200Mi
+          memory: 256Mi
 
     agent:
       # The ConfigMap mount does not reload in a running pod, and nothing else here changes
