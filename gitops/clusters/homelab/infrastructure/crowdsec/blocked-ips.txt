@@ -99,3 +99,29 @@
 45.138.12.6
 # 2026-11-21 12 nested .php cache probes on www in 3m, 4 alerts
 143.198.120.204
+# 2026-11-21 7 CMS-path WAF alerts on www in 30s; /wordpress, /wp and /wp-includes probing
+159.89.198.104
+# 2026-11-21 304 requests in 3s on www; 270 denied .env/source-tree probes
+34.77.52.14
+# 2026-11-21 190 requests in 1s on proklinator; 155 denied credential/config probes
+34.14.79.235
+# 2026-11-21 305 requests in 3s on ai.workspaced; 270 denied .env/source-tree probes
+34.156.119.250
+# 2026-11-21 304 requests in 5s on bunker; 270 denied .env/source-tree probes
+104.155.92.41
+# 2026-11-21 274 denied .env/source-tree probes on workspaced in 87s
+34.97.77.152
+# 2026-11-21 20 denied WordPress-path probes on planner in 2s
+146.70.40.70
+# 2026-11-21 18 requests on www and mite-assistant; WordPress admin/login/API probing
+94.26.106.240
+# 2026-11-21 274 denied .env/source-tree probes on mite-assistant in 47s
+34.44.247.169
+# 2026-11-21 23 requests in 2s on proklinator; canary, backup and secret-file probes
+91.148.244.131
+# 2026-11-21 15 requests in 16s on www; .env and .git probing
+77.51.220.90
+# 2026-11-21 4 requests on workspaced; /wordpress, /old and /wp probes, 2 blocked
+158.173.51.211
+# 2026-11-22 5 denied WordPress/XML-RPC probes on mite-assistant in 2s
+206.189.93.2
