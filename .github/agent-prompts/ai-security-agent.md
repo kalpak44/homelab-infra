@@ -105,6 +105,11 @@ source was checked. Fetch current official CrowdSec releases and the configured 
 
 - Use `ClientHost`, the resolved client source. Never ban the proxy-hop `ClientAddr`.
 - Inspect host, path, method, status and User-Agent together. A 4xx count alone is not proof.
+- Never replay a scanner's request to check what it received. The runner is not
+  whitelisted, so one request to a secret, VCS, CMS or PHP path bans it for 24 hours and
+  reads to the next reviewer as an intrusion from inside the LAN. Judge a scanner's `200`
+  from the logged `DownstreamContentSize` against the same host's response to a random,
+  ordinary-looking missing path, which no rule matches.
 - Traefik logs rotate. Recover retained node rotations as above and state actual coverage,
   bounds and gaps. Do not call a partial interval quiet or mistake a bounded sample for
   the complete retained history. Prometheus counts and request evidence may differ in scope.

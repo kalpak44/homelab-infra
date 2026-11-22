@@ -97,7 +97,10 @@ Do not write a root `.env` or copy credentials into Actions secrets.
    failed repair attempts and report the unresolved failure. Never downgrade stateful
    binaries against migrated data or blindly restore shared NFS over new writes.
    After verified success retain the latest three AI-created snapshots per affected guest;
-   never prune operator snapshots or failed-stage recovery checkpoints.
+   never prune operator snapshots or failed-stage recovery checkpoints. Five per guest is
+   a hard cap: delete the oldest with `qm delsnapshot` / `pct delsnapshot` before creating
+   another. A snapshot being another's parent is no reason to keep it; Proxmox relinks the
+   chain on delete, and LVM-thin snapshots are independent volumes.
 
 Do not reboot the hypervisor or current runner during its job. Never destroy/replace
 infrastructure, delete the only backup, weaken security or conceal failed checks.
