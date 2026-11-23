@@ -125,3 +125,27 @@
 158.173.51.211
 # 2026-11-22 5 denied WordPress/XML-RPC probes on mite-assistant in 2s
 206.189.93.2
+# 2026-11-22 757 requests (747 denied) across 437 paths and 33 UAs on www; 16 alerts
+130.211.55.231
+# 2026-11-22 446 requests (436 denied) across 421 paths and 33 UAs on www; 11 alerts
+136.117.34.146
+# 2026-11-22 274 requests across 272 paths on www in 80s, all denied; 6 alerts
+35.241.71.250
+# 2026-11-22 167 requests (165 denied) across 166 .env and VCS paths on bunker; 109 alerts
+18.188.57.70
+# 2026-11-22 47 PHP webshell probes across 46 paths on workspaced in 26s; 47 alerts
+20.28.214.139
+# 2026-11-22 Repeated secret-file and VCS probes from 45.138.12.16 across www and mite
+45.138.12.16
+# 2026-11-22 33 requests incl. Ignition, Symfony profiler and admin probing; 8 alerts
+207.244.250.97
+# 2026-11-22 19 denied AWS credential and cloud-config probes on www; 16 events
+93.123.109.107
+# 2026-11-23 4 sensitive .env and VCS probes on www in 1s; 4 alerts
+45.153.102.83
+# 2026-11-22 8 profiler, phpinfo and environment probes on proklinator; 3 alerts
+43.204.237.109
+# 2026-11-22 6 profiler, phpinfo and environment probes on proklinator; 3 alerts
+54.217.30.81
+# 2026-11-22 5 Nmap UA and Nmap-specific path probes on ai.workspaced; 1 alert
+172.236.201.126
