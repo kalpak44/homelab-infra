@@ -10,7 +10,7 @@ module "lxc" {
   gateway    = "192.168.1.1"
 
   cpu_cores = 1
-  memory_mb = 256
+  memory_mb = 512
 
   # Objects sit on their own volume, so a root disk that fills with logs or an upgrade
   # cannot take them with it. /data/rustfs on it is the path the package's unit may write.
