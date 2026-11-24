@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: vm-manager
-          image: ghcr.io/kalpak44/workspaced-ai-vm-manager:cb716e6
+          image: ghcr.io/kalpak44/workspaced-ai-vm-manager:7f8c924
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -56,7 +56,7 @@ spec:
               value: f50d5e37234c6b48f3d9522174209184
             # What each VM's supervisor runs as the harness; bumped with the other images.
             - name: WORKSPACED_HARNESS_IMAGE
-              value: ghcr.io/kalpak44/workspaced-ai-harness:cb716e6
+              value: ghcr.io/kalpak44/workspaced-ai-harness:7f8c924
           ports:
             - name: http
               containerPort: 8080
