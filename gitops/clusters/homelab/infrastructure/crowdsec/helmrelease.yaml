@@ -226,10 +226,11 @@ spec:
           storageClassName: nfs
           size: 100Mi
 
-      # 500Mi was OOM-killed under a busy alert burst while idle use sits near 250Mi.
+      # A full alert export OOM-killed 768Mi; idle use is about 100Mi, so keep headroom
+      # for the daily evidence query without raising the request.
       resources:
         limits:
-          memory: 768Mi
+          memory: 1Gi
           cpu: 500m
         requests:
           cpu: 100m
