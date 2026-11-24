@@ -12,7 +12,7 @@ resource "cloudflare_email_routing_settings" "this" {
 # The destination is an account-level address, verified and managed in
 # zones/pavel-usanli.online/email; declaring it here too would put it in two states.
 resource "cloudflare_email_routing_rule" "forward" {
-  for_each = toset(["contact", "sales", "support", "investor"])
+  for_each = toset(["contact", "sales", "support", "investor", "pavel.usanli"])
 
   zone_id  = data.cloudflare_zone.this.id
   name     = "${each.key}@workspaced.online → pavel.usanli@gmail.com"
