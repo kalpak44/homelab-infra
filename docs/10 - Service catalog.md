@@ -95,6 +95,10 @@ It deliberately skips `shared/tasks/enable-root-ssh.yml`, which writes the same 
 disables `ssh.socket` — Ubuntu 24.04 socket-activates sshd, which makes the `Port` directive a silent no-op until
 systemd hands the port back. `pct enter 207` from the node is the break-glass and needs no password.
 
+The same component pins NocoBase's Node.js runtime (`nocobase_node_version` in
+`roles/nodejs/defaults/main.yml`), verifies the official archive checksum, switches
+`/usr/local/lib/nodejs/current` atomically and restarts NocoBase only when that runtime changes.
+
 The same run installs an nftables ruleset: inbound on the container's `eth0` is default-deny, with **80, 443 and SSH
 (22022) open** and nothing else — notably not NocoBase's own `0.0.0.0:13000`, which every LAN and WARP client could
 reach before. `nocobase_firewall_admin_cidr` narrows SSH to one source range if wanted; it is empty by default,

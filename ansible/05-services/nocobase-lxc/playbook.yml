@@ -39,3 +39,4 @@
     # else. Reversed, a first run would filter for a port nothing listens on yet.
     - ssh-hardening
     - firewall
+    - nodejs

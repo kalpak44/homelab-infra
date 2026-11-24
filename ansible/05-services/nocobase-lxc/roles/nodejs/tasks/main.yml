@@ -1,0 +1,99 @@
+---
+- name: Require the supported NocoBase Node runtime architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.architecture == "x86_64"
+    fail_msg: "The pinned NocoBase Node archive is linux-x64; update the role for {{ ansible_facts.architecture }}"
+
+- name: Ensure the Node runtime prerequisites are installed
+  ansible.builtin.apt:
+    name: [libatomic1, xz-utils]
+    state: present
+
+- name: Read the installed Node version
+  ansible.builtin.command: "{{ nocobase_node_install_dir }}/bin/node --version"
+  register: _node_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install the pinned Node runtime
+  when: _node_installed.stdout | default('') != 'v' ~ nocobase_node_version
+  block:
+    - name: Download the checksum-verified Node archive
+      ansible.builtin.get_url:
+        url: "https://nodejs.org/dist/v{{ nocobase_node_version }}/{{ nocobase_node_archive }}"
+        dest: "/tmp/{{ nocobase_node_archive }}"
+        checksum: "sha256:{{ nocobase_node_sha256 }}"
+        mode: "0600"
+
+    - name: Create the Node install root
+      ansible.builtin.file:
+        path: "{{ nocobase_node_base_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create the versioned Node install directory
+      ansible.builtin.file:
+        path: "{{ nocobase_node_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Extract the Node runtime
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ nocobase_node_archive }}"
+        dest: "{{ nocobase_node_install_dir }}"
+        remote_src: true
+        extra_opts: ["--strip-components=1"]
+        owner: root
+        group: root
+
+- name: Read the installed Yarn version
+  ansible.builtin.command: "{{ nocobase_node_install_dir }}/bin/yarn --version"
+  register: _yarn_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install the pinned Yarn release into the Node runtime
+  ansible.builtin.command: >-
+    {{ nocobase_node_install_dir }}/bin/npm install
+    --global --prefix {{ nocobase_node_install_dir }}
+    yarn@{{ nocobase_yarn_version }}
+  when: _yarn_installed.stdout | default('') != nocobase_yarn_version
+
+- name: Switch the active Node runtime
+  ansible.builtin.file:
+    src: "{{ nocobase_node_install_dir }}"
+    dest: "{{ nocobase_node_base_dir }}/current"
+    state: link
+    force: true
+    owner: root
+    group: root
+  register: _node_current
+  notify: Restart NocoBase
+
+- name: Apply the Node runtime change
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the active Node version
+  ansible.builtin.command: /usr/local/bin/node --version
+  register: _node_active
+  changed_when: false
+  failed_when: _node_active.stdout != 'v' ~ nocobase_node_version
+
+- name: Ensure NocoBase is running
+  ansible.builtin.systemd:
+    name: nocobase
+    state: started
+
+- name: Wait for NocoBase after a runtime change
+  ansible.builtin.uri:
+    url: http://127.0.0.1:13000/__health_check
+    status_code: 200
+  register: _nocobase_health
+  until: _nocobase_health.status == 200
+  retries: 60
+  delay: 5

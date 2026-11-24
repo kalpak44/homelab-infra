@@ -1,0 +1,9 @@
+---
+# NocoBase's production runtime. The upstream Linux archive is checksum-pinned and
+# switched through the existing /usr/local/lib/nodejs/current symlink.
+nocobase_node_version: "26.13.1"
+nocobase_node_archive: "node-v{{ nocobase_node_version }}-linux-x64.tar.xz"
+nocobase_node_sha256: "5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864"
+nocobase_yarn_version: "1.22.22"
+nocobase_node_base_dir: /usr/local/lib/nodejs
+nocobase_node_install_dir: "{{ nocobase_node_base_dir }}/v{{ nocobase_node_version }}"

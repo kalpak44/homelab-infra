@@ -1,0 +1,5 @@
+---
+- name: Restart NocoBase
+  ansible.builtin.systemd:
+    name: nocobase
+    state: restarted
