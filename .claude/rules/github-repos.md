@@ -246,7 +246,10 @@ there, so a change means bumping `version` and opening a pull request — editin
 apply request is signed: the private key is `domain-connect-private-key` in `secret/workspaced-secrets`, and the
 public half is the `_dck1` TXT records in `terraform/cloudflare/zones/workspaced.online/edge/domain-connect.tf`, which is the
 key name and `syncPubKeyDomain` both templates name. CNAME targets are fixed to `%vmid%.vm.workspaced.online` rather than a free variable, so a signed request can only ever
-point a user's record at one of our VM names.
+point a user's record at one of our VM names. A provider's template endpoint answers 200 as soon as it onboards a
+template, while it still applies it only for our own account, so the API offers Domain Connect only at providers named
+in `WORKSPACED_DOMAIN_CONNECT_PROVIDERS` (by `providerId`, e.g. `cloudflare.com`) or for zones in
+`WORKSPACED_DOMAIN_CONNECT_TEST_ZONES`; add a provider there only after its go-live email.
 
 **`workspaced-ai` sends mail through Mailjet as any `*@workspaced.online` address, and only sends.** The sender,
 its DKIM and the shared SPF record are in `terraform/cloudflare/zones/workspaced.online/email/mailjet.tf`; the API
