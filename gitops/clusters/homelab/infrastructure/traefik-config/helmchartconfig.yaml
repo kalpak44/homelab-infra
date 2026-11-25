@@ -5,11 +5,13 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |
-    # k3s v1.37.2 bundles chart 41.6.1 with Traefik 3.7.15. Traefik 3.7.18 fixed five
-    # security advisories and 3.7.19 is the current 3.7 patch, while this k3s release
-    # supplies no newer bundled image. Remove this tag when k3s ships >= 3.7.19.
+    # k3s v1.37.2 bundles chart 41.6.1 with Traefik 3.7.15. Traefik 3.7.20 fixes
+    # GHSA-3rh5-223h-cpwr (high), GHSA-42x2-976f-ph52 and GHSA-9657-c2gv-wjpj. The
+    # Rancher mirror has not published 3.7.20, so use the official upstream image.
+    # Remove this override when k3s ships >= 3.7.20.
     image:
-      tag: "3.7.19"
+      repository: traefik
+      tag: "3.7.20"
 
     api:
       dashboard: true
