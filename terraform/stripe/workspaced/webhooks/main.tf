@@ -15,6 +15,9 @@ resource "stripe_webhook_endpoint" "workspaced_billing" {
     "checkout.session.async_payment_succeeded",
     "checkout.session.async_payment_failed",
     "checkout.session.expired",
+    # A refund or a dispute takes back what the top-up credited, referral rewards included.
+    "charge.refunded",
+    "charge.dispute.created",
   ]
 
   lifecycle {
