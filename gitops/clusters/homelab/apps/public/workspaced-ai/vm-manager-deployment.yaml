@@ -5,8 +5,16 @@ kind: Deployment
 metadata:
   name: workspaced-ai-vm-manager
   namespace: workspaced-ai
+  annotations:
+    # Recreates the Deployment when an apply is refused, as it is while the live object still
+    # holds the rolling-update defaults Recreate forbids.
+    kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   replicas: 1
+  # Its VMs are held in memory, so an old pod still serving creates during a rollout makes
+  # servers the new one never learns of until its next scan.
+  strategy:
+    type: Recreate
   revisionHistoryLimit: 2
   selector:
     matchLabels:
