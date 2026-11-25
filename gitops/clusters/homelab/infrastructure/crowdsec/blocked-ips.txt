@@ -151,3 +151,27 @@
 172.236.201.126
 # 2026-11-24 4 sppb-rce-poc probes on /index.php across bunker and www; all denied
 103.59.160.82
+# 2026-11-25 419 requests across 400 paths on www in 21s; all denied
+136.66.211.195
+# 2026-11-25 334 credential and source-tree probes on noco-google-connector in 3s; 333 denied
+34.53.147.60
+# 2026-11-25 274 .env, PHP and VCS probes on www in 77s; all denied
+35.241.123.12
+# 2026-11-25 334 credential and source-tree probes on planner in 2s; 325 denied
+104.199.22.169
+# 2026-11-25 435 requests across proklinator and www in 3s; 318 denied
+207.175.54.32
+# 2026-11-25 335 credential and source-tree probes on ai.workspaced in 2s; 274 denied
+34.22.192.206
+# 2026-11-25 219 credential and config probes on proklinator in 2s; 158 denied
+34.79.46.222
+# 2026-11-25 40 WordPress admin/XML-RPC probes on planner and www over 3h; 38 denied
+178.128.64.118
+# 2026-11-25 20 WordPress path probes on workspaced in 7s; all denied
+209.38.18.3
+# 2026-11-25 20 WordPress path probes on planner in 1s; 18 denied
+185.19.40.144
+# 2026-11-25 19 WordPress path probes on workspaced in 4s; 17 denied
+104.248.155.49
+# 2026-11-25 8 nested PHP webshell/cache probes on bunker over 5h31m; all denied
+89.163.146.129
