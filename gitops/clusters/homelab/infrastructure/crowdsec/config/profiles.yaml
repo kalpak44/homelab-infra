@@ -1,5 +1,13 @@
-# First, because every profile below ends on `break`: reached later, the reviewed
-# ban would be pre-empted by whatever short automatic ban fired on the same alert.
+# A request from inside Cloudflare carries only trusted proxies in its forwarded chain,
+# so the bouncer resolves it to cloudflared itself. AppSec still blocks the request; a
+# ban here would block every such request for a day. No decisions, so the alert is kept.
+name: never_ban_tunnel
+filters:
+  - Alert.GetScope() == "Ip" && Alert.GetValue() == "192.168.1.10"
+on_success: break
+---
+# First of the bans, because every profile below ends on `break`: reached later, the
+# reviewed ban would be pre-empted by whatever short automatic ban fired on the same alert.
 name: manual_blocklist_ban
 filters:
   - Alert.Remediation == true && Alert.GetScenario() == "custom/manual-blocklist"
