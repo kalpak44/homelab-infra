@@ -42,7 +42,20 @@ nslookup vault.internal.pavel-usanli.online 192.168.1.2
 
 When it answers correctly, configure LAN clients to use AdGuard at `192.168.1.2`.
 
-## 3. Prepare public ingress when needed
+## 3. Set the host resolvers
+
+The Proxmox node and its guests resolve through `1.1.1.1` and `1.0.0.1`, not AdGuard, which
+runs on the same node. Set them now, before more containers exist: each LXC copies the
+node's resolvers when it starts, and Vault already does.
+
+```bash
+just --justfile ansible/Justfile dns proxmox,vault
+```
+
+VMs get the same pair from cloud-init. Later, `just --justfile ansible/Justfile dns`
+covers every host.
+
+## 4. Prepare public ingress when needed
 
 This can wait until the internal cluster is ready. Review
 `terraform/cloudflare/tunnels/homelab/`, then apply it and retrieve the connector token:

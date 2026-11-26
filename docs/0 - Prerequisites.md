@@ -79,7 +79,7 @@ and the checks to complete before continuing.
 | 1 | [Bootstrap](<1 - Bootstrap.md>) | `00-bootstrap` | Terraform role, user, permissions and API token |
 | 2 | [LXC template](<2 - LXC template.md>) | `00-bootstrap` | Downloaded and SSH-ready Ubuntu archive |
 | 3 | [Vault container](<3 - Vault container.md>) | Terraform only | LXC 201 provisioned; Vault installation follows in step 6 |
-| 4 | [Networking](<4 - Networking.md>) | `01-networking` | Internal DNS, AdGuard and optional tunnel connector |
+| 4 | [Networking](<4 - Networking.md>) | `01-networking` | Internal DNS, AdGuard, host resolvers and optional tunnel connector |
 | 5 | [Storage and k3s](<5 - Storage and k3s.md>) | `00-bootstrap`, `02-platform` | VM template, NFS and two ready cluster nodes |
 | 6 | [Vault secrets](<6 - Vault secrets.md>) | `03-vault` | Initialized Vault, operator access and secret records |
 | 7 | [Flux and workloads](<7 - Flux and workloads.md>) | `04-gitops` | GitOps infrastructure and application reconciliation |
