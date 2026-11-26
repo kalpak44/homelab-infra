@@ -52,7 +52,7 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   initialization {
     dns {
-      servers = ["1.1.1.1", "8.8.8.8"]
+      servers = ["1.1.1.1", "1.0.0.1"]
     }
 
     ip_config {

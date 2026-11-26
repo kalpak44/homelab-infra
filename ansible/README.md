@@ -44,6 +44,9 @@ Every LXC and VM accepts only the operator key for root. `just ssh-access [host]
 that policy without running service roles; mihal-lxc keeps password login
 (`ssh_password_login` in the inventory).
 
+`just dns [host]` points the Proxmox node and every LXC/VM at `1.1.1.1` and `1.0.0.1`.
+8.8.8.8 hands out Cloudflare edge addresses that time out from this network.
+
 Existing service commands remain stable and use the root `.env`. From the repository root:
 
 ```bash

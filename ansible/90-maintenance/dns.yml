@@ -1,0 +1,110 @@
+---
+# Points the Proxmox node and every running LXC/VM at Cloudflare's resolvers. Run by
+# `just dns [host]`.
+#
+# Not 8.8.8.8: it answers this zone's proxied names with 188.114.96.0/20 edge addresses,
+# which time out from this network. Not AdGuard either: it is a guest on this node, so
+# the node and the cluster would lose DNS whenever it is down or still booting.
+#
+# adguard is excluded because it owns its resolver and has no PVE-managed block.
+
+- name: Set the Proxmox node's resolvers
+  hosts: proxmox_host
+  gather_facts: false
+  vars_files:
+    - vars/dns.yml
+
+  tasks:
+    # LXCs without a nameserver of their own copy these at every start, so this is what
+    # keeps the containers right after a reboot.
+    - name: Read the node's DNS settings
+      ansible.builtin.command: pvesh get /nodes/{{ inventory_hostname }}/dns --output-format json
+      register: node_dns
+      changed_when: false
+      check_mode: false
+
+    - name: Write the node's DNS settings
+      ansible.builtin.command: >-
+        pvesh set /nodes/{{ inventory_hostname }}/dns
+        --dns1 {{ dns_servers[0] }} --dns2 {{ dns_servers[1] }} --search {{ dns_search }}
+      when: >-
+        (node_dns.stdout | from_json).get('dns1') != dns_servers[0] or
+        (node_dns.stdout | from_json).get('dns2') != dns_servers[1] or
+        (node_dns.stdout | from_json).get('search') != dns_search
+
+- name: Set running containers' resolvers
+  hosts: lxc:!adguard
+  gather_facts: false
+  vars_files:
+    - vars/dns.yml
+  vars:
+    ansible_port: "{{ nocobase_ssh_port | default(22) }}"
+
+  tasks:
+    # Proxmox rewrites only this block, and only at container start; editing it in place
+    # applies the node's new settings now and matches what the next start writes.
+    - name: Check for the PVE-managed block
+      ansible.builtin.command: grep -q '^# --- BEGIN PVE ---$' /etc/resolv.conf
+      register: pve_block
+      changed_when: false
+      check_mode: false
+      failed_when: pve_block.rc > 1
+
+    - name: Rewrite the PVE-managed block
+      ansible.builtin.blockinfile:
+        path: /etc/resolv.conf
+        marker: "# --- {mark} PVE ---"
+        marker_begin: BEGIN
+        marker_end: END
+        block: |
+          search {{ dns_search }}
+          {% for server in dns_servers %}
+          nameserver {{ server }}
+          {% endfor %}
+      when: pve_block.rc == 0
+      notify: Restart systemd-resolved
+
+  handlers:
+    # resolved reads a foreign resolv.conf at start, so it keeps the old servers until then.
+    - name: Restart systemd-resolved
+      ansible.builtin.shell: systemctl is-active --quiet systemd-resolved && systemctl restart systemd-resolved || true
+      changed_when: true
+
+- name: Set VMs' resolvers
+  hosts: k3s:vm
+  gather_facts: false
+  vars_files:
+    - vars/dns.yml
+
+  tasks:
+    - name: Check the cloud-init network unit exists
+      ansible.builtin.stat:
+        path: /run/systemd/network/10-netplan-eth0.network
+      register: netplan_unit
+      failed_when: not netplan_unit.stat.exists
+
+    # cloud-init owns the netplan file and Terraform ignores changes to it, so a drop-in is
+    # what survives. The empty DNS= clears the servers netplan put there.
+    - name: Create the drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/network/10-netplan-eth0.network.d
+        state: directory
+        mode: "0755"
+
+    - name: Override the link's DNS servers
+      ansible.builtin.copy:
+        dest: /etc/systemd/network/10-netplan-eth0.network.d/dns.conf
+        content: |
+          [Network]
+          DNS=
+          {% for server in dns_servers %}
+          DNS={{ server }}
+          {% endfor %}
+        mode: "0644"
+      register: dropin
+
+    # Applied at runtime rather than by `networkctl reload`, which can reconfigure the
+    # link and drop a k3s node off the network for a moment.
+    - name: Apply the servers to the running link
+      ansible.builtin.command: resolvectl dns eth0 {{ dns_servers | join(' ') }}
+      when: dropin.changed

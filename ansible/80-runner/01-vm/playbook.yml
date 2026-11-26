@@ -39,7 +39,7 @@
             mode: '0600'
         - name: qm set (disk + cloud-init + IP + operator key)
           ansible.builtin.command:
-            cmd: "qm set {{ runner_id }} --scsihw virtio-scsi-pci --scsi0 {{ runner_storage }}:vm-{{ runner_id }}-disk-0 --ide2 {{ runner_storage }}:cloudinit --boot order=scsi0 --serial0 socket --vga serial0 --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }} --ciuser ubuntu --sshkeys /tmp/runner-{{ runner_id }}.pub --cicustom vendor=local:snippets/vm-ssh-password.yaml --onboot 1 --agent enabled=1"
+            cmd: "qm set {{ runner_id }} --scsihw virtio-scsi-pci --scsi0 {{ runner_storage }}:vm-{{ runner_id }}-disk-0 --ide2 {{ runner_storage }}:cloudinit --boot order=scsi0 --serial0 socket --vga serial0 --ipconfig0 ip={{ runner_ip }}/24,gw={{ runner_gw }} --nameserver "1.1.1.1 1.0.0.1" --ciuser ubuntu --sshkeys /tmp/runner-{{ runner_id }}.pub --cicustom vendor=local:snippets/vm-ssh-password.yaml --onboot 1 --agent enabled=1"
         - name: Remove the staged key
           ansible.builtin.file:
             path: "/tmp/runner-{{ runner_id }}.pub"

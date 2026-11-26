@@ -83,6 +83,8 @@ just --justfile ansible/Justfile os-update
 
 `os-update` patches the configured hosts and reboots those that need it. An optional
 host argument limits the operation, for example `os-update vault`.
+`dns` sets the Proxmox node's and every guest's resolvers to `1.1.1.1` and `1.0.0.1`;
+run it after adding a host.
 
 ## 6. Verify the completed environment
 

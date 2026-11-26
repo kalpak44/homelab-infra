@@ -1,0 +1,6 @@
+---
+# Also hard-coded in terraform/modules/proxmox-vm/main.tf and 80-runner/01-vm/playbook.yml.
+dns_servers:
+  - 1.1.1.1
+  - 1.0.0.1
+dns_search: internal.pavel-usanli.online

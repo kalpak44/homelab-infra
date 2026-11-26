@@ -134,6 +134,20 @@ ssh-access host='':
     ansible-playbook 90-maintenance/ssh-access.yml ${limit_args[@]+"${limit_args[@]}"} \
       --private-key "$keyfile"
 
+# Point the Proxmox node and every LXC/VM at Cloudflare's resolvers (host limits the run)
+dns host='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    limit_args=()
+    if [[ -n "{{host}}" ]]; then
+      limit_args=(--limit "{{host}}")
+    fi
+    keyfile="$(mktemp)"
+    trap 'rm -f "$keyfile"' EXIT
+    bash shared/operator-key.sh "$keyfile"
+    ansible-playbook 90-maintenance/dns.yml ${limit_args[@]+"${limit_args[@]}"} \
+      --private-key "$keyfile"
+
 # List every configurable resource
 list:
     @echo "Bootstrap (each component has its own .env and Justfile):"
@@ -159,3 +173,4 @@ list:
     @echo "Maintenance:"
     @printf "  %-24s %s\n" "os-update [host]" "apt upgrade every LXC/VM, reboot what needs it (host limits the run)"
     @printf "  %-24s %s\n" "ssh-access [host]" "key-only root SSH on every LXC/VM; mihal keeps password login"
+    @printf "  %-24s %s\n" "dns [host]" "Cloudflare resolvers on the Proxmox node and every LXC/VM"

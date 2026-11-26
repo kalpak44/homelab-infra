@@ -43,6 +43,10 @@ root `.env` and Vault); `just ssh-access [host]` enforces it. Exceptions: mihal-
 user, and nocobase-lxc listens on 22022. Guests created before the switch still have their old root password,
 which now works only on the Proxmox console.
 
+**Host DNS** – The Proxmox node and every LXC/VM resolve through `1.1.1.1` and `1.0.0.1`, set by
+`just dns [host]`; LAN clients keep using AdGuard. Never 8.8.8.8: it answers our proxied names with edge
+addresses that time out from this network. Never AdGuard either, since it is a guest on the same node.
+
 **AdGuard Home** – Point your router's DNS to `192.168.1.2` (or set it per-device). UI at
 `https://adguard.internal.pavel-usanli.online`. To bump versions edit
 `ansible/01-networking/adguard-lxc/roles/adguard/defaults/main.yml`.
