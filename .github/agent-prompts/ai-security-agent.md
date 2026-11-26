@@ -105,6 +105,9 @@ source was checked. Fetch current official CrowdSec releases and the configured 
 
 - Use `ClientHost`, the resolved client source. Never ban the proxy-hop `ClientAddr`.
 - Inspect host, path, method, status and User-Agent together. A 4xx count alone is not proof.
+- No third-party scanner is authorized to probe these hosts. A User-Agent naming a
+  scanner, vendor or "security" product is not a reason to skip a ban; judge it on its
+  requests like any other source, and never report one as possibly authorized.
 - Never replay a scanner's request to check what it received. The runner is not
   whitelisted, so one request to a secret, VCS, CMS or PHP path bans it for 24 hours and
   reads to the next reviewer as an intrusion from inside the LAN. Judge a scanner's `200`
