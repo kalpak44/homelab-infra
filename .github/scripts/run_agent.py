@@ -40,6 +40,16 @@ def redact(text, values):
                   '[redacted private key]', text)
 
 
+def report_outcome(text):
+    # Only the first Outcome line counts, so a later quote of another run cannot pass this one.
+    for line in text.splitlines():
+        plain = re.sub(r'[*`_]', '', line).strip().lstrip('-').strip()
+        if plain.lower().startswith('outcome'):
+            match = re.match(r'outcome\s*:\s*(SUCCESS|ATTENTION)\b', plain, re.IGNORECASE)
+            return match.group(1).upper() if match else ''
+    return ''
+
+
 def excerpt(text, values, limit=600):
     text = ' '.join(redact(str(text), values).split())
     return text if len(text) <= limit else text[:limit] + ' …'
@@ -202,6 +212,13 @@ def main():
             (directory / 'last-message.md').read_text() if (directory / 'last-message.md').exists() else 'Codex produced no report.')
         marker = directory / 'SUCCESS'
         outcome = marker.read_text().strip().upper() if marker.exists() else ''
+        # The agent sometimes writes a finished report and forgets the marker, which failed
+        # verified work. The report's first Outcome line stands in; FAILED or none still fails.
+        if not outcome and (directory / 'result.md').exists():
+            outcome = report_outcome(text)
+            if outcome:
+                print('::warning title=Completion marker missing::Outcome ' + outcome
+                      + ' taken from the report.', flush=True)
         finished = code == 0 and (directory / 'result.md').exists() and outcome in {'SUCCESS', 'ATTENTION'}
         from check_credentials import secret_values
         values |= {v.decode() for v in secret_values()}

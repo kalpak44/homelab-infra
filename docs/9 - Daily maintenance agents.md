@@ -113,7 +113,9 @@ logs and credentials remain private and are deleted by the action. The artifact 
 includes the same `progress.log`.
 A report and explicit completion marker are required for success. `ATTENTION` in the marker
 means the work was verified but follow-ups need a human; the job passes with a warning
-annotation. Unverified or broken changes fail the job. Codex has a 150-minute working budget within the workflow timeout.
+annotation. When the marker is missing, the report's first `Outcome:` line decides, and only
+`SUCCESS` or `ATTENTION` there passes. AI snapshots are capped at five per guest, three on
+`nfs` and `portainer`, whose large data disks dominate the thin pool. Unverified or broken changes fail the job. Codex has a 150-minute working budget within the workflow timeout.
 
 Manual dispatch with `dry_run=true` performs read-only assessment and scratch validation:
 no source publication, deployments, package changes, restarts or snapshots. This is a
