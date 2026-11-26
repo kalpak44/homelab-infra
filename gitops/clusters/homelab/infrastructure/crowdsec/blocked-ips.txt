@@ -203,3 +203,5 @@
 103.160.199.115
 # 2026-11-26 3 PHP webshell probes under /.well-known on www in 3s; all denied
 72.146.28.43
+# 2026-11-26 MerchantSecurityScanner/1.0, 47 log-path probes on www; not an authorised scanner
+34.214.107.70
