@@ -14,5 +14,7 @@ module "vm" {
   disk_size_gb      = 20
   data_disk_size_gb = 512
 
-  ssh_public_keys = [var.ssh_public_key]
+  startup_order    = 3
+  startup_up_delay = 30
+  ssh_public_keys  = [var.ssh_public_key]
 }

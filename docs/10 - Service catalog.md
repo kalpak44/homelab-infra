@@ -81,6 +81,12 @@ in the UI, or kept as JSON in that role's `files/`, which `ansible/05-services/g
 writes — edit the script, never the JSON. Every inventory host gets its own board in the Hosts folder, and
 *Homelab hosts* links to each. The admin login is read from Vault
 (`secret/grafana-secrets`) at configure time, so the role needs no CI secret of its own.
+Its thin-pool alerts fire on the pool's real data and metadata use, not on provisioned size, which snapshots
+push far past 100% while the pool is mostly empty.
+
+**Boot order** – `startup_order` in each `terraform/proxmox/<name>/main.tf`: AdGuard, Vault, NFS, the data
+services, then k3s-1, k3s-2 and cloudflared. Unordered guests start after them, and shutdown runs in reverse,
+so the cluster stops before the storage and secrets it depends on.
 
 **RustFS** – S3 API at `https://rustfs.internal.pavel-usanli.online`, console at `:9001`, both on a certbot
 certificate. Objects live on a 100G volume at `/data`. The root keys are read from Vault (`secret/rustfs-secrets`,

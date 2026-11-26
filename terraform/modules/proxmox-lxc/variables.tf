@@ -87,3 +87,15 @@ variable "firewall_enabled" {
   type        = bool
   default     = false
 }
+
+variable "startup_order" {
+  description = "Boot position on the node; lower starts first. Null leaves the guest unordered."
+  type        = number
+  default     = null
+}
+
+variable "startup_up_delay" {
+  description = "Seconds Proxmox waits after starting this guest before starting the next."
+  type        = number
+  default     = 0
+}

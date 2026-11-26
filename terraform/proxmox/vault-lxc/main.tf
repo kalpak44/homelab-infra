@@ -13,5 +13,7 @@ module "lxc" {
   memory_mb    = 512
   disk_size_gb = 8
 
-  ssh_public_keys = [var.ssh_public_key]
+  startup_order    = 2
+  startup_up_delay = 15
+  ssh_public_keys  = [var.ssh_public_key]
 }

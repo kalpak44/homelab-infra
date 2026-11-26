@@ -14,5 +14,6 @@ module "lxc" {
   disk_size_gb = 4
   unprivileged = true
 
+  startup_order   = 7
   ssh_public_keys = [var.ssh_public_key]
 }

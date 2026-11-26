@@ -16,7 +16,9 @@ module "node_1" {
   # that may be needed again, which is cheaper to avoid than to tune.
   disk_size_gb = 80
 
-  ssh_public_keys = [var.ssh_public_key]
+  startup_order    = 5
+  startup_up_delay = 30
+  ssh_public_keys  = [var.ssh_public_key]
 }
 
 module "node_2" {
@@ -37,5 +39,6 @@ module "node_2" {
   # that may be needed again, which is cheaper to avoid than to tune.
   disk_size_gb = 80
 
+  startup_order   = 6
   ssh_public_keys = [var.ssh_public_key]
 }

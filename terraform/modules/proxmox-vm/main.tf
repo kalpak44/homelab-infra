@@ -4,6 +4,16 @@ resource "proxmox_virtual_environment_vm" "this" {
   vm_id     = var.vm_id
   on_boot   = true
 
+  # Proxmox starts unordered guests last, by ID; an order makes dependencies boot first
+  # and, in reverse, shut down last.
+  dynamic "startup" {
+    for_each = var.startup_order == null ? [] : [1]
+    content {
+      order    = var.startup_order
+      up_delay = var.startup_up_delay
+    }
+  }
+
   clone {
     vm_id = var.template_vm_id
     full  = false
