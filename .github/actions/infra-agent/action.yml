@@ -40,6 +40,39 @@ runs:
         echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
         echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
         ssh-add -q "$keyfile"
+    # The security agent gets a token for its own read-only account, so the API server, not
+    # the prompt, refuses a write. It used to fetch the k3s admin kubeconfig itself, and ran a
+    # pod with it. Four hours outlasts the agent's working budget.
+    - name: Mint a read-only kubeconfig for the security agent
+      if: inputs.kind == 'security'
+      shell: bash
+      run: |
+        set -euo pipefail
+        ssh_k3s() { ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "root@$K3S_SERVER" "$@"; }
+        token="$(ssh_k3s k3s kubectl -n crowdsec create token security-agent --duration=4h)"
+        echo "::add-mask::$token"
+        ca="$(ssh_k3s "k3s kubectl config view --raw -o 'jsonpath={.clusters[0].cluster.certificate-authority-data}'")"
+        kubeconfig="$AGENT_DIRECTORY/kubeconfig"
+        umask 077
+        cat > "$kubeconfig" <<EOF
+        apiVersion: v1
+        kind: Config
+        clusters:
+          - name: k3s
+            cluster:
+              server: https://$K3S_SERVER:6443
+              certificate-authority-data: $ca
+        users:
+          - name: security-agent
+            user:
+              token: $token
+        contexts:
+          - name: security-agent
+            context: {cluster: k3s, user: security-agent}
+        current-context: security-agent
+        EOF
+        KUBECONFIG="$kubeconfig" kubectl auth can-i list pods --all-namespaces >/dev/null
+        echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
     - name: Install pinned Codex CLI in temporary directory
       shell: bash
       run: |

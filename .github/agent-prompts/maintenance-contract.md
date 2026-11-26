@@ -37,8 +37,10 @@ Do not write a root `.env` or copy credentials into Actions secrets.
 - Update agent: obtain k3s admin kubeconfig over SSH from `/etc/rancher/k3s/k3s.yaml`,
   save privately, replace its loopback server with `$K3S_SERVER` and export `KUBECONFIG`.
   Use kubectl only for read-only inspection; credentials never authorize ad hoc cluster writes.
-- Security agent: use an existing restricted kubeconfig from Vault if available; otherwise
-  obtain a private kubeconfig over SSH as above. Access is for read-only diagnostics only.
+- Security agent: `KUBECONFIG` already points at a token for the read-only `security-agent`
+  account, with exec and ConfigMap reads limited to `crowdsec`. Use it as given. Never read
+  `/etc/rancher/k3s/k3s.yaml` or obtain any other kubeconfig, even over SSH you already
+  have; report a denied request as a gap instead of working around it.
   Never change RBAC or use broader credentials to bypass an explicitly denied read.
 - Kubernetes: use read-only `kubectl get`, `describe`, `logs`, `version`, `api-resources`, `auth can-i` and
   `wait`/`rollout status`. Do not apply, patch, edit, delete, scale, restart, run, create or

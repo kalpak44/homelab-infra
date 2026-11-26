@@ -75,7 +75,11 @@ locations. Vault, Proxmox, guests, k3s, Prometheus and upstream sources must be 
 Optional variables are `DEEPSEEK_MODEL`, `K3S_SERVER`, `PROXMOX_SSH_HOST` and
 `PROMETHEUS_URL`; existing IP defaults remain unchanged.
 
-Both agents use kubectl for read-only diagnostics and SSH to inspect VMs/LXCs.
+Both agents use kubectl for read-only diagnostics and SSH to inspect VMs/LXCs. The security
+agent's kubectl runs on a four-hour token for the `security-agent` service account
+(`gitops/.../infrastructure/crowdsec/agent-rbac.yaml`), minted by the action, so the API server
+refuses its writes. It still has root SSH to the nodes, so the contract forbidding the admin
+kubeconfig is what keeps it off that; this is not an isolation boundary.
 Host updates are maintained and applied through Ansible; cluster updates are committed to
 GitOps and reconciled automatically by Flux. No ad hoc kubectl mutations or SSH upgrades.
 Codex waits for completion, checks actual running versions and service health, and repairs
