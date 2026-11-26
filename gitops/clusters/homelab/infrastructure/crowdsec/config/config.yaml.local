@@ -5,8 +5,9 @@ db_config:
   flush:
     max_items: 50000
     max_age: 30d
-    # Every agent rollout registers new machine identities and nothing removed the old
-    # ones. A live agent heartbeats every few seconds, so a day silent means it is gone.
+    # Every agent rollout registers new machine identities; helmrelease.yaml's postStart
+    # prune only runs when LAPI restarts. This clears them in between, but only those
+    # with no alerts left. A live agent heartbeats every few seconds, so it is never hit.
     agents_autodelete:
       login_password: 24h
 api:
