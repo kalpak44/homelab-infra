@@ -9,12 +9,18 @@
     - name: Read this component’s connection credentials
       ansible.builtin.import_tasks: ../../shared/connection.yml
   tasks:
-    - name: Check for terraform
-      ansible.builtin.stat:
-        path: /usr/local/bin/terraform
-      register: terraform_bin
+    # Compared by version, not by the binary existing: an existence check installed once
+    # and never upgraded, so the pin moved while the runner stayed behind.
+    - name: Read the installed Terraform version
+      ansible.builtin.command: /usr/local/bin/terraform version -json
+      register: terraform_installed
+      changed_when: false
+      failed_when: false
+      check_mode: false
     - name: "Install Terraform {{ terraform_version }}"
-      when: not terraform_bin.stat.exists
+      when: >-
+        terraform_installed.rc != 0 or
+        (terraform_installed.stdout | from_json).terraform_version != terraform_version
       ansible.builtin.unarchive:
         src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
         dest: /usr/local/bin
