@@ -39,9 +39,12 @@ source "hcloud" "workspace_vm" {
   }
   ssh_username  = "root"
   snapshot_name = "workspace-vm-${local.stamp}"
+  # firewall=host tells the VM manager these VMs filter inbound traffic themselves, so it
+  # puts them behind the shared Cloud Firewall instead of making one per VM.
   snapshot_labels = {
     image    = "workspace-vm"
     built-at = local.stamp
+    firewall = "host"
   }
 }
 

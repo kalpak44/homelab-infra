@@ -8,7 +8,7 @@ cloud-init status --wait || true
 
 apt-get update
 apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade
-apt-get install -y ca-certificates curl unattended-upgrades
+apt-get install -y ca-certificates curl unattended-upgrades nftables
 
 # Docker's own repository rather than Ubuntu's docker.io, which lags and has no compose v2.
 install -m 0755 -d /etc/apt/keyrings
@@ -117,7 +117,7 @@ systemctl --user -M workspace@ stop workspace-docker.service
 supervisor_image=ghcr.io/kalpak44/workspaced-ai-supervisor
 docker pull "$supervisor_image:latest"
 supervisor="$(docker inspect --format '{{index .RepoDigests 0}}' "$supervisor_image:latest")"
-install -d -m 0700 /etc/workspaced /var/lib/workspaced
+install -d -m 0700 /etc/workspaced /var/lib/workspaced /var/lib/workspaced/firewall.d
 # Starts only on a VM whose cloud-config wrote its enrollment file, which the build server
 # has none of, so the snapshot carries no key and no enrollment.
 cat > /etc/systemd/system/workspaced-supervisor.service <<UNIT
@@ -149,6 +149,57 @@ TimeoutStartSec=300
 WantedBy=multi-user.target
 UNIT
 systemctl enable workspaced-supervisor.service
+
+# The VM filters inbound traffic itself, with the rules the supervisor writes from each
+# heartbeat; the shared Cloud Firewall in front of it lets everything in. Loaded before
+# the network comes up, so nothing is reachable before the rules say so, and the rules
+# written last apply again on every boot. Only this table, never `flush ruleset`, which
+# would drop the rules Docker keeps.
+cat > /etc/nftables.conf <<'NFT'
+#!/usr/sbin/nft -f
+table inet workspaced
+delete table inet workspaced
+table inet workspaced {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+    iif lo accept
+    # IPv6 finds neither its neighbours nor its route without these.
+    icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } accept
+    # Hetzner hands out the IPv4 address over DHCP.
+    udp sport 67 udp dport 68 accept
+    include "/var/lib/workspaced/firewall.d/*.nft"
+  }
+}
+NFT
+# A file nft refuses changes nothing: the table is replaced in one transaction or not
+# at all.
+cat > /etc/systemd/system/workspaced-firewall.service <<'UNIT'
+[Unit]
+Description=Apply the workspace's firewall rules
+After=nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/nftables.conf
+UNIT
+cat > /etc/systemd/system/workspaced-firewall.path <<'UNIT'
+[Unit]
+Description=Watch for new workspace firewall rules
+
+[Path]
+PathChanged=/var/lib/workspaced/firewall.d
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+# Checked rather than loaded: the drop policy would cut Packer's connection.
+echo 'ip saddr { 0.0.0.0/0 } tcp dport 443 accept' > /var/lib/workspaced/firewall.d/rules.nft
+nft -c -f /etc/nftables.conf
+rm /var/lib/workspaced/firewall.d/rules.nft
+nft -c -f /etc/nftables.conf
+systemctl enable nftables.service workspaced-firewall.path
 
 # Off, so a firewall rule can only ever open ports the workspace itself publishes. Masked
 # rather than removed: Packer is connected through it until the build server shuts down.
