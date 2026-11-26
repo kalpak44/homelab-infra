@@ -142,6 +142,18 @@ spec:
   postRenderers:
     - kustomize:
         patches:
+          # Prometheus runs outside the cluster and each agent counts only its own node's
+          # lines, so each is scraped on its node; through the Service the two would
+          # alternate. The chart's DaemonSet ignores agent.ports, hence a patch.
+          - target:
+              group: apps
+              version: v1
+              kind: DaemonSet
+              name: crowdsec-agent
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/ports/0/hostPort
+                value: 6060
           - target:
               group: apps
               version: v1

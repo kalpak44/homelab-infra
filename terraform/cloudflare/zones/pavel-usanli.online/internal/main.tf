@@ -9,6 +9,7 @@ locals {
     "acestream"     = "192.168.1.7"
     "adguard"       = "192.168.1.2"
     "cloudflared"   = "192.168.1.10"
+    "crowdsec"      = "192.168.1.121"
     "github-runner" = "192.168.1.101"
     "grafana"       = "192.168.1.12"
     "headlamp"      = "192.168.1.121"
