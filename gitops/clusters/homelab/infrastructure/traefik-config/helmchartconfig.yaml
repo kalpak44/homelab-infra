@@ -184,6 +184,9 @@ spec:
           RequestPath: keep
           RequestScheme: keep
           DownstreamStatus: keep
+          # Bytes sent back: the only way to tell a probe answered by the SPA fallback from
+          # one that was handed the file it asked for.
+          DownstreamContentSize: keep
           # CrowdSec's traefik parser reads these three unconditionally. Dropping
           # them still parses the line, but costs three expression warnings per
           # request, which buries real errors in the agent log.
