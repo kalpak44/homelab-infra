@@ -175,3 +175,31 @@
 104.248.155.49
 # 2026-11-25 8 nested PHP webshell/cache probes on bunker over 5h31m; all denied
 89.163.146.129
+# 2026-11-26 229 WAF/HTTP alerts, 363 events and 221 secret/VCS/config paths on bunker in 9s
+45.148.10.32
+# 2026-11-26 174 WAF/HTTP alerts, 303 events and 165 .env/PHP/source paths on ai.workspaced in 3s
+34.62.254.171
+# 2026-11-26 174 WAF/HTTP alerts, 303 events and 165 .env/PHP/source paths on bunker in 12s
+35.189.236.174
+# 2026-11-26 174 WAF/HTTP alerts, 302 events and 167 .env/PHP/source paths on noco-google-connector in 3s
+34.76.183.190
+# 2026-11-26 174 WAF/HTTP alerts, 302 events and 164 .env/PHP/source paths on planner in 3s
+35.195.251.123
+# 2026-11-26 95 WAF/HTTP alerts, 224 events and 91 credential/source paths on proklinator in 1s
+146.148.115.149
+# 2026-11-26 94 WAF/HTTP alerts, 222 events and 90 credential/source paths on proklinator in 1s
+207.175.97.104
+# 2026-11-26 20 WAF/HTTP alerts, 31 events and 18 WordPress paths on www in 1s
+216.131.114.25
+# 2026-11-26 11 WAF/HTTP alerts, 22 events and 11 WordPress paths on www in 3s
+129.221.248.33
+# 2026-11-26 5 WAF/HTTP alerts, 8 events and 3 WordPress admin/login paths on mite-assistant in 5s
+103.74.229.37
+# 2026-11-26 7 WordPress scan-path alerts/events on www in 7s
+167.172.82.141
+# 2026-11-26 6 WAF/HTTP alerts and 7 events across 4 WordPress paths on mite-assistant in 4s
+102.207.170.146
+# 2026-11-26 5 WAF/HTTP alerts and 6 events across 3 WordPress paths on mite-assistant in 7s
+103.160.199.115
+# 2026-11-26 3 PHP webshell probes under /.well-known on www in 3s; all denied
+72.146.28.43
