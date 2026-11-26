@@ -45,7 +45,7 @@ filters:
   - Alert.Remediation == true && Alert.GetScenario() == "custom/actuator-probing"
 decisions:
   - type: ban
-    duration: 87600h
+    duration: 24h
 on_success: break
 ---
 name: app_surface_ban
@@ -71,13 +71,11 @@ name: custom_appsec_ban
 # No Alert.Remediation check: AppSec builds its alerts without ever
 # setting that field, so "Alert.Remediation == true" never matches a
 # waf-kind alert and the ban would silently never be created.
-# Ten years, which CrowdSec has no shorter way to say than "for good": no
-# visitor requests a .php, .env or .git path on these sites by accident.
 filters:
   - Alert.GetScenario() startsWith "custom/block-"
 decisions:
   - type: ban
-    duration: 87600h
+    duration: 24h
 on_success: break
 ---
 name: appsec_vpatch_ban
@@ -90,7 +88,7 @@ filters:
   - Alert.GetScenario() startsWith "crowdsecurity/vpatch-"
 decisions:
   - type: ban
-    duration: 87600h
+    duration: 24h
 on_success: break
 ---
 name: default_ip_remediation
