@@ -124,7 +124,7 @@ runs first, so the apex answers `301` and never reaches the firewall phase.
 
 **CrowdSec never bans `192.168.1.10`.** A request that starts inside Cloudflare, from a Worker for example,
 carries only trusted proxies in its forwarded chain, so the bouncer resolves it to cloudflared itself. AppSec
-still blocks the request, but the 24-hour ban that followed blocked every such request and showed up as a daily
+still blocks the request, but the ban that followed blocked every such request and showed up as a daily
 ban on our own tunnel. The `never_ban_tunnel` profile, first in `config/profiles.yaml`, keeps the alert and
 drops the decision. Do not replace it with an allowlist: allowlists apply to AppSec, so it would stop
 inspecting those requests at all.

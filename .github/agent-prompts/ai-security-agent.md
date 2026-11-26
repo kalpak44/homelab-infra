@@ -107,10 +107,10 @@ source was checked. Fetch current official CrowdSec releases and the configured 
 - Inspect host, path, method, status and User-Agent together. A 4xx count alone is not proof.
 - No third-party scanner is authorized to probe these hosts. A source whose User-Agent
   names a scanner, vendor or "security" product and whose requests probe paths goes into
-  `blocked-ips.txt`, a permanent ban, rather than being left to a 24-hour automatic one.
+  `blocked-ips.txt`, a permanent ban, rather than being left to an automatic one that expires.
   Never report one as possibly authorized.
 - Never replay a scanner's request to check what it received. The runner is not
-  whitelisted, so one request to a secret, VCS, CMS or PHP path bans it for 24 hours and
+  whitelisted, so one request to a secret, VCS, CMS or PHP path bans it permanently and
   reads to the next reviewer as an intrusion from inside the LAN. Judge a scanner's `200`
   from the logged `DownstreamContentSize` against the same host's response to a random,
   ordinary-looking missing path, which no rule matches.
