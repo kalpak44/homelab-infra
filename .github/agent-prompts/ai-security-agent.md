@@ -133,6 +133,9 @@ source was checked. Fetch current official CrowdSec releases and the configured 
   request evidence; never ban based only on a category, error count or scanner severity.
 - CrowdSec metrics distinguish an installed rule from one actually matching traffic.
   Record unparsed/whitelisted traffic and zero-hit rules as findings, not automatic removals.
+  Prometheus keeps them across pod restarts from 2026-11-26: job `crowdsec-lapi` for active
+  decisions and alerts by scenario, job `crowdsec-agents` for lines read and parsed per
+  node. Prefer them to `cscli metrics` for interval totals; nothing before that date exists.
 - Missing or refused evidence is a reportable gap. Never invent alerts or access blocked data.
 
 ## Decide what should change
