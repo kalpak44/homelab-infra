@@ -5,6 +5,10 @@ db_config:
   flush:
     max_items: 50000
     max_age: 30d
+    # Every agent rollout registers new machine identities and nothing removed the old
+    # ones. A live agent heartbeats every few seconds, so a day silent means it is gone.
+    agents_autodelete:
+      login_password: 24h
 api:
   server:
     trusted_ips:
