@@ -99,7 +99,8 @@ Do not write a root `.env` or copy credentials into Actions secrets.
    After verified success retain the latest three AI-created snapshots per affected guest;
    never prune operator snapshots or failed-stage recovery checkpoints. Five per guest is
    a hard cap: delete the oldest with `qm delsnapshot` / `pct delsnapshot` before creating
-   another. A snapshot being another's parent is no reason to keep it; Proxmox relinks the
+   another. VMs 301 (`nfs`) and 302 (`portainer`) retain two and are capped at three: each
+   snapshot of their 512 GiB data disks counts at full size against the shared thin pool. A snapshot being another's parent is no reason to keep it; Proxmox relinks the
    chain on delete, and LVM-thin snapshots are independent volumes.
 
 Do not reboot the hypervisor or current runner during its job. Never destroy/replace
@@ -163,4 +164,6 @@ may not or cannot resolve (a human decision, rebooting the runner executing you,
 upstream release, a prohibited destructive migration), write `ATTENTION` to that path instead
 and list them under a "Needs a human" heading. A change you made that is broken or unverified
 is a failure: write the report but no marker. Your final message must also state the outcome
-truthfully. The wrapper fails without both report and marker.
+truthfully. The wrapper fails without both report and marker. Also open the report with an
+`Outcome: SUCCESS`, `Outcome: ATTENTION` or `Outcome: FAILED` line matching the marker; the
+wrapper reads it when the marker is missing, so a failed run must say FAILED there.

@@ -159,3 +159,157 @@ groups:
           reducer:
             type: last
             params: []
+  - uid: thin-pool-data-warning
+    title: Thin pool data filling up
+    condition: B
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: More than 70% of the Proxmox thin pool's data space is in use. Guests are
+        overcommitted against it, so it fills while each still reports free space; prune
+        old ai-* snapshots first.
+    noDataState: NoData
+    execErrState: Error
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        editorMode: code
+        expr: lvm_thin_pool_data_used_ratio
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        datasource:
+          type: __expr__
+          uid: __expr__
+        expression: A
+        conditions:
+        - type: query
+          evaluator:
+            type: gt
+            params:
+            - 0.7
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+            params: []
+  - uid: thin-pool-data-critical
+    title: Thin pool data nearly full
+    condition: B
+    for: 15m
+    labels:
+      severity: critical
+    annotations:
+      summary: More than 85% of the Proxmox thin pool's data space is in use. When it fills,
+        every guest on it fails writes at once.
+    noDataState: NoData
+    execErrState: Error
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        editorMode: code
+        expr: lvm_thin_pool_data_used_ratio
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        datasource:
+          type: __expr__
+          uid: __expr__
+        expression: A
+        conditions:
+        - type: query
+          evaluator:
+            type: gt
+            params:
+            - 0.85
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+            params: []
+  - uid: thin-pool-metadata
+    title: Thin pool metadata filling up
+    condition: B
+    for: 15m
+    labels:
+      severity: critical
+    annotations:
+      summary: More than 70% of the Proxmox thin pool's metadata is in use. When it fills, LVM
+        switches the pool to read-only; every snapshot adds to it.
+    noDataState: NoData
+    execErrState: Error
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        editorMode: code
+        expr: lvm_thin_pool_metadata_used_ratio
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        datasource:
+          type: __expr__
+          uid: __expr__
+        expression: A
+        conditions:
+        - type: query
+          evaluator:
+            type: gt
+            params:
+            - 0.7
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+            params: []
