@@ -205,3 +205,46 @@
 72.146.28.43
 # 2026-11-26 MerchantSecurityScanner/1.0, 47 log-path probes on www; not an authorised scanner
 34.214.107.70
+# 2026-11-26 130 WAF/HTTP alerts and 219 events in 7s on bunker; 96 denied .env, PHP and
+# recon probes, active 24h ban
+34.38.117.40
+# 2026-11-26 55 WAF/HTTP alerts and 140 events in 5s on proklinator; .env, cloud-credential
+# and Terraform-state probes
+34.77.92.15
+# 2026-11-26 44 WAF/HTTP alerts and 55 PHP/CMS probes on workspaced in 16s; 13 denied
+20.219.139.13
+# 2026-11-26 20 WAF/HTTP alerts and 29 WordPress path probes on www in 5s
+129.221.193.184
+# 2026-11-26 69 denied .env probes on www over 3m45s; 4 WAF alerts
+142.86.98.234
+# 2026-11-26 4 CMS/PHP alerts and 5 events on www in 3s
+139.59.107.43
+# 2026-11-26 WordPress/XML-RPC path discovery across planner and www; 8 denied in 10
+# requests over 3h31m
+68.183.176.154
+# 2026-11-26 173 WAF/HTTP alerts and 262 events in 3s on ai.workspaced; .env, PHP and
+# recon probes; active 24h ban
+130.211.87.56
+# 2026-11-26 74 WAF/HTTP alerts and 165 events across three hosts over 2h28m; PHP,
+# JQuery-File-Upload, KCFinder and Git probes
+170.64.209.111
+# 2026-11-26 68 WAF/HTTP alerts and 148 events in 9s on bunker; KCFinder, PHPUnit and
+# .git probes
+159.203.28.132
+# 2026-11-26 10 WAF/HTTP alerts and 92 events in 29s on mite-assistant; JQuery-File-Upload,
+# PHPUnit and file-manager probes
+209.38.80.9
+# 2026-11-26 12 WordPress path probes on www in 9s; all denied
+2a14:c380:1300:23d::a
+# 2026-11-26 493 requests across 437 paths in 39s on proklinator and www; 280 404s and
+# 203 redirects while enumerating an unrelated application surface
+152.32.170.130
+# 2026-11-27 6 credential-file probes in 1s on bunker; .env, .aws/credentials and config
+# paths, all denied
+45.148.10.120
+# 2026-11-26 CensysInspect/1.1 on www; third-party scanner, not authorised
+66.132.172.139
+# 2026-11-26 CensysInspect/1.1 on www; third-party scanner, not authorised
+2602:80d:1007::3a
+# 2026-11-26 ModatScanner/1.2 on www; third-party scanner, not authorised
+85.217.149.16
