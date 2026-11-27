@@ -1,6 +1,6 @@
 # A request from inside Cloudflare carries only trusted proxies in its forwarded chain,
 # so the bouncer resolves it to cloudflared itself. AppSec still blocks the request; a
-# ban here would block every such request for a day. No decisions, so the alert is kept.
+# ban here would block every such request for a month. No decisions, so the alert is kept.
 name: never_ban_tunnel
 filters:
   - Alert.GetScope() == "Ip" && Alert.GetValue() == "192.168.1.10"
@@ -21,7 +21,7 @@ filters:
   - Alert.Remediation == true && Alert.GetScope() == "Ip" && GetDecisionsCount(Alert.GetValue()) >= 3
 decisions:
   - type: ban
-    duration: 24h
+    duration: 720h
 on_success: break
 ---
 name: http_error_burst_ban
@@ -29,7 +29,7 @@ filters:
   - Alert.Remediation == true && Alert.GetScenario() == "custom/http-error-burst"
 decisions:
   - type: ban
-    duration: 24h
+    duration: 720h
 on_success: break
 ---
 name: http_error_ban
@@ -45,7 +45,7 @@ filters:
   - Alert.Remediation == true && Alert.GetScenario() == "custom/actuator-probing"
 decisions:
   - type: ban
-    duration: 24h
+    duration: 720h
 on_success: break
 ---
 name: app_surface_ban
@@ -53,7 +53,7 @@ filters:
   - Alert.Remediation == true && Alert.GetScenario() in ["custom/mcp-auth-failure", "custom/mcp-surface-probing", "custom/public-mcp-probing", "custom/proklinator-api-probing", "custom/checkout-payload-rejected"]
 decisions:
   - type: ban
-    duration: 24h
+    duration: 720h
 on_success: break
 ---
 name: checkout_abuse_ban
@@ -75,7 +75,7 @@ filters:
   - Alert.GetScenario() startsWith "custom/block-"
 decisions:
   - type: ban
-    duration: 24h
+    duration: 720h
 on_success: break
 ---
 name: appsec_vpatch_ban
@@ -88,7 +88,7 @@ filters:
   - Alert.GetScenario() startsWith "crowdsecurity/vpatch-"
 decisions:
   - type: ban
-    duration: 24h
+    duration: 720h
 on_success: break
 ---
 name: default_ip_remediation
