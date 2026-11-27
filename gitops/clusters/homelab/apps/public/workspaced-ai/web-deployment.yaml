@@ -25,7 +25,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web
-          image: ghcr.io/kalpak44/workspaced-ai-web:50be34b
+          image: ghcr.io/kalpak44/workspaced-ai-web:40118fc
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
