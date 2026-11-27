@@ -1,0 +1,38 @@
+# Holds acme.json. Bound by name rather than provisioned, so a rebuilt cluster reattaches the
+# same certificates. The directory name is the one the retired subdir provisioner gave it.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: traefik-ssl-certs
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-csi
+  mountOptions:
+    - nfsvers=4
+  claimRef:
+    namespace: kube-system
+    name: traefik-ssl-certs
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: 192.168.1.108#srv/nfs/k8s#kube-system-traefik-pvc-2e8aebe9-24c6-4081-9075-f26d5c0e0249##
+    volumeAttributes:
+      server: 192.168.1.108
+      share: /srv/nfs/k8s/kube-system-traefik-pvc-2e8aebe9-24c6-4081-9075-f26d5c0e0249
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: traefik-ssl-certs
+  namespace: kube-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-csi
+  volumeName: traefik-ssl-certs
+  resources:
+    requests:
+      storage: 1Gi

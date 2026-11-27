@@ -225,11 +225,11 @@ spec:
             name: cloudflare-api-token
             key: api-token
 
+    # Declared in volume.yaml.
     persistence:
       enabled: true
       name: ssl-certs
-      size: 1Gi
-      accessMode: ReadWriteOnce
+      existingClaim: traefik-ssl-certs
       path: /ssl-certs
 
     additionalArguments:

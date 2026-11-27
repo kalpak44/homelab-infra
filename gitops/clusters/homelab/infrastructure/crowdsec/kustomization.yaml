@@ -4,6 +4,7 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - externalsecret.yaml
+  - volumes.yaml
   - helmrelease.yaml
   - middleware.yaml
   - metrics-ingressroute.yaml

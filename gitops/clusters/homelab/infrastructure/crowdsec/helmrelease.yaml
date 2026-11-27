@@ -230,13 +230,12 @@ spec:
                 cscli console enroll "${ENROLLMENT_KEY}" || true
                 cscli console enable console_management manual || true
 
+      # Declared in volumes.yaml.
       persistentVolume:
         data:
-          storageClassName: nfs
-          size: 1Gi
+          existingClaim: crowdsec-db
         config:
-          storageClassName: nfs
-          size: 100Mi
+          existingClaim: crowdsec-config
 
       # A full alert export OOM-killed 768Mi; idle use is about 100Mi, so keep headroom
       # for the daily evidence query without raising the request.
