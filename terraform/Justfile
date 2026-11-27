@@ -338,7 +338,7 @@ list:
     @printf "  %-30s %s\n" "kubectl-awscli"                 "kalpak44/kubectl-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "mac-calendar-mcp"               "kalpak44/mac-calendar-mcp · same + format/lint/jest/Sonar gate + release.yml (PR check, tag-triggered release) + dependabot"
     @printf "  %-30s %s\n" "mite-assistant-mcp"             "kalpak44/mite-assistant-mcp · same + lint/format/80%-coverage/Sonar gate + publish.yml (PR check, publish, syft/grype report, batched deploy) + dependabot"
-    @printf "  %-30s %s\n" "noco-google-connector-web-page" "kalpak44/noco-google-connector-web-page · same + publish.yml (PR check, publish, deploy) + dependabot"
+    @printf "  %-30s %s\n" "noco-google-connector-web-page" "kalpak44/noco-google-connector-web-page · same + publish.yml (PR check, GitHub Pages deploy)"
     @printf "  %-30s %s\n" "postgres-awscli"                "kalpak44/postgres-awscli · weekly AI version check + CVE scan → GHCR image + release (release.yml)"
     @printf "  %-30s %s\n" "proklinator-app"                "kalpak44/proklinator-app · PR sweep + issue resolver + publish.yml (2 Sonar gates, 2 images, deploy)"
     @printf "  %-30s %s\n" "song-radar"                     "kalpak44/song-radar · same + fmt/test/coverage/Sonar gate + publish.yml (PR check, GHCR publish, syft/grype report) + dependabot"

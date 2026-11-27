@@ -26,12 +26,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "homelab" {
 locals {
   # key = record name, value = hostname for ingress rule
   public_k3s_apps = {
-    "pavel-usanli.online"   = "pavel-usanli.online"
-    "www"                   = "www.pavel-usanli.online"
-    "planner"               = "planner.pavel-usanli.online"
-    "bunker"                = "bunker.pavel-usanli.online"
-    "mite-assistant"        = "mite-assistant.pavel-usanli.online"
-    "noco-google-connector" = "noco-google-connector.pavel-usanli.online"
+    "pavel-usanli.online" = "pavel-usanli.online"
+    "www"                 = "www.pavel-usanli.online"
+    "planner"             = "planner.pavel-usanli.online"
+    "bunker"              = "bunker.pavel-usanli.online"
+    "mite-assistant"      = "mite-assistant.pavel-usanli.online"
   }
 
   proklinator_apps = {

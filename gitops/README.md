@@ -24,7 +24,6 @@ gitops/clusters/homelab/
     │   ├── mite-assistant-mcp/             # Mite time-tracking MCP server
     │   ├── capacity-planner/               # Capacity planner tool (Sablier scale-on-demand)
     │   ├── bunker-game-app/                # Bunker party game (Sablier scale-on-demand)
-    │   ├── noco-google-connector-web-page/ # Noco Google connector web page (noco-google-connector.pavel-usanli.online)
     │   ├── proklinator/                    # proklinator.online — nginx placeholder
     │   └── workspaced-ai/                  # own namespace; web app at the root, API under /api/v1/ (ai.workspaced.online), public site at workspaced.online
     └── private/

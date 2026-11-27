@@ -4,7 +4,6 @@ locals {
   agent_workflow   = ".github/workflows/ai-maintenance-agent.yml"
   agent_prompt     = ".github/agent-prompts/ai-maintenance-agent.md"
   publish_workflow = ".github/workflows/publish.yml"
-  dependabot_file  = ".github/dependabot.yml"
 }
 
 # The repo already exists — adopt it instead of creating it. The import block is a no-op
@@ -107,6 +106,12 @@ resource "github_repository_file" "agent_workflow" {
   depends_on = [github_repository_file.agent_prompt, github_actions_secret.homelab_dispatch]
 }
 
+# publish.yml deploys site/public here; no cluster or DNS record serves the site.
+resource "github_repository_pages" "this" {
+  repository = github_repository.this.name
+  build_type = "workflow"
+}
+
 resource "github_repository_file" "publish_workflow" {
   repository          = github_repository.this.name
   branch              = local.default_branch
@@ -116,15 +121,6 @@ resource "github_repository_file" "publish_workflow" {
   commit_author       = "homelab-infra"
   commit_email        = "homelab-infra@users.noreply.github.com"
   overwrite_on_create = true
-}
 
-resource "github_repository_file" "dependabot" {
-  repository          = github_repository.this.name
-  branch              = local.default_branch
-  file                = local.dependabot_file
-  content             = file("${path.module}/dependabot.yml")
-  commit_message      = "chore: sync dependabot config from homelab-infra"
-  commit_author       = "homelab-infra"
-  commit_email        = "homelab-infra@users.noreply.github.com"
-  overwrite_on_create = true
+  depends_on = [github_repository_pages.this]
 }
