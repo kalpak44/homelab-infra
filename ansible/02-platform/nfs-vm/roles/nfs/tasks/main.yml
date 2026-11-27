@@ -47,6 +47,28 @@
     mode: "0644"
   notify: Reload exports
 
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+
+# validate: a ruleset that does not parse fails here with the old one still loaded.
+- name: Install the NFS port guard
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  notify: Reload nftables
+
+- name: Enable nftables at boot
+  ansible.builtin.systemd:
+    name: nftables.service
+    state: started
+    enabled: true
+
 - name: Load nfsd kernel module
   community.general.modprobe:
     name: nfsd

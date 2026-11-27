@@ -1,0 +1,20 @@
+#!/usr/sbin/nft -f
+#
+# Managed by ansible/02-platform/nfs-vm/roles/nfs — edits here are lost on the next
+# `just configure nfs-vm`.
+#
+# Declaring the table before deleting it is what makes the delete safe on a first run.
+table inet nfs_guard
+delete table inet nfs_guard
+
+table inet nfs_guard {
+    # Guards the NFS ports alone; SSH and node_exporter keep their current reachability.
+    chain input {
+        type filter hook input priority 0; policy accept;
+
+        ip saddr { {{ nfs_clients | join(', ') }} } tcp dport { 111, 2049 } accept
+        ip saddr { {{ nfs_clients | join(', ') }} } udp dport 111 accept
+        tcp dport { 111, 2049 } drop
+        udp dport 111 drop
+    }
+}

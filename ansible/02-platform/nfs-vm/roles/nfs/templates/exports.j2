@@ -1,1 +1,2 @@
-{{ nfs_export_path }}  *(rw,sync,no_root_squash,no_subtree_check)
+{{ nfs_export_path }}  {% for client in nfs_clients %}{{ client }}(rw,sync,no_root_squash,no_subtree_check){{ ' ' if not loop.last }}{% endfor %}
+
