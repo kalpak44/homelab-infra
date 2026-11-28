@@ -248,3 +248,21 @@
 2602:80d:1007::3a
 # 2026-11-26 ModatScanner/1.2 on www; third-party scanner, not authorised
 85.217.149.16
+# 2026-11-28 501 requests in 5s on proklinator; 239 404s and credential/config probes
+35.240.21.102
+# 2026-11-28 500 backup-archive probes in under 1s on proklinator
+45.148.10.14
+# 2026-11-28 315 CI and config probes in 4s on mite-assistant; all denied
+195.178.110.132
+# 2026-11-28 305 requests in 3s on ai.workspaced; secret/config path probing
+35.240.5.212
+# 2026-11-28 103 requests in 4s on www; webshell and PHP probes
+165.245.233.168
+# 2026-11-28 44 PHP webshell probes in 16s on workspaced
+13.70.55.149
+# 2026-11-28 39 file-manager and PHP probes in 2s on www.proklinator
+134.122.43.228
+# 2026-11-28 repeated cache.php webshell probes on www
+188.166.176.12
+# 2026-11-28 19 phishing-kit asset probes in under 1s on workspaced
+146.70.134.158
